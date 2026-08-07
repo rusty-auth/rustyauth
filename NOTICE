@@ -1,0 +1,13 @@
+RustyAuth
+Copyright 2026 Livermore Ledger Ltd
+
+RustyAuth is an independent open-source project written in the Rust programming
+language and built on SableDB. It is not sponsored, endorsed, or maintained by
+the Rust Foundation, the Rust Project, SableDB, or their contributors.
+
+This product includes third-party software. Copyright and licence notices are
+provided in THIRD_PARTY_NOTICES.md and THIRD_PARTY_LICENSES.html and, where
+applicable, in the corresponding distributed container image.
+
+SableDB is an independent project. Use of its name identifies an upstream
+dependency and does not imply sponsorship, affiliation, or endorsement.

@@ -1,0 +1,54 @@
+name: rustyauth
+
+services:
+  auth:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    environment:
+      AUTH_ENV: development
+      AUTH_ISSUER: ${AUTH_ISSUER:-http://localhost:8081}
+      WEBAUTHN_RP_ID: ${WEBAUTHN_RP_ID:-localhost}
+      WEBAUTHN_RP_ORIGIN: ${WEBAUTHN_RP_ORIGIN:-http://localhost:5174}
+      WEBAUTHN_RP_NAME: ${WEBAUTHN_RP_NAME:-RustyAuth Local}
+      SABLEDB_URL: redis://sabledb:6379
+      AUTH_MASTER_KEY_HEX: ${AUTH_MASTER_KEY_HEX:-0000000000000000000000000000000000000000000000000000000000000000}
+      BOOTSTRAP_TOKEN: ${BOOTSTRAP_TOKEN:-vtr-local-enrolment-only}
+      SPACETIME_AUDIENCE: ${SPACETIME_AUDIENCE:-vtr-dashboard-v2-local}
+      AUTH_TENANT_ID: ${AUTH_TENANT_ID:-vtr}
+      PORT: 8080
+      RUST_LOG: ${RUST_LOG:-passkey_auth_service=info,tower_http=info}
+    ports:
+      - "127.0.0.1:8081:8080"
+    depends_on:
+      sabledb:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/passkey-auth-service", "--healthcheck"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+    networks: [private, edge]
+
+  sabledb:
+    build:
+      context: ./sabledb
+      dockerfile: Dockerfile
+    volumes:
+      - sabledb_data:/var/lib/sabledb
+    healthcheck:
+      test: ["CMD-SHELL", "timeout 2 bash -c '</dev/tcp/127.0.0.1/6379'"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+    restart: unless-stopped
+    networks: [private]
+
+networks:
+  private:
+    internal: true
+  edge:
+
+volumes:
+  sabledb_data:

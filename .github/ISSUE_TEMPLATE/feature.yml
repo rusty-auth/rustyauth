@@ -1,0 +1,27 @@
+name: Feature request
+description: Propose a focused capability or improvement
+title: "feat: "
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What concrete problem should RustyAuth solve?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed approach
+      description: Describe the behavior, trust boundary and alternatives considered.
+    validations:
+      required: true
+  - type: textarea
+    id: security
+    attributes:
+      label: Security and compatibility impact
+      description: Identify effects on credentials, sessions, tokens, storage or public contracts.
+    validations:
+      required: true
+
