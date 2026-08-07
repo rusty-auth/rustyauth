@@ -13,7 +13,7 @@ categories = ["authentication", "web-programming::http-server"]
 publish = false
 
 [dependencies]
-aes-gcm = "0.10"
+aes-gcm = "0.11"
 anyhow = "1"
 aws-config = "1.8"
 aws-credential-types = "1.2"
