@@ -118,6 +118,10 @@ native gRPC requires HTTP/2 from the client through the public proxy to RustyAut
 idle and request timeouts above the consumer's checkpoint interval. Do not cache token, credential,
 session or event-stream responses.
 
+Route `/rustyauth.identity.v1.IdentityService/*` through the same proxy without exposing
+`AUTH_IDENTITY_RPC_TOKEN` to public browser code. Identity methods are unary and do not require
+response buffering to be disabled.
+
 ## Upgrade procedure
 
 There is not yet a formal storage migration framework. Until one exists:
@@ -145,8 +149,8 @@ RustyAuth writes structured JSON logs and propagates or creates `x-request-id`. 
 passkey_auth_service=info,tower_http=info
 ```
 
-Never enable body logging for WebAuthn credentials, cookies, JWTs, bootstrap tokens, event RPC
-tokens or backup secrets. The application marks the `Authorization` request header as sensitive;
+Never enable body logging for WebAuthn credentials, cookies, JWTs, bootstrap tokens, RPC tokens or
+backup secrets. The application marks the `Authorization` request header as sensitive;
 operational tooling must also redact `Cookie`, `Set-Cookie` and `x-bootstrap-token`.
 
 Monitor at least:

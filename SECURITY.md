@@ -29,7 +29,7 @@ channel. Include:
 - whether credentials or real accounts were involved; and
 - any suggested mitigation.
 
-Do not include live session cookies, JWTs, passkey assertions, bootstrap or event RPC tokens,
+Do not include live session cookies, JWTs, passkey assertions, bootstrap or RPC tokens,
 database URLs or backup keys. Replace them with unmistakable placeholders.
 
 The maintainers will acknowledge a usable report, coordinate validation and publish remediation
@@ -44,7 +44,7 @@ High-priority reports include:
 - account or tenant crossing;
 - session fixation, theft, expiry or revocation failures;
 - JWT signature, issuer, audience, key-storage or claim-validation weaknesses;
-- bootstrap-token or event-RPC-token exposure, or enrolment/event-stream authorization bypass;
+- bootstrap-token or RPC-token exposure, or enrolment/private-RPC authorization bypass;
 - SableDB public exposure caused by the supplied deployment;
 - leakage of passkey material, bearer tokens or backup secrets;
 - unsafe backup encryption or restore behavior; and
@@ -86,6 +86,8 @@ access to environment secrets and the SableDB volume.
 - Missing state or invalid configuration fails closed.
 - Logs and events must never contain bearer or credential payloads.
 - Event streaming requires a dedicated, high-entropy bearer token distinct from the bootstrap token.
+- Identity reads and mutations require a second dedicated bearer token. Identity responses expose
+  passkey metadata only, never credential/public-key material, counters, sessions or tokens.
 
 ## Known limitations
 

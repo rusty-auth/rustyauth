@@ -15,6 +15,7 @@ services:
       AUTH_MASTER_KEY_HEX: ${AUTH_MASTER_KEY_HEX:-0000000000000000000000000000000000000000000000000000000000000000}
       BOOTSTRAP_TOKEN: ${BOOTSTRAP_TOKEN:-vtr-local-enrolment-only}
       AUTH_EVENT_RPC_TOKEN: ${AUTH_EVENT_RPC_TOKEN:-rustyauth-local-event-rpc-token-only}
+      AUTH_IDENTITY_RPC_TOKEN: ${AUTH_IDENTITY_RPC_TOKEN:-local-identity-rpc-token-replace-before-use-0001}
       SPACETIME_AUDIENCE: ${SPACETIME_AUDIENCE:-vtr-dashboard-v2-local}
       AUTH_TENANT_ID: ${AUTH_TENANT_ID:-vtr}
       PORT: 8080

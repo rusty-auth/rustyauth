@@ -23,6 +23,7 @@ flowchart TB
       Browser["Relying-party browser"]
       Consumer["Token-consuming API"]
       EventConsumer["Trusted event consumer"]
+      IdentityControl["Trusted identity control plane"]
       Auth["RustyAuth HTTP service"]
     end
 
@@ -35,6 +36,7 @@ flowchart TB
     Auth -->|"ES256 access token"| Browser
     Consumer -->|"JWKS discovery"| Auth
     Auth -->|"Connect / gRPC event stream"| EventConsumer
+    IdentityControl -->|"Connect / gRPC identity API"| Auth
     Auth -->|"Valkey protocol"| Sable
     Auth -.->|"encrypted envelope; scheduler pending"| Bucket
 ```
@@ -54,7 +56,8 @@ One Axum process owns:
 - session creation and validation;
 - credential-management policy;
 - JWT signing and JWKS publication;
-- atomic ordered event creation, polling and streaming; and
+- atomic ordered event creation, polling and streaming;
+- metadata-only identity reads, exact search and controlled mutations; and
 - health/readiness reporting.
 
 ### SableDB
@@ -81,7 +84,8 @@ RustyAuth stores JSON values and indexes under these logical key families:
 
 | Key family | Contents | Lifetime |
 | --- | --- | --- |
-| `auth:user:<uuid>` | Canonical email, verification state, session version and passkeys | Durable |
+| `auth:user:<uuid>` | Profile, canonical email/phone identifiers, session version and passkeys | Durable |
+| `auth:identifier:<type>:<value>` | Canonical email/phone-to-user index | Durable |
 | `auth:email:<email>` | Email-to-user index | Durable |
 | `auth:credential:<id>` | Credential-to-user uniqueness index | Durable |
 | `auth:registration:<uuid>` | Server-side WebAuthn registration state | Five minutes, single use |
@@ -95,6 +99,19 @@ RustyAuth stores JSON values and indexes under these logical key families:
 Raw session and handoff bearer values are not used as database keys. Their SHA-256 digests are.
 Passkey credential material is serialized through `webauthn-rs`; passwords are not supported or
 stored.
+
+## Account identity model
+
+A stable user UUID owns one optional basic profile, one or more account identifiers and one or more
+passkeys. Exactly one identifier is primary. Email values are normalized to lowercase and phone
+values to E.164; profile strings are trimmed, length-bounded and reject control or invisible
+directional-formatting characters. Existing email-only records are hydrated into this model when
+read without changing their UUID.
+
+The private identity service is a control-plane projection, not a second authentication path. It
+returns passkey metadata but deliberately omits the serialized WebAuthn credential, public key,
+counter and all session/token material. Profile and identifier mutations plus passkey rename/revoke
+are written atomically with their ordered audit event.
 
 ## Registration flow
 

@@ -1,0 +1,21 @@
+{
+  "name": "@rustyauth/protocol",
+  "version": "0.1.0",
+  "description": "Generated ConnectRPC v2 service descriptors and protobuf messages for RustyAuth",
+  "license": "Apache-2.0",
+  "repository": "https://github.com/rusty-auth/rustyauth",
+  "exports": {
+    ".": "./index.ts",
+    "./rustyauth/events/v1/events_pb.ts": "./gen/rustyauth/events/v1/events_pb.ts",
+    "./rustyauth/identity/v1/identity_pb.ts": "./gen/rustyauth/identity/v1/identity_pb.ts"
+  },
+  "publish": {
+    "include": ["index.ts", "gen/**/*.ts", "README.md", "deno.json"]
+  },
+  "tasks": {
+    "check": "deno check index.ts"
+  },
+  "imports": {
+    "@bufbuild/protobuf": "npm:@bufbuild/protobuf@^2.2.3"
+  }
+}

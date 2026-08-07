@@ -13,6 +13,8 @@ versioning after its public contract stabilises.
 - Apache-2.0 project licence and explicit SableDB attribution.
 - A versioned protobuf event service with authenticated Connect, gRPC-Web and native gRPC
   server-streaming delivery.
+- A private protobuf identity service for safe account reads, exact search, profile/contact updates
+  and passkey metadata operations over Connect, gRPC-Web and native gRPC.
 - At-least-once replay from consumer-owned cursors, exact event/tenant filters and idle checkpoints.
 
 ### Changed
@@ -24,6 +26,7 @@ versioning after its public contract stabilises.
 
 - Documented the pre-release threat model, current controls and production blockers.
 - Added a dedicated event RPC bearer secret with constant-time verification and redacted event data.
+- Added a separately scoped identity RPC bearer secret and metadata-only passkey projections.
 
 ## 0.1.0 - 2026-08-07
 

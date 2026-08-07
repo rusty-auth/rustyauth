@@ -5,9 +5,12 @@ fn main() {
     unsafe { std::env::set_var("PROTOC", protoc) };
 
     connectrpc_build::Config::new()
-        .files(&["proto/rustyauth/events/v1/events.proto"])
+        .files(&[
+            "proto/rustyauth/events/v1/events.proto",
+            "proto/rustyauth/identity/v1/identity.proto",
+        ])
         .includes(&["proto/"])
         .include_file("_connectrpc.rs")
         .compile()
-        .expect("compile RustyAuth event protobuf contract");
+        .expect("compile RustyAuth protobuf contracts");
 }

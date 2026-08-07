@@ -1,6 +1,6 @@
 ---
 import DocsLayout from "../../layouts/DocsLayout.astro";
-const variables = [["APP_ORIGIN", "Exact public relying-party origin"], ["SABLEDB_URL", "Private Valkey-protocol URL"], ["AUTH_TENANT_ID", "Stable tenant namespace"], ["AUTH_EVENT_RPC_TOKEN", "Independent trusted-consumer event-stream bearer"], ["JWT_ISSUER", "Expected access-token issuer"], ["JWT_AUDIENCE", "Expected downstream audience"], ["SESSION_IDLE_TTL", "Idle session lifetime"], ["SESSION_ABSOLUTE_TTL", "Maximum session lifetime"]];
+const variables = [["APP_ORIGIN", "Exact public relying-party origin"], ["SABLEDB_URL", "Private Valkey-protocol URL"], ["AUTH_TENANT_ID", "Stable tenant namespace"], ["AUTH_EVENT_RPC_TOKEN", "Independent trusted-consumer event-stream bearer"], ["AUTH_IDENTITY_RPC_TOKEN", "Independent trusted identity-control-plane bearer"], ["JWT_ISSUER", "Expected access-token issuer"], ["JWT_AUDIENCE", "Expected downstream audience"], ["SESSION_IDLE_TTL", "Idle session lifetime"], ["SESSION_ABSOLUTE_TTL", "Maximum session lifetime"]];
 ---
 <DocsLayout title="Configuration" eyebrow="Fail-closed startup" intro="Security-critical settings are validated before RustyAuth accepts traffic.">
   <h2>Core variables</h2><div class="variable-list">{variables.map(([name, purpose]) => <div><code>{name}</code><p>{purpose}</p></div>)}</div>

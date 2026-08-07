@@ -1,0 +1,115 @@
+syntax = "proto3";
+
+package rustyauth.identity.v1;
+
+// IdentityService is a private control-plane API for trusted RustyAuth consumers.
+service IdentityService {
+  rpc GetUser(GetUserRequest) returns (User);
+  rpc SearchUsers(SearchUsersRequest) returns (SearchUsersResponse);
+  rpc UpdateProfile(UpdateProfileRequest) returns (User);
+  rpc AddIdentifier(AddIdentifierRequest) returns (User);
+  rpc RemoveIdentifier(IdentifierMutationRequest) returns (User);
+  rpc SetPrimaryIdentifier(IdentifierMutationRequest) returns (User);
+  rpc SetIdentifierVerification(SetIdentifierVerificationRequest) returns (User);
+  rpc RenamePasskey(RenamePasskeyRequest) returns (User);
+  rpc RevokePasskey(RevokePasskeyRequest) returns (User);
+}
+
+enum IdentifierType {
+  IDENTIFIER_TYPE_UNSPECIFIED = 0;
+  IDENTIFIER_TYPE_EMAIL = 1;
+  IDENTIFIER_TYPE_PHONE = 2;
+}
+
+message Profile {
+  string given_name = 1;
+  string family_name = 2;
+  string display_name = 3;
+}
+
+message IdentifierValue {
+  IdentifierType type = 1;
+  string value = 2;
+}
+
+message Identifier {
+  IdentifierType type = 1;
+  string value = 2;
+  bool verified = 3;
+  string verified_at = 4;
+  bool primary = 5;
+  string created_at = 6;
+}
+
+// Passkey intentionally contains metadata only. Credential/public-key material is never exposed.
+message Passkey {
+  string credential_id = 1;
+  string label = 2;
+  string created_at = 3;
+  string last_used_at = 4;
+}
+
+message User {
+  string id = 1;
+  Profile profile = 2;
+  repeated Identifier identifiers = 3;
+  repeated Passkey passkeys = 4;
+  string created_at = 5;
+}
+
+message GetUserRequest {
+  string user_id = 1;
+}
+
+message SearchUsersRequest {
+  // All populated criteria are combined with AND. At least one is required.
+  string user_id = 1;
+  IdentifierValue identifier = 2;
+  string passkey_credential_id = 3;
+  string passkey_label = 4;
+  string given_name = 5;
+  string family_name = 6;
+  string display_name = 7;
+  uint32 page_size = 8;
+  // Opaque token from a previous response.
+  string page_token = 9;
+}
+
+message SearchUsersResponse {
+  repeated User users = 1;
+  string next_page_token = 2;
+}
+
+message UpdateProfileRequest {
+  string user_id = 1;
+  // This replaces the complete profile. Empty fields clear their values.
+  Profile profile = 2;
+}
+
+message AddIdentifierRequest {
+  string user_id = 1;
+  IdentifierValue identifier = 2;
+  bool verified = 3;
+}
+
+message IdentifierMutationRequest {
+  string user_id = 1;
+  IdentifierValue identifier = 2;
+}
+
+message SetIdentifierVerificationRequest {
+  string user_id = 1;
+  IdentifierValue identifier = 2;
+  bool verified = 3;
+}
+
+message RenamePasskeyRequest {
+  string user_id = 1;
+  string credential_id = 2;
+  string label = 3;
+}
+
+message RevokePasskeyRequest {
+  string user_id = 1;
+  string credential_id = 2;
+}

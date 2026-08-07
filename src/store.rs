@@ -5,6 +5,7 @@
 //! use atomic pipelines and are serialized within the single supported writer.
 
 use std::{
+    collections::BTreeSet,
     sync::Arc,
     time::{SystemTime, UNIX_EPOCH},
 };
@@ -23,8 +24,14 @@ use webauthn_rs::prelude::{
 
 #[derive(Debug, thiserror::Error)]
 pub(crate) enum StorePolicyError {
-    #[error("email already has an account")]
-    EmailAlreadyExists,
+    #[error("identifier already has an account")]
+    IdentifierAlreadyExists,
+    #[error("account has reached the identifier limit")]
+    IdentifierLimit,
+    #[error("identifier is not linked to this user")]
+    IdentifierNotLinked,
+    #[error("the final identifier cannot be removed")]
+    FinalIdentifier,
     #[error("passkey is already registered")]
     CredentialAlreadyExists,
     #[error("user is missing")]
@@ -35,12 +42,112 @@ pub(crate) enum StorePolicyError {
     FinalCredential,
 }
 
+#[derive(Debug, thiserror::Error)]
+pub(crate) enum IdentifierValidationError {
+    #[error("valid email required")]
+    Email,
+    #[error("phone number must use international E.164 format")]
+    Phone,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum IdentifierKind {
+    Email,
+    Phone,
+}
+
+impl IdentifierKind {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Email => "email",
+            Self::Phone => "phone",
+        }
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct IdentifierValue {
+    pub kind: IdentifierKind,
+    pub value: String,
+}
+
+impl IdentifierValue {
+    pub(crate) fn canonical(
+        kind: IdentifierKind,
+        value: &str,
+    ) -> Result<Self, IdentifierValidationError> {
+        let value = match kind {
+            IdentifierKind::Email => canonical_email_value(value)?,
+            IdentifierKind::Phone => canonical_phone_value(value)?,
+        };
+        Ok(Self { kind, value })
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AccountIdentifier {
+    pub kind: IdentifierKind,
+    pub value: String,
+    #[serde(default)]
+    pub verified: bool,
+    #[serde(default)]
+    pub verified_at: Option<u64>,
+    #[serde(default)]
+    pub primary: bool,
+    pub created_at: u64,
+}
+
+#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AccountProfile {
+    #[serde(default)]
+    pub given_name: Option<String>,
+    #[serde(default)]
+    pub family_name: Option<String>,
+    #[serde(default)]
+    pub display_name: Option<String>,
+}
+
+#[derive(Debug, thiserror::Error)]
+#[error(
+    "{field} must contain at most {maximum} characters and no control or formatting characters"
+)]
+pub(crate) struct ProfileValidationError {
+    field: &'static str,
+    maximum: usize,
+}
+
+impl AccountProfile {
+    pub(crate) fn canonical(
+        given_name: Option<String>,
+        family_name: Option<String>,
+        display_name: Option<String>,
+    ) -> Result<Self, ProfileValidationError> {
+        Ok(Self {
+            given_name: canonical_profile_value(given_name, "given name", 100)?,
+            family_name: canonical_profile_value(family_name, "family name", 100)?,
+            display_name: canonical_profile_value(display_name, "display name", 200)?,
+        })
+    }
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct User {
     pub id: Uuid,
+    // Retained on disk for compatibility with pre-identifier users and older
+    // integrations. New code treats `identifiers` as the source of truth.
+    #[serde(default)]
     pub email: String,
+    #[serde(default)]
     pub email_verified: bool,
+    #[serde(default)]
+    pub profile: AccountProfile,
+    #[serde(default)]
+    pub identifiers: Vec<AccountIdentifier>,
     pub session_version: u64,
     pub created_at: u64,
     pub passkeys: Vec<StoredPasskey>,
@@ -68,6 +175,75 @@ pub struct RegistrationCeremony {
     pub label: Option<String>,
     pub expires_at: u64,
     pub state: PasskeyRegistration,
+}
+
+impl User {
+    pub(crate) fn normalize_and_validate(&mut self) -> Result<()> {
+        if self.identifiers.is_empty() && !self.email.is_empty() {
+            self.identifiers.push(AccountIdentifier {
+                kind: IdentifierKind::Email,
+                value: self.email.clone(),
+                verified: self.email_verified,
+                verified_at: None,
+                primary: true,
+                created_at: self.created_at,
+            });
+        }
+        if self.identifiers.is_empty() {
+            bail!("stored user has no account identifiers");
+        }
+        if self.identifiers.len() > MAX_IDENTIFIERS {
+            bail!("stored user exceeds the account identifier limit");
+        }
+
+        let mut seen = BTreeSet::new();
+        let mut primary_count = 0_usize;
+        for identifier in &mut self.identifiers {
+            if identifier.value.is_empty()
+                || identifier.value.len() > 320
+                || identifier.value.chars().any(forbidden_display_character)
+                || !seen.insert(format!("{}:{}", identifier.kind.as_str(), identifier.value))
+            {
+                bail!("stored user has an invalid or duplicate account identifier");
+            }
+            if identifier.verified_at.is_some() && !identifier.verified {
+                bail!("stored user has inconsistent identifier verification state");
+            }
+            if identifier.kind == IdentifierKind::Phone {
+                let canonical = IdentifierValue::canonical(identifier.kind, &identifier.value)
+                    .map_err(|_| anyhow::anyhow!("stored user has an invalid phone identifier"))?;
+                if canonical.value != identifier.value {
+                    bail!("stored user has a non-canonical phone identifier");
+                }
+            }
+            primary_count += usize::from(identifier.primary);
+        }
+        if primary_count != 1 {
+            bail!("stored user must have exactly one primary account identifier");
+        }
+
+        validate_account_profile(&self.profile)?;
+        self.sync_legacy_email();
+        Ok(())
+    }
+
+    fn sync_legacy_email(&mut self) {
+        let email = self
+            .identifiers
+            .iter()
+            .filter(|identifier| identifier.kind == IdentifierKind::Email)
+            .min_by_key(|identifier| (!identifier.primary, identifier.created_at));
+        match email {
+            Some(identifier) => {
+                self.email = identifier.value.clone();
+                self.email_verified = identifier.verified;
+            }
+            None => {
+                self.email.clear();
+                self.email_verified = false;
+            }
+        }
+    }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -117,6 +293,64 @@ pub enum EventLogIntegrityError {
     UnexpectedSequence { expected: u64, actual: u64 },
 }
 
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct UserSearch {
+    pub user_id: Option<Uuid>,
+    pub identifier: Option<IdentifierValue>,
+    pub passkey_credential_id: Option<String>,
+    pub passkey_label: Option<String>,
+    pub given_name: Option<String>,
+    pub family_name: Option<String>,
+    pub display_name: Option<String>,
+}
+
+#[derive(Clone, Debug)]
+pub struct UserSearchPage {
+    pub users: Vec<User>,
+    pub next_after: Option<Uuid>,
+}
+
+impl UserSearch {
+    pub fn is_empty(&self) -> bool {
+        self.user_id.is_none()
+            && self.identifier.is_none()
+            && self.passkey_credential_id.is_none()
+            && self.passkey_label.is_none()
+            && self.given_name.is_none()
+            && self.family_name.is_none()
+            && self.display_name.is_none()
+    }
+
+    fn matches(&self, user: &User) -> bool {
+        self.user_id.is_none_or(|value| user.id == value)
+            && self.identifier.as_ref().is_none_or(|value| {
+                user.identifiers
+                    .iter()
+                    .any(|stored| stored.kind == value.kind && stored.value == value.value)
+            })
+            && self
+                .passkey_credential_id
+                .as_ref()
+                .is_none_or(|value| user.passkeys.iter().any(|stored| stored.id == *value))
+            && self
+                .passkey_label
+                .as_ref()
+                .is_none_or(|value| user.passkeys.iter().any(|stored| stored.label == *value))
+            && self
+                .given_name
+                .as_ref()
+                .is_none_or(|value| user.profile.given_name.as_ref() == Some(value))
+            && self
+                .family_name
+                .as_ref()
+                .is_none_or(|value| user.profile.family_name.as_ref() == Some(value))
+            && self
+                .display_name
+                .as_ref()
+                .is_none_or(|value| user.profile.display_name.as_ref() == Some(value))
+    }
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LocalAgentHandoff {
@@ -124,6 +358,9 @@ pub struct LocalAgentHandoff {
     pub redirect_url: String,
     pub expires_at: u64,
 }
+
+const MAX_IDENTIFIERS: usize = 20;
+const MAX_USER_SCAN: usize = 1_000_000;
 
 #[derive(Clone)]
 pub struct Store {
@@ -146,7 +383,21 @@ impl Store {
     }
 
     pub async fn user_by_email(&self, email: &str) -> Result<Option<User>> {
-        let Some(id) = self.get::<String>(&format!("auth:email:{email}")).await? else {
+        self.user_by_identifier(&IdentifierValue {
+            kind: IdentifierKind::Email,
+            value: email.to_owned(),
+        })
+        .await
+    }
+
+    pub async fn user_by_identifier(&self, identifier: &IdentifierValue) -> Result<Option<User>> {
+        let mut id = self.get::<String>(&identifier_key(identifier)).await?;
+        if id.is_none() && identifier.kind == IdentifierKind::Email {
+            id = self
+                .get::<String>(&format!("auth:email:{}", identifier.value))
+                .await?;
+        }
+        let Some(id) = id else {
             return Ok(None);
         };
         self.user(Uuid::parse_str(&id).context("stored user id is invalid")?)
@@ -154,7 +405,81 @@ impl Store {
     }
 
     pub async fn user(&self, id: Uuid) -> Result<Option<User>> {
-        self.get_json(&format!("auth:user:{id}")).await
+        let Some(mut user) = self.get_json::<User>(&format!("auth:user:{id}")).await? else {
+            return Ok(None);
+        };
+        user.normalize_and_validate()?;
+        Ok(Some(user))
+    }
+
+    pub async fn user_by_credential_id(&self, credential_id: &str) -> Result<Option<User>> {
+        let Some(id) = self
+            .get::<String>(&format!("auth:credential:{credential_id}"))
+            .await?
+        else {
+            return Ok(None);
+        };
+        self.user(Uuid::parse_str(&id).context("stored credential user id is invalid")?)
+            .await
+    }
+
+    pub async fn search_users(
+        &self,
+        search: &UserSearch,
+        after: Option<Uuid>,
+        page_size: usize,
+    ) -> Result<UserSearchPage> {
+        if search.is_empty() {
+            bail!("at least one user search criterion is required");
+        }
+        if page_size == 0 || page_size > 100 {
+            bail!("user search page size must be between 1 and 100");
+        }
+
+        let direct_lookup = search.user_id.is_some()
+            || search.identifier.is_some()
+            || search.passkey_credential_id.is_some();
+        let direct = if let Some(user_id) = search.user_id {
+            self.user(user_id).await?
+        } else if let Some(identifier) = &search.identifier {
+            self.user_by_identifier(identifier).await?
+        } else if let Some(credential_id) = &search.passkey_credential_id {
+            self.user_by_credential_id(credential_id).await?
+        } else {
+            None
+        };
+
+        if direct_lookup {
+            let users = direct
+                .filter(|user| after.is_none_or(|cursor| user.id > cursor))
+                .filter(|user| search.matches(user))
+                .into_iter()
+                .collect();
+            return Ok(UserSearchPage {
+                users,
+                next_after: None,
+            });
+        }
+
+        let mut users = Vec::with_capacity(page_size.saturating_add(1));
+        for id in self.user_ids().await? {
+            if after.is_some_and(|cursor| id <= cursor) {
+                continue;
+            }
+            let user = self
+                .user(id)
+                .await?
+                .context("user disappeared during identity search")?;
+            if search.matches(&user) {
+                users.push(user);
+                if users.len() > page_size {
+                    break;
+                }
+            }
+        }
+        let next_after = (users.len() > page_size).then(|| users[page_size - 1].id);
+        users.truncate(page_size);
+        Ok(UserSearchPage { users, next_after })
     }
 
     pub async fn save_registration(&self, ceremony: &RegistrationCeremony) -> Result<()> {
@@ -204,9 +529,10 @@ impl Store {
         passkey: Passkey,
         email_verified: bool,
     ) -> Result<User> {
+        let identifier = IdentifierValue::canonical(IdentifierKind::Email, &email)?;
         let _guard = self.mutation.lock().await;
-        if self.user_by_email(&email).await?.is_some() {
-            return Err(StorePolicyError::EmailAlreadyExists.into());
+        if self.user_by_identifier(&identifier).await?.is_some() {
+            return Err(StorePolicyError::IdentifierAlreadyExists.into());
         }
         let id = credential_id(&passkey);
         if self
@@ -217,27 +543,41 @@ impl Store {
             return Err(StorePolicyError::CredentialAlreadyExists.into());
         }
         let credential: webauthn_rs::prelude::Credential = passkey.clone().into();
+        let created_at = now();
         let user = User {
             id: user_id,
-            email: email.clone(),
+            email: identifier.value.clone(),
             email_verified,
+            profile: AccountProfile::default(),
+            identifiers: vec![AccountIdentifier {
+                kind: IdentifierKind::Email,
+                value: identifier.value.clone(),
+                verified: email_verified,
+                verified_at: email_verified.then_some(created_at),
+                primary: true,
+                created_at,
+            }],
             session_version: 1,
-            created_at: now(),
+            created_at,
             passkeys: vec![StoredPasskey {
                 id: id.clone(),
                 label: "Primary passkey".into(),
                 counter: credential.counter,
-                created_at: now(),
+                created_at,
                 last_used_at: None,
                 passkey,
             }],
         };
-        let mut event_inputs = vec![("identity.created", Some(user_id), json!({ "email": email }))];
+        let mut event_inputs = vec![(
+            "identity.created",
+            Some(user_id),
+            json!({ "email": identifier.value }),
+        )];
         if !email_verified {
             event_inputs.push((
                 "email.verification.requested",
                 Some(user_id),
-                json!({ "email": email }),
+                json!({ "email": identifier.value }),
             ));
         }
         let events = self.next_events(event_inputs).await?;
@@ -249,13 +589,208 @@ impl Store {
                 format!("auth:user:{user_id}"),
                 serde_json::to_string(&user)?,
             )
-            .set(format!("auth:email:{email}"), user_id.to_string())
+            .set(identifier_key(&identifier), user_id.to_string())
+            .set(
+                format!("auth:email:{}", identifier.value),
+                user_id.to_string(),
+            )
             .set(format!("auth:credential:{id}"), user_id.to_string());
         queue_events(&mut pipeline, &events)?;
         let _: () = pipeline
             .query_async(&mut connection)
             .await
-            .context("persist user, passkey, and events")?;
+            .context("persist user, passkey, and identity events")?;
+        Ok(user)
+    }
+
+    pub async fn add_identifier(
+        &self,
+        user_id: Uuid,
+        identifier: IdentifierValue,
+        verified: bool,
+    ) -> Result<User> {
+        require_canonical_identifier(&identifier)?;
+        let _guard = self.mutation.lock().await;
+        if self.user_by_identifier(&identifier).await?.is_some() {
+            return Err(StorePolicyError::IdentifierAlreadyExists.into());
+        }
+        let mut user = self
+            .user(user_id)
+            .await?
+            .ok_or(StorePolicyError::UserMissing)?;
+        if user.identifiers.len() >= MAX_IDENTIFIERS {
+            return Err(StorePolicyError::IdentifierLimit.into());
+        }
+        user.identifiers.push(AccountIdentifier {
+            kind: identifier.kind,
+            value: identifier.value.clone(),
+            verified,
+            verified_at: verified.then_some(now()),
+            primary: false,
+            created_at: now(),
+        });
+        user.sync_legacy_email();
+
+        let mut event_inputs = vec![("identifier.added".to_owned(), Some(user_id))];
+        if !verified {
+            event_inputs.push((
+                format!("{}.verification.requested", identifier.kind.as_str()),
+                Some(user_id),
+            ));
+        }
+        let events = self.pending_events(event_inputs).await?;
+
+        let mut pipeline = redis::pipe();
+        pipeline
+            .atomic()
+            .set(
+                format!("auth:user:{user_id}"),
+                serde_json::to_string(&user)?,
+            )
+            .set(identifier_key(&identifier), user_id.to_string());
+        if identifier.kind == IdentifierKind::Email {
+            pipeline.set(
+                format!("auth:email:{}", identifier.value),
+                user_id.to_string(),
+            );
+        }
+        queue_events(&mut pipeline, &events)?;
+        let mut connection = self.redis.clone();
+        let _: () = pipeline
+            .query_async(&mut connection)
+            .await
+            .context("persist account identifier and events")?;
+        Ok(user)
+    }
+
+    pub async fn remove_identifier(
+        &self,
+        user_id: Uuid,
+        identifier: &IdentifierValue,
+    ) -> Result<User> {
+        require_canonical_identifier(identifier)?;
+        let _guard = self.mutation.lock().await;
+        let mut user = self
+            .user(user_id)
+            .await?
+            .ok_or(StorePolicyError::UserMissing)?;
+        if user.identifiers.len() <= 1 {
+            return Err(StorePolicyError::FinalIdentifier.into());
+        }
+        let position = user
+            .identifiers
+            .iter()
+            .position(|stored| stored.kind == identifier.kind && stored.value == identifier.value)
+            .ok_or(StorePolicyError::IdentifierNotLinked)?;
+        let removed_primary = user.identifiers[position].primary;
+        user.identifiers.remove(position);
+        if removed_primary {
+            user.identifiers[0].primary = true;
+        }
+        user.sync_legacy_email();
+
+        let events = self
+            .pending_events(vec![("identifier.removed".to_owned(), Some(user_id))])
+            .await?;
+
+        let mut pipeline = redis::pipe();
+        pipeline
+            .atomic()
+            .set(
+                format!("auth:user:{user_id}"),
+                serde_json::to_string(&user)?,
+            )
+            .del(identifier_key(identifier));
+        if identifier.kind == IdentifierKind::Email {
+            pipeline.del(format!("auth:email:{}", identifier.value));
+        }
+        queue_events(&mut pipeline, &events)?;
+        let mut connection = self.redis.clone();
+        let _: () = pipeline
+            .query_async(&mut connection)
+            .await
+            .context("remove account identifier and persist event")?;
+        Ok(user)
+    }
+
+    pub async fn set_primary_identifier(
+        &self,
+        user_id: Uuid,
+        identifier: &IdentifierValue,
+    ) -> Result<User> {
+        require_canonical_identifier(identifier)?;
+        let _guard = self.mutation.lock().await;
+        let mut user = self
+            .user(user_id)
+            .await?
+            .ok_or(StorePolicyError::UserMissing)?;
+        if !user
+            .identifiers
+            .iter()
+            .any(|stored| stored.kind == identifier.kind && stored.value == identifier.value)
+        {
+            return Err(StorePolicyError::IdentifierNotLinked.into());
+        }
+        for stored in &mut user.identifiers {
+            stored.primary = stored.kind == identifier.kind && stored.value == identifier.value;
+        }
+        user.sync_legacy_email();
+        self.persist_user_with_event(
+            &user,
+            "identifier.primary_changed",
+            "persist primary account identifier and event",
+        )
+        .await?;
+        Ok(user)
+    }
+
+    pub async fn set_identifier_verification(
+        &self,
+        user_id: Uuid,
+        identifier: &IdentifierValue,
+        verified: bool,
+    ) -> Result<User> {
+        require_canonical_identifier(identifier)?;
+        let _guard = self.mutation.lock().await;
+        let mut user = self
+            .user(user_id)
+            .await?
+            .ok_or(StorePolicyError::UserMissing)?;
+        let stored = user
+            .identifiers
+            .iter_mut()
+            .find(|stored| stored.kind == identifier.kind && stored.value == identifier.value)
+            .ok_or(StorePolicyError::IdentifierNotLinked)?;
+        stored.verified = verified;
+        stored.verified_at = verified.then_some(now());
+        user.sync_legacy_email();
+        self.persist_user_with_event(
+            &user,
+            if verified {
+                "identifier.verified"
+            } else {
+                "identifier.unverified"
+            },
+            "persist account identifier verification and event",
+        )
+        .await?;
+        Ok(user)
+    }
+
+    pub async fn update_profile(&self, user_id: Uuid, profile: AccountProfile) -> Result<User> {
+        validate_account_profile(&profile)?;
+        let _guard = self.mutation.lock().await;
+        let mut user = self
+            .user(user_id)
+            .await?
+            .ok_or(StorePolicyError::UserMissing)?;
+        user.profile = profile;
+        self.persist_user_with_event(
+            &user,
+            "profile.updated",
+            "persist account profile and event",
+        )
+        .await?;
         Ok(user)
     }
 
@@ -646,6 +1181,45 @@ impl Store {
             .collect()
     }
 
+    async fn pending_events(&self, inputs: Vec<(String, Option<Uuid>)>) -> Result<Vec<AuthEvent>> {
+        let inputs = inputs
+            .iter()
+            .map(|(event_type, subject)| (event_type.as_str(), *subject, json!({})))
+            .collect();
+        self.next_events(inputs).await
+    }
+
+    async fn user_ids(&self) -> Result<Vec<Uuid>> {
+        let mut cursor = 0_u64;
+        let mut ids = BTreeSet::new();
+        loop {
+            let mut connection = self.redis.clone();
+            let (next, batch): (u64, Vec<String>) = redis::cmd("SCAN")
+                .arg(cursor)
+                .arg("MATCH")
+                .arg("auth:user:*")
+                .arg("COUNT")
+                .arg(500_u16)
+                .query_async(&mut connection)
+                .await
+                .context("scan RustyAuth users")?;
+            for key in batch {
+                let id = key
+                    .strip_prefix("auth:user:")
+                    .context("user scan returned an invalid key")?;
+                ids.insert(Uuid::parse_str(id).context("stored user key has an invalid id")?);
+            }
+            if ids.len() > MAX_USER_SCAN {
+                bail!("RustyAuth user namespace exceeds the one-million-user safety limit");
+            }
+            cursor = next;
+            if cursor == 0 {
+                break;
+            }
+        }
+        Ok(ids.into_iter().collect())
+    }
+
     async fn get<T: redis::FromRedisValue>(&self, key: &str) -> Result<Option<T>> {
         let mut connection = self.redis.clone();
         connection.get(key).await.context("read SableDB value")
@@ -677,6 +1251,29 @@ impl Store {
         Ok(())
     }
 
+    async fn persist_user_with_event(
+        &self,
+        user: &User,
+        event_type: &str,
+        context: &'static str,
+    ) -> Result<()> {
+        let events = self
+            .pending_events(vec![(event_type.to_owned(), Some(user.id))])
+            .await?;
+        let mut pipeline = redis::pipe();
+        pipeline.atomic().set(
+            format!("auth:user:{}", user.id),
+            serde_json::to_string(user)?,
+        );
+        queue_events(&mut pipeline, &events)?;
+        let mut connection = self.redis.clone();
+        let _: () = pipeline
+            .query_async(&mut connection)
+            .await
+            .context(context)?;
+        Ok(())
+    }
+
     async fn set_json_ex<T: Serialize>(&self, key: &str, value: &T, seconds: u64) -> Result<()> {
         let mut connection = self.redis.clone();
         let _: () = connection
@@ -697,6 +1294,143 @@ pub fn now() -> u64 {
         .duration_since(UNIX_EPOCH)
         .expect("system clock is before Unix epoch")
         .as_secs()
+}
+
+fn canonical_email_value(value: &str) -> Result<String, IdentifierValidationError> {
+    let email = value.trim().to_ascii_lowercase();
+    if email.is_empty() || email.len() > 320 || !email.is_ascii() {
+        return Err(IdentifierValidationError::Email);
+    }
+    let Some((local, domain)) = email.split_once('@') else {
+        return Err(IdentifierValidationError::Email);
+    };
+    if local.is_empty()
+        || local.len() > 64
+        || domain.is_empty()
+        || domain.len() > 253
+        || domain.contains('@')
+        || local.starts_with('.')
+        || local.ends_with('.')
+        || local.contains("..")
+        || !local.bytes().all(|byte| {
+            byte.is_ascii_alphanumeric()
+                || matches!(
+                    byte,
+                    b'!' | b'#'
+                        | b'$'
+                        | b'%'
+                        | b'&'
+                        | b'\''
+                        | b'*'
+                        | b'+'
+                        | b'-'
+                        | b'.'
+                        | b'/'
+                        | b'='
+                        | b'?'
+                        | b'^'
+                        | b'_'
+                        | b'`'
+                        | b'{'
+                        | b'|'
+                        | b'}'
+                        | b'~'
+                )
+        })
+        || domain.split('.').any(|label| {
+            label.is_empty()
+                || label.len() > 63
+                || !label
+                    .bytes()
+                    .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-')
+                || !label
+                    .as_bytes()
+                    .first()
+                    .is_some_and(u8::is_ascii_alphanumeric)
+                || !label
+                    .as_bytes()
+                    .last()
+                    .is_some_and(u8::is_ascii_alphanumeric)
+        })
+    {
+        return Err(IdentifierValidationError::Email);
+    }
+    Ok(email)
+}
+
+fn canonical_phone_value(value: &str) -> Result<String, IdentifierValidationError> {
+    let value = value.trim();
+    if value.len() > 64 || !value.starts_with('+') {
+        return Err(IdentifierValidationError::Phone);
+    }
+    let mut digits = String::with_capacity(value.len());
+    for character in value[1..].chars() {
+        if character.is_ascii_digit() {
+            digits.push(character);
+        } else if !(character.is_ascii_whitespace() || matches!(character, '-' | '(' | ')' | '.')) {
+            return Err(IdentifierValidationError::Phone);
+        }
+    }
+    if !(8..=15).contains(&digits.len()) || digits.starts_with('0') {
+        return Err(IdentifierValidationError::Phone);
+    }
+    Ok(format!("+{digits}"))
+}
+
+fn canonical_profile_value(
+    value: Option<String>,
+    field: &'static str,
+    maximum: usize,
+) -> Result<Option<String>, ProfileValidationError> {
+    let Some(value) = value else {
+        return Ok(None);
+    };
+    let value = value.trim();
+    if value.is_empty() {
+        return Ok(None);
+    }
+    if value.chars().count() > maximum || value.chars().any(forbidden_display_character) {
+        return Err(ProfileValidationError { field, maximum });
+    }
+    Ok(Some(value.to_owned()))
+}
+
+fn validate_profile_value(value: Option<&str>, maximum: usize) -> Result<()> {
+    if value.is_some_and(|value| {
+        value.is_empty()
+            || value.trim() != value
+            || value.chars().count() > maximum
+            || value.chars().any(forbidden_display_character)
+    }) {
+        bail!("stored user has invalid profile data");
+    }
+    Ok(())
+}
+
+fn validate_account_profile(profile: &AccountProfile) -> Result<()> {
+    validate_profile_value(profile.given_name.as_deref(), 100)?;
+    validate_profile_value(profile.family_name.as_deref(), 100)?;
+    validate_profile_value(profile.display_name.as_deref(), 200)
+}
+
+pub(crate) fn forbidden_display_character(character: char) -> bool {
+    character.is_control()
+        || matches!(
+            character,
+            '\u{200B}'
+                | '\u{202A}'..='\u{202E}'
+                | '\u{2060}'
+                | '\u{2066}'..='\u{2069}'
+                | '\u{FEFF}'
+        )
+}
+
+fn require_canonical_identifier(identifier: &IdentifierValue) -> Result<()> {
+    let canonical = IdentifierValue::canonical(identifier.kind, &identifier.value)?;
+    if canonical != *identifier {
+        bail!("account identifier is not canonical");
+    }
+    Ok(())
 }
 
 fn credential_id(passkey: &Passkey) -> String {
@@ -720,10 +1454,116 @@ fn queue_events(pipeline: &mut redis::Pipeline, events: &[AuthEvent]) -> Result<
     Ok(())
 }
 
+fn identifier_key(identifier: &IdentifierValue) -> String {
+    format!(
+        "auth:identifier:{}:{}",
+        identifier.kind.as_str(),
+        identifier.value
+    )
+}
+
 fn session_key(token: &str) -> String {
     format!("auth:session:{:x}", Sha256::digest(token.as_bytes()))
 }
 
 fn handoff_key(code: &str) -> String {
     format!("auth:agent-handoff:{:x}", Sha256::digest(code.as_bytes()))
+}
+
+#[cfg(test)]
+mod identity_tests {
+    use super::*;
+
+    fn account(identifier: AccountIdentifier) -> User {
+        User {
+            id: Uuid::new_v4(),
+            email: String::new(),
+            email_verified: false,
+            profile: AccountProfile::default(),
+            identifiers: vec![identifier],
+            session_version: 1,
+            created_at: 100,
+            passkeys: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn legacy_email_users_are_hydrated_without_changing_their_account_id() {
+        let id = Uuid::new_v4();
+        let mut user = User {
+            id,
+            email: "person@example.com".into(),
+            email_verified: true,
+            profile: AccountProfile::default(),
+            identifiers: Vec::new(),
+            session_version: 1,
+            created_at: 100,
+            passkeys: Vec::new(),
+        };
+        user.normalize_and_validate().unwrap();
+        assert_eq!(user.id, id);
+        assert_eq!(user.identifiers.len(), 1);
+        assert_eq!(user.identifiers[0].kind, IdentifierKind::Email);
+        assert!(user.identifiers[0].primary);
+        assert!(user.identifiers[0].verified);
+    }
+
+    #[test]
+    fn email_phone_and_profile_values_are_canonicalized() {
+        assert_eq!(
+            IdentifierValue::canonical(IdentifierKind::Email, " Person@Example.COM ")
+                .unwrap()
+                .value,
+            "person@example.com"
+        );
+        assert_eq!(
+            IdentifierValue::canonical(IdentifierKind::Phone, "+44 (7700) 900-123")
+                .unwrap()
+                .value,
+            "+447700900123"
+        );
+        assert_eq!(
+            AccountProfile::canonical(
+                Some(" Ada ".into()),
+                Some(" Lovelace ".into()),
+                Some(" Countess ".into()),
+            )
+            .unwrap()
+            .display_name
+            .as_deref(),
+            Some("Countess")
+        );
+    }
+
+    #[test]
+    fn corrupt_identifier_and_profile_state_fails_closed() {
+        let mut identifier = AccountIdentifier {
+            kind: IdentifierKind::Phone,
+            value: "+447700900123".into(),
+            verified: false,
+            verified_at: Some(100),
+            primary: true,
+            created_at: 100,
+        };
+        assert!(
+            account(identifier.clone())
+                .normalize_and_validate()
+                .is_err()
+        );
+
+        identifier.verified_at = None;
+        identifier.value = "+44 7700 900123".into();
+        assert!(account(identifier).normalize_and_validate().is_err());
+
+        let mut user = account(AccountIdentifier {
+            kind: IdentifierKind::Email,
+            value: "person@example.com".into(),
+            verified: true,
+            verified_at: Some(100),
+            primary: true,
+            created_at: 100,
+        });
+        user.profile.display_name = Some("safe\u{2066}spoof\u{2069}".into());
+        assert!(user.normalize_and_validate().is_err());
+    }
 }

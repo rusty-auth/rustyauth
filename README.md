@@ -40,12 +40,15 @@ permissions, entitlements and resource ownership.
 - persistent users, passkeys and sessions in SableDB using its Valkey-compatible protocol;
 - HttpOnly, SameSite=Strict sessions with idle and absolute expiry;
 - multiple passkeys per account, labels, last-used timestamps and final-credential protection;
+- canonical email/phone identifiers and optional given, family and display names per account;
 - recent-authentication enforcement before credential removal;
 - passkey sign-counter regression detection;
 - ES256 JWT issuance with issuer, audience, tenant, subject, session and authentication-method
   claims;
 - OpenID-style discovery and a public JWKS endpoint;
 - ordered authentication-event delivery over HTTP polling, Connect, gRPC-Web and native gRPC;
+- private Connect/gRPC identity reads, exact search and controlled profile, identifier and passkey
+  metadata mutations;
 - exact-origin CORS and request-origin enforcement;
 - liveness, dependency readiness, request IDs and structured JSON logging;
 - development-only, one-use agent browser handoffs for an existing account; and
@@ -62,6 +65,7 @@ flowchart LR
     Auth -->|"short-lived ES256 JWT"| API["Application API / SpacetimeDB"]
     API -->|"JWKS verification"| Auth
     Auth -->|"authenticated event stream"| Events["Trusted event consumer"]
+    Control["Trusted identity control plane"] -->|"authenticated Connect / gRPC"| Auth
     Auth -.->|"AES-256-GCM envelope\nnot yet scheduled"| Bucket["S3-compatible bucket"]
 ```
 
@@ -154,6 +158,7 @@ are stored only as SHA-256-derived SableDB keys; the raw bearer value lives in t
 | `POST /v1/credentials/revoke` | Recent session + origin | Remove a non-final passkey |
 | `GET /v1/events?after=N` | Bootstrap | Poll up to 500 ordered events |
 | `POST /rustyauth.events.v1.AuthEventService/Subscribe` | Event RPC bearer | Replay and follow ordered events |
+| `/rustyauth.identity.v1.IdentityService/*` | Identity RPC bearer | Read, exact-search and update safe identity metadata |
 | `POST /v1/email-links` | Origin | Record a sign-in request; delivery is not implemented |
 
 The complete request/response contract and error behavior are documented in the [API reference](docs/API.md).

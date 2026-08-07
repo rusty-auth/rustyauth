@@ -12,7 +12,8 @@ Deno.test("renders the RustyAuth landing page", async () => {
   assertMatch(html, /railway\.com\/new\/template\/rustyauth/);
   assertMatch(html, /Why Rust/);
   assertMatch(html, /Protobuf \+ gRPC event stream/);
-  assertMatch(html, /Connect, gRPC-Web and native gRPC streaming/);
+  assertMatch(html, /Connect, gRPC-Web and native gRPC/);
+  assertMatch(html, /Private identity gRPC control plane/);
   assertNotMatch(html, /codex-preview|Your site is taking shape/);
 });
 
@@ -21,6 +22,13 @@ Deno.test("documents the event streaming wire", async () => {
   assertMatch(html, /rustyauth\.events\.v1\.AuthEventService\/Subscribe/);
   assertMatch(html, /AUTH_EVENT_RPC_TOKEN/);
   assertMatch(html, /at least once/i);
+});
+
+Deno.test("documents the private identity wire", async () => {
+  const html = await Deno.readTextFile(outputFor("/docs/api"));
+  assertMatch(html, /rustyauth\.identity\.v1\.IdentityService/);
+  assertMatch(html, /AUTH_IDENTITY_RPC_TOKEN/);
+  assertMatch(html, /never contain WebAuthn credential/);
 });
 
 Deno.test("renders every documentation route", async () => {

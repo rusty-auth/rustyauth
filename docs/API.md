@@ -17,8 +17,12 @@ The endpoint tables use these terms:
 - **Bootstrap** — `x-bootstrap-token` exactly matches `BOOTSTRAP_TOKEN`.
 - **Session** — a valid `passkey_auth_session` HttpOnly cookie plus the exact origin.
 - **Recent session** — the valid session was created no more than five minutes ago.
+- **Event RPC** — `Authorization: Bearer <AUTH_EVENT_RPC_TOKEN>` on the event service.
+- **Identity RPC** — `Authorization: Bearer <AUTH_IDENTITY_RPC_TOKEN>` on the identity service.
 
-The bootstrap token is an administrative secret, not an end-user browser credential.
+The bootstrap and RPC tokens are administrative service secrets, not end-user browser credentials.
+Each RPC token is scoped to one service, compared in constant time and rejected if it reuses another
+administrative token.
 
 ## Health and discovery
 
@@ -44,6 +48,7 @@ Returns runtime capability metadata:
   "issuer": "https://auth.example.com",
   "passkeys": true,
   "event_protocols": ["http-poll", "connect", "grpc-web", "grpc"],
+  "identity_protocols": ["connect", "grpc-web", "grpc"],
   "backup_sink_configured": false,
   "scheduled_backups": false
 }
@@ -339,6 +344,40 @@ Invalid cursors or filters return `INVALID_ARGUMENT`; missing or invalid credent
 `UNAUTHENTICATED`; exhausted stream capacity returns `RESOURCE_EXHAUSTED`; a non-contiguous or
 malformed event log returns `DATA_LOSS`; and a storage failure returns `UNAVAILABLE`. One process
 accepts at most 32 concurrent subscriptions.
+
+## Private identity RPC
+
+### `rustyauth.identity.v1.IdentityService`
+
+Access: `Authorization: Bearer <AUTH_IDENTITY_RPC_TOKEN>`.
+
+RustyAuth serves the following unary methods over Connect, gRPC-Web and native gRPC on the same
+listener as HTTP:
+
+| RPC | Purpose |
+| --- | --- |
+| `GetUser` | Read one user by stable UUID |
+| `SearchUsers` | Find users by exact UUID, canonical email/phone, passkey credential ID or label, and profile names |
+| `UpdateProfile` | Replace given, family and display names; empty values clear fields |
+| `AddIdentifier` | Add a canonical email or E.164 phone with an explicit trusted verification state |
+| `RemoveIdentifier` | Remove a non-final linked identifier |
+| `SetPrimaryIdentifier` | Select the account's primary identifier |
+| `SetIdentifierVerification` | Set or clear trusted verification state and timestamp |
+| `RenamePasskey` | Change passkey display metadata |
+| `RevokePasskey` | Remove a non-final passkey |
+
+`SearchUsers` combines populated criteria with AND and rejects an empty search. Results are ordered
+by user UUID and use opaque page tokens; the default page size is 25 and the maximum is 100. Email
+and phone values are canonicalized before exact lookup. Name and passkey-label filters are also
+exact, privileged administrative filters rather than public directory search.
+
+Responses contain profile values, identifier verification metadata and passkey credential ID,
+label, creation and last-used timestamps. They never contain stored WebAuthn credentials/public
+keys, authenticator counters, assertions, sessions, JWTs or bearer tokens. Passkey cryptographic
+material can only be registered through a WebAuthn ceremony, not written through this service.
+
+The canonical schema is
+[`proto/rustyauth/identity/v1/identity.proto`](../proto/rustyauth/identity/v1/identity.proto).
 
 ## Development-only agent handoff
 

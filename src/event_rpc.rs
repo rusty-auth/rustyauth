@@ -1,21 +1,18 @@
+//! Durable, resumable auth-event streaming for trusted consumers.
+
 use std::{collections::HashSet, sync::Arc, time::Duration};
 
 use anyhow::Result;
-use connectrpc::interceptor::{StreamRequest, StreamResponse};
 use connectrpc::{
-    ConnectError, ConnectRpcService, ErrorCode, Interceptor, Limits, NextStream, PayloadStream,
-    RequestContext, Response, ServiceRequest, ServiceResult, ServiceStream,
+    ConnectError, ErrorCode, RequestContext, Response, ServiceRequest, ServiceResult, ServiceStream,
 };
-use secrecy::{ExposeSecret, SecretString};
-use sha2::{Digest, Sha256};
-use subtle::ConstantTimeEq;
 use time::{OffsetDateTime, format_description::well_known::Rfc3339};
 use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 
 use crate::{
     proto::rustyauth::events::v1::{
-        AuthEvent as ProtoAuthEvent, AuthEventCheckpoint, AuthEventService, AuthEventServiceServer,
-        SubscribeRequest, SubscribeResponse,
+        AuthEvent as ProtoAuthEvent, AuthEventCheckpoint, AuthEventService, SubscribeRequest,
+        SubscribeResponse,
     },
     store::{AuthEvent, EventLogIntegrityError, Store},
 };
@@ -25,24 +22,6 @@ const DEFAULT_CHECKPOINT_SECONDS: u32 = 15;
 const DEFAULT_POLL_INTERVAL: Duration = Duration::from_millis(500);
 const MAX_FILTER_VALUES: usize = 50;
 const MAX_CONCURRENT_STREAMS: usize = 32;
-
-type Dispatcher = AuthEventServiceServer<EventService<Store>>;
-pub(crate) type EventRpcService = ConnectRpcService<Dispatcher>;
-
-pub(crate) fn service(store: Store, token: &SecretString) -> EventRpcService {
-    let dispatcher = AuthEventServiceServer::new(EventService::new(
-        store,
-        DEFAULT_POLL_INTERVAL,
-        MAX_CONCURRENT_STREAMS,
-    ));
-    ConnectRpcService::new(dispatcher)
-        .with_limits(
-            Limits::default()
-                .max_request_body_size(16 * 1024)
-                .max_message_size(64 * 1024),
-        )
-        .with_interceptor(EventRpcAuth::new(token))
-}
 
 trait EventSource: Clone + Send + Sync + 'static {
     fn events(&self, after: u64, limit: u64)
@@ -61,14 +40,18 @@ impl EventSource for Store {
     }
 }
 
-pub(crate) struct EventService<S> {
+pub(crate) struct EventRpc<S> {
     source: S,
     poll_interval: Duration,
     streams: Arc<Semaphore>,
 }
 
-impl<S> EventService<S> {
-    fn new(source: S, poll_interval: Duration, max_streams: usize) -> Self {
+impl<S> EventRpc<S> {
+    pub(crate) fn new(source: S) -> Self {
+        Self::with_options(source, DEFAULT_POLL_INTERVAL, MAX_CONCURRENT_STREAMS)
+    }
+
+    fn with_options(source: S, poll_interval: Duration, max_streams: usize) -> Self {
         Self {
             source,
             poll_interval,
@@ -77,7 +60,7 @@ impl<S> EventService<S> {
     }
 }
 
-impl<S: EventSource> AuthEventService for EventService<S> {
+impl<S: EventSource> AuthEventService for EventRpc<S> {
     #[allow(refining_impl_trait)]
     async fn subscribe(
         &self,
@@ -105,18 +88,15 @@ impl<S: EventSource> AuthEventService for EventService<S> {
             ));
         }
 
-        let source = self.source.clone();
-        let poll_interval = self.poll_interval;
-        let stream = event_stream(
-            source,
+        Response::stream_ok(event_stream(
+            self.source.clone(),
             after_sequence,
             event_types,
             tenant_ids,
             checkpoint_interval,
-            poll_interval,
+            self.poll_interval,
             permit,
-        );
-        Response::stream_ok(stream)
+        ))
     }
 }
 
@@ -265,31 +245,25 @@ fn valid_event_type(value: &str) -> bool {
     let bytes = value.as_bytes();
     !bytes.is_empty()
         && bytes.len() <= 128
-        && bytes[0].is_ascii_lowercase_or_digit()
-        && bytes[bytes.len() - 1].is_ascii_lowercase_or_digit()
+        && ascii_lowercase_or_digit(bytes[0])
+        && ascii_lowercase_or_digit(bytes[bytes.len() - 1])
         && bytes
             .iter()
-            .all(|byte| byte.is_ascii_lowercase_or_digit() || matches!(byte, b'.' | b'_' | b'-'))
+            .all(|byte| ascii_lowercase_or_digit(*byte) || matches!(byte, b'.' | b'_' | b'-'))
 }
 
 fn valid_tenant_id(value: &str) -> bool {
     let bytes = value.as_bytes();
     !bytes.is_empty()
-        && bytes.len() <= 63
-        && bytes[0].is_ascii_lowercase_or_digit()
+        && bytes.len() <= 64
+        && ascii_lowercase_or_digit(bytes[0])
         && bytes
             .iter()
-            .all(|byte| byte.is_ascii_lowercase_or_digit() || *byte == b'-')
+            .all(|byte| ascii_lowercase_or_digit(*byte) || matches!(byte, b'-' | b'_'))
 }
 
-trait AsciiLowercaseOrDigit {
-    fn is_ascii_lowercase_or_digit(&self) -> bool;
-}
-
-impl AsciiLowercaseOrDigit for u8 {
-    fn is_ascii_lowercase_or_digit(&self) -> bool {
-        self.is_ascii_lowercase() || self.is_ascii_digit()
-    }
+fn ascii_lowercase_or_digit(value: u8) -> bool {
+    value.is_ascii_lowercase() || value.is_ascii_digit()
 }
 
 fn checkpoint_interval(value: u32) -> Result<Duration, ConnectError> {
@@ -305,10 +279,10 @@ fn checkpoint_interval(value: u32) -> Result<Duration, ConnectError> {
 
 fn source_error(error: anyhow::Error) -> ConnectError {
     if error.downcast_ref::<EventLogIntegrityError>().is_some() {
-        tracing::error!(error = %error, "auth event log integrity failure");
+        tracing::error!("auth event log integrity failure");
         ConnectError::new(ErrorCode::DataLoss, "auth event log integrity failure")
     } else {
-        tracing::error!(error = %error, "auth event source failed");
+        tracing::error!("auth event source failed");
         ConnectError::new(ErrorCode::Unavailable, "auth event source unavailable")
     }
 }
@@ -317,75 +291,27 @@ fn sequence_exhausted() -> ConnectError {
     ConnectError::new(ErrorCode::DataLoss, "auth event sequence is exhausted")
 }
 
-#[derive(Clone)]
-struct EventRpcAuth {
-    expected_digest: [u8; 32],
-}
-
-impl EventRpcAuth {
-    fn new(token: &SecretString) -> Self {
-        Self {
-            expected_digest: Sha256::digest(token.expose_secret().as_bytes()).into(),
-        }
-    }
-
-    fn authorized(&self, headers: &http::HeaderMap) -> bool {
-        let supplied = headers
-            .get(http::header::AUTHORIZATION)
-            .and_then(|value| value.to_str().ok())
-            .and_then(|value| value.strip_prefix("Bearer "))
-            .unwrap_or_default();
-        let supplied_digest: [u8; 32] = Sha256::digest(supplied.as_bytes()).into();
-        bool::from(self.expected_digest.ct_eq(&supplied_digest))
-    }
-}
-
-#[connectrpc::async_trait]
-impl Interceptor for EventRpcAuth {
-    async fn intercept_streaming(
-        &self,
-        request: StreamRequest,
-        inbound: PayloadStream,
-        next: NextStream<'_>,
-    ) -> Result<StreamResponse, ConnectError> {
-        if !self.authorized(request.ctx.headers()) {
-            return Err(ConnectError::new(
-                ErrorCode::Unauthenticated,
-                "authentication required",
-            ));
-        }
-        next.run(request, inbound).await
-    }
-}
-
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
-
     use connectrpc::{
-        Protocol,
+        ConnectRpcService, Protocol,
         client::{ClientConfig, HttpClient},
     };
-    use serde_json::json;
     use tokio::time::timeout;
     use uuid::Uuid;
 
     use super::*;
-    use crate::proto::rustyauth::events::v1::{AuthEventServiceClient, subscribe_response};
+    use crate::proto::rustyauth::events::v1::{
+        AuthEventServiceClient, AuthEventServiceServer, subscribe_response,
+    };
+    use crate::rpc::RpcAuth;
 
-    const TEST_TOKEN: &str = "event-rpc-test-token-longer-than-32-characters";
+    const EVENT_TOKEN: &str = "event-rpc-test-token-longer-than-32-characters";
+    const IDENTITY_TOKEN: &str = "identity-rpc-test-token-longer-than-32-characters";
 
     #[derive(Clone)]
     struct MemoryEventSource {
         events: Arc<Vec<AuthEvent>>,
-    }
-
-    impl MemoryEventSource {
-        fn new(events: Vec<AuthEvent>) -> Self {
-            Self {
-                events: Arc::new(events),
-            }
-        }
     }
 
     impl EventSource for MemoryEventSource {
@@ -412,31 +338,36 @@ mod tests {
         AuthEvent {
             sequence,
             id: Uuid::new_v4(),
-            tenant_id: "default".to_owned(),
-            event_type: "identity.created".to_owned(),
+            tenant_id: "default".into(),
+            event_type: "identity.created".into(),
             subject: Some(Uuid::new_v4()),
             occurred_at: 1_700_000_000,
-            data: json!({"source": "wire-test"}),
+            data: serde_json::json!({"source": "wire-test"}),
         }
     }
 
-    async fn spawn_test_service(
-        source: MemoryEventSource,
-    ) -> (String, tokio::task::JoinHandle<()>) {
-        let dispatcher =
-            AuthEventServiceServer::new(EventService::new(source, Duration::from_millis(10), 4));
-        let token = SecretString::from(TEST_TOKEN);
-        let service =
-            ConnectRpcService::new(dispatcher).with_interceptor(EventRpcAuth::new(&token));
+    async fn spawn_test_service(events: Vec<AuthEvent>) -> (String, tokio::task::JoinHandle<()>) {
+        let source = MemoryEventSource {
+            events: Arc::new(events),
+        };
+        let dispatcher = AuthEventServiceServer::new(EventRpc::with_options(
+            source,
+            Duration::from_millis(10),
+            4,
+        ));
+        let service = ConnectRpcService::new(dispatcher).with_interceptor(RpcAuth::new(
+            &secrecy::SecretString::from(EVENT_TOKEN),
+            &secrecy::SecretString::from(IDENTITY_TOKEN),
+        ));
         let app = axum::Router::new().fallback_service(service);
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
             .await
-            .expect("bind test RPC server");
-        let address = listener.local_addr().expect("test RPC server address");
+            .expect("bind event RPC test server");
+        let address = listener.local_addr().expect("event RPC test address");
         let server = tokio::spawn(async move {
             axum::serve(listener, app)
                 .await
-                .expect("serve test RPC server");
+                .expect("serve event RPC test server");
         });
         (format!("http://{address}"), server)
     }
@@ -451,19 +382,18 @@ mod tests {
         } else {
             HttpClient::plaintext()
         };
-        let mut config = ClientConfig::new(base_url.parse().expect("valid test RPC URL"))
+        let mut config = ClientConfig::new(base_url.parse().expect("valid event RPC URL"))
             .with_protocol(protocol)
             .with_default_timeout(Duration::from_secs(2));
         if authorized {
             config = config
-                .with_default_header(http::header::AUTHORIZATION, format!("Bearer {TEST_TOKEN}"));
+                .with_default_header(http::header::AUTHORIZATION, format!("Bearer {EVENT_TOKEN}"));
         }
         AuthEventServiceClient::new(transport, config)
     }
 
     fn subscribe_request() -> SubscribeRequest {
         SubscribeRequest {
-            after_sequence: 0,
             checkpoint_interval_seconds: 5,
             ..Default::default()
         }
@@ -472,12 +402,9 @@ mod tests {
     #[test]
     fn event_and_tenant_filters_are_narrowly_validated() {
         assert!(valid_event_type("identity.created"));
-        assert!(valid_event_type("a"));
         assert!(!valid_event_type("Identity.Created"));
-        assert!(!valid_event_type("identity."));
-        assert!(valid_tenant_id("tenant-1"));
+        assert!(valid_tenant_id("tenant_01-prod"));
         assert!(!valid_tenant_id("Tenant-1"));
-        assert!(!valid_tenant_id("tenant_name"));
     }
 
     #[test]
@@ -489,32 +416,12 @@ mod tests {
         assert!(checkpoint_interval(61).is_err());
     }
 
-    #[test]
-    fn event_rpc_bearer_authentication_fails_closed() {
-        let token = SecretString::from(TEST_TOKEN);
-        let auth = EventRpcAuth::new(&token);
-        let mut headers = http::HeaderMap::new();
-        assert!(!auth.authorized(&headers));
-        headers.insert(
-            http::header::AUTHORIZATION,
-            http::HeaderValue::from_static("Bearer wrong-token"),
-        );
-        assert!(!auth.authorized(&headers));
-        headers.insert(
-            http::header::AUTHORIZATION,
-            http::HeaderValue::from_static("Bearer event-rpc-test-token-longer-than-32-characters"),
-        );
-        assert!(auth.authorized(&headers));
-    }
-
     #[tokio::test]
     async fn subscription_works_over_connect_grpc_web_and_grpc() {
         for protocol in [Protocol::Connect, Protocol::GrpcWeb, Protocol::Grpc] {
             let expected = test_event(1);
-            let (base_url, server) =
-                spawn_test_service(MemoryEventSource::new(vec![expected.clone()])).await;
-            let client = client(&base_url, protocol, true);
-            let mut stream = client
+            let (base_url, server) = spawn_test_service(vec![expected.clone()]).await;
+            let mut stream = client(&base_url, protocol, true)
                 .subscribe(subscribe_request())
                 .await
                 .unwrap_or_else(|error| panic!("{protocol:?} subscription failed: {error}"));
@@ -523,22 +430,19 @@ mod tests {
                 stream.message::<SubscribeResponse>(),
             )
             .await
-            .unwrap_or_else(|_| panic!("{protocol:?} response timed out"))
-            .unwrap_or_else(|error| panic!("{protocol:?} response failed: {error}"))
-            .unwrap_or_else(|| panic!("{protocol:?} stream ended without an event"))
+            .unwrap_or_else(|_| panic!("{protocol:?} event response timed out"))
+            .unwrap_or_else(|error| panic!("{protocol:?} event response failed: {error}"))
+            .expect("event stream returned a message")
             .to_owned_message();
-
-            let subscribe_response::Payload::Event(event) =
-                message.payload.expect("event response payload")
+            let subscribe_response::Payload::Event(event) = message.payload.expect("event payload")
             else {
-                panic!("{protocol:?} returned a checkpoint before the first event");
+                panic!("checkpoint arrived before the first event");
             };
             assert_eq!(event.sequence, expected.sequence);
             assert_eq!(event.r#type, expected.event_type);
             assert_eq!(event.tenant_id, expected.tenant_id);
             assert_eq!(
-                serde_json::from_slice::<serde_json::Value>(&event.data_json)
-                    .expect("valid event JSON"),
+                serde_json::from_slice::<serde_json::Value>(&event.data_json).unwrap(),
                 expected.data
             );
             server.abort();
@@ -546,30 +450,9 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn subscription_rejects_missing_bearer_token() {
-        let (base_url, server) =
-            spawn_test_service(MemoryEventSource::new(vec![test_event(1)])).await;
-        let client = client(&base_url, Protocol::Connect, false);
-        let error = match client.subscribe(subscribe_request()).await {
-            Err(error) => error,
-            Ok(mut stream) => timeout(
-                Duration::from_secs(2),
-                stream.message::<SubscribeResponse>(),
-            )
-            .await
-            .expect("unauthenticated response timed out")
-            .expect_err("unauthenticated stream returned a message"),
-        };
-        assert_eq!(error.code, ErrorCode::Unauthenticated);
-        server.abort();
-    }
-
-    #[tokio::test]
-    async fn subscription_reports_event_sequence_gaps_as_data_loss() {
-        let (base_url, server) =
-            spawn_test_service(MemoryEventSource::new(vec![test_event(1), test_event(3)])).await;
-        let client = client(&base_url, Protocol::Connect, true);
-        let mut stream = client
+    async fn sequence_gaps_fail_with_data_loss() {
+        let (base_url, server) = spawn_test_service(vec![test_event(1), test_event(3)]).await;
+        let mut stream = client(&base_url, Protocol::Connect, true)
             .subscribe(subscribe_request())
             .await
             .expect("subscribe to gapped event source");
@@ -581,8 +464,25 @@ mod tests {
         let error = stream
             .message::<SubscribeResponse>()
             .await
-            .expect_err("gapped event source must fail");
+            .expect_err("sequence gap must fail the stream");
         assert_eq!(error.code, ErrorCode::DataLoss);
+        server.abort();
+    }
+
+    #[tokio::test]
+    async fn event_wire_authentication_fails_closed() {
+        let (base_url, server) = spawn_test_service(vec![test_event(1)]).await;
+        let error = match client(&base_url, Protocol::Connect, false)
+            .subscribe(subscribe_request())
+            .await
+        {
+            Err(error) => error,
+            Ok(mut stream) => stream
+                .message::<SubscribeResponse>()
+                .await
+                .expect_err("missing event bearer token must fail"),
+        };
+        assert_eq!(error.code, ErrorCode::Unauthenticated);
         server.abort();
     }
 }

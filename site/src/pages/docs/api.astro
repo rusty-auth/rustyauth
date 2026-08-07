@@ -6,12 +6,15 @@ const endpoints = [
   ["POST", "/v1/passkeys/register/finish", "Session", "Finish registration"], ["POST", "/v1/passkeys/authenticate/start", "Public", "Start sign-in"],
   ["POST", "/v1/passkeys/authenticate/finish", "Public", "Finish sign-in"], ["POST", "/v1/sessions/logout", "Session", "Revoke current session"],
   ["POST", "/rustyauth.events.v1.AuthEventService/Subscribe", "RPC bearer", "Replay and follow ordered events"],
+  ["RPC", "/rustyauth.identity.v1.IdentityService/*", "Identity RPC bearer", "Read, exact-search and update safe identity metadata"],
 ];
 ---
-<DocsLayout title="API" eyebrow="Version 0.1" intro="Browser-facing JSON endpoints plus a trusted-consumer event stream.">
-  <div class="doc-callout"><strong>Protocol status</strong><p>WebAuthn ceremonies remain HTTP/JSON. Ordered authentication events are available through one versioned Protobuf server stream over Connect, gRPC-Web or native gRPC.</p></div>
+<DocsLayout title="API" eyebrow="Version 0.1" intro="Browser-facing JSON endpoints plus trusted event and identity RPCs.">
+  <div class="doc-callout"><strong>Protocol status</strong><p>WebAuthn ceremonies remain HTTP/JSON. Ordered events and metadata-only identity management use versioned Protobuf services over Connect, gRPC-Web or native gRPC.</p></div>
   <h2>Endpoints</h2><div class="endpoint-table">{endpoints.map(([method, path, access, purpose]) => <div class="endpoint-row"><b class={method === "POST" ? "post" : ""}>{method}</b><code>{path}</code><span>{access}</span><p>{purpose}</p></div>)}</div>
   <h2>Error behaviour</h2><p>Security-sensitive failures are explicit. Invalid origins, missing ceremonies, expired sessions, unknown credentials and an unavailable durable store do not degrade into successful empty responses.</p>
   <h2>Event subscription</h2><p><code>rustyauth.events.v1.AuthEventService/Subscribe</code> authenticates with <code>Authorization: Bearer &lt;AUTH_EVENT_RPC_TOKEN&gt;</code>. Consumers reconnect with the last sequence they committed. Delivery is at least once, filters are exact, idle checkpoints report the latest global cursor and integrity gaps terminate the stream instead of being skipped.</p>
   <p>The canonical contract is <a href="https://github.com/rusty-auth/rustyauth/blob/main/proto/rustyauth/events/v1/events.proto">events.proto</a>. Event data is redacted but may still contain personal data such as an email address or credential identifier; never expose the stream token or payloads to an untrusted browser.</p>
+  <h2>Identity control plane</h2><p><code>rustyauth.identity.v1.IdentityService</code> authenticates with its own <code>AUTH_IDENTITY_RPC_TOKEN</code>. Trusted consumers can read and exact-search UUID, canonical email/phone, profile and passkey metadata, then update profiles, identifiers and passkey labels or revoke a non-final passkey.</p>
+  <p>Responses never contain WebAuthn credential/public-key material, counters, sessions or tokens. The bearer is an administrative service secret and must not be embedded in a public browser bundle.</p>
 </DocsLayout>

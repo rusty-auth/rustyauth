@@ -17,26 +17,28 @@ The template creates RustyAuth and SableDB services from versioned public contai
 TCP proxy and stores identity state on a Railway volume mounted at `/var/lib/sabledb`.
 
 Railway generates `AUTH_MASTER_KEY_HEX` and `BOOTSTRAP_TOKEN` independently for every template deployment.
-This release also requires an independently generated `AUTH_EVENT_RPC_TOKEN`; the published Railway template
-must supply it before deploying the gRPC-enabled image. `SABLEDB_URL` is assembled from the SableDB service's
-Railway private-domain reference, so no database hostname or credential needs to be copied between services.
+This release also requires independently generated `AUTH_EVENT_RPC_TOKEN` and `AUTH_IDENTITY_RPC_TOKEN`
+values; the published Railway template must supply both before deploying the gRPC-enabled image. `SABLEDB_URL`
+is assembled from the SableDB service's Railway private-domain reference, so no database hostname or
+credential needs to be copied between services.
 
 The deploy form asks for the browser application's WebAuthn origin and RP ID. The RP ID must exactly match the
 hostname in the WebAuthn origin, and production origins must use HTTPS. Other values have safe template
 defaults but remain editable during the environment step.
 
-| Variable              | Deployment behavior                                                    |
-| --------------------- | ---------------------------------------------------------------------- |
-| `WEBAUTHN_RP_ORIGIN`  | Required user input: the exact HTTPS origin of the browser application |
-| `WEBAUTHN_RP_ID`      | Required user input: the hostname from `WEBAUTHN_RP_ORIGIN`            |
-| `WEBAUTHN_RP_NAME`    | Editable display name; defaults to `RustyAuth`                         |
-| `SPACETIME_AUDIENCE`  | Editable access-token audience; defaults to `rustyauth`                |
-| `AUTH_TENANT_ID`      | Editable tenant claim; defaults to `default`                           |
-| `AUTH_ISSUER`         | Automatically references the RustyAuth public Railway domain           |
-| `SABLEDB_URL`         | Automatically references SableDB on Railway's private network          |
-| `AUTH_MASTER_KEY_HEX` | Automatically generated 256-bit hexadecimal secret                     |
-| `BOOTSTRAP_TOKEN`     | Automatically generated 64-character secret                            |
-| `AUTH_EVENT_RPC_TOKEN` | Required independent event-stream bearer secret, at least 32 characters |
+| Variable                  | Deployment behavior                                                         |
+| ------------------------- | --------------------------------------------------------------------------- |
+| `WEBAUTHN_RP_ORIGIN`      | Required user input: the exact HTTPS origin of the browser application      |
+| `WEBAUTHN_RP_ID`          | Required user input: the hostname from `WEBAUTHN_RP_ORIGIN`                 |
+| `WEBAUTHN_RP_NAME`        | Editable display name; defaults to `RustyAuth`                              |
+| `SPACETIME_AUDIENCE`      | Editable access-token audience; defaults to `rustyauth`                     |
+| `AUTH_TENANT_ID`          | Editable tenant claim; defaults to `default`                                |
+| `AUTH_ISSUER`             | Automatically references the RustyAuth public Railway domain                |
+| `SABLEDB_URL`             | Automatically references SableDB on Railway's private network               |
+| `AUTH_MASTER_KEY_HEX`     | Automatically generated 256-bit hexadecimal secret                          |
+| `BOOTSTRAP_TOKEN`         | Automatically generated 64-character secret                                 |
+| `AUTH_EVENT_RPC_TOKEN`    | Required independent event-stream bearer secret, at least 32 characters     |
+| `AUTH_IDENTITY_RPC_TOKEN` | Required independent identity-service bearer secret, at least 32 characters |
 
 ## Why Deploy RustyAuth on Railway
 

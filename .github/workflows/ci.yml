@@ -18,6 +18,7 @@ jobs:
         with:
           deno-version: 2.9.3
       - run: deno install --frozen
+      - run: deno task protocol:check
       - run: deno task site:check
       - run: deno task site:test
 

@@ -157,7 +157,8 @@ async fn registration_verify(
         .await
         .map_err(|error| match error.downcast_ref::<StorePolicyError>() {
             Some(
-                StorePolicyError::EmailAlreadyExists | StorePolicyError::CredentialAlreadyExists,
+                StorePolicyError::IdentifierAlreadyExists
+                | StorePolicyError::CredentialAlreadyExists,
             ) => ApiError::conflict(error.to_string()),
             _ => ApiError::internal(error),
         })?;

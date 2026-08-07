@@ -9,7 +9,9 @@ mod auth;
 mod backup;
 mod config;
 mod event_rpc;
+mod identity_rpc;
 mod jwt;
+mod rpc;
 mod store;
 
 mod proto {
@@ -64,6 +66,7 @@ struct Metadata<'a> {
     issuer: String,
     passkeys: bool,
     event_protocols: [&'a str; 4],
+    identity_protocols: [&'a str; 3],
     backup_sink_configured: bool,
     scheduled_backups: bool,
 }
@@ -126,8 +129,13 @@ async fn main() -> Result<()> {
     let cors_origin = HeaderValue::from_str(config.rp_origin.as_str().trim_end_matches('/'))
         .context("WEBAUTHN_RP_ORIGIN cannot be represented as an Origin header")?;
     let store = Store::new(redis, config.tenant_id);
-    let event_rpc = event_rpc::service(store.clone(), &config.event_rpc_token);
+    let rpc_service = rpc::service(
+        store.clone(),
+        &config.event_rpc_token,
+        &config.identity_rpc_token,
+    );
     config.event_rpc_token.zeroize();
+    config.identity_rpc_token.zeroize();
     let state = AppState {
         store,
         webauthn: Arc::new(webauthn),
@@ -151,7 +159,7 @@ async fn main() -> Result<()> {
         .route("/.well-known/passkey-auth", get(metadata))
         .merge(auth::routes())
         .with_state(state)
-        .fallback_service(event_rpc)
+        .fallback_service(rpc_service)
         .layer(
             CorsLayer::new()
                 .allow_origin(cors_origin)
@@ -311,6 +319,7 @@ async fn metadata(State(state): State<AppState>) -> Json<Metadata<'static>> {
         issuer: state.issuer.to_string(),
         passkeys: true,
         event_protocols: ["http-poll", "connect", "grpc-web", "grpc"],
+        identity_protocols: ["connect", "grpc-web", "grpc"],
         backup_sink_configured: state.backup.is_some(),
         scheduled_backups: false,
     })
