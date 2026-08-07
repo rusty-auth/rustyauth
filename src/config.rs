@@ -77,7 +77,7 @@ impl fmt::Debug for KeyRing {
 }
 
 impl KeyRing {
-    pub(crate) fn new(purpose: &str, active: [u8; 32], previous: Vec<[u8; 32]>) -> Result<Self> {
+    pub fn new(purpose: &str, active: [u8; 32], previous: Vec<[u8; 32]>) -> Result<Self> {
         let active = KeyEntry {
             id: derived_key_id(purpose, &active),
             key: active,
@@ -140,15 +140,20 @@ pub struct Config {
     pub session_idle_seconds: u64,
     pub session_absolute_seconds: u64,
     pub signing_rotation: SigningRotationConfig,
+    pub trusted_proxy_hops: usize,
     pub backup: Option<BackupConfig>,
 }
 
 impl Config {
     pub fn from_env() -> Result<Self> {
+        // AUTH_ENV gates every other fail-closed check, so it must itself fail
+        // closed. Defaulting an unset value to development silently drops Secure
+        // cookies, HTTPS validation, and identity-verification enforcement.
         let environment = match optional("AUTH_ENV").as_deref() {
-            Some("development") | None => Environment::Development,
+            Some("development") => Environment::Development,
             Some("production") => Environment::Production,
             Some(other) => bail!("AUTH_ENV must be development or production, got {other}"),
+            None => bail!("AUTH_ENV must be set explicitly to development or production"),
         };
 
         let bind = IpAddr::from_str(optional("BIND_ADDRESS").as_deref().unwrap_or("0.0.0.0"))
@@ -197,6 +202,11 @@ impl Config {
             86_400,
         )?;
         let maintenance_seconds = integer("AUTH_KEY_MAINTENANCE_SECONDS", 30, 5, 3_600)?;
+        // Defaults to zero so X-Forwarded-For is ignored until an operator states
+        // how many proxies they actually run. Trusting the header by default would
+        // let any client pick its own rate-limit bucket by forging one.
+        let trusted_proxy_hops =
+            usize::try_from(integer("AUTH_TRUSTED_PROXY_HOPS", 0, 0, 8)?).unwrap_or(0);
 
         validate_origin(&environment, "AUTH_ISSUER", &issuer)?;
         validate_origin(&environment, "WEBAUTHN_RP_ORIGIN", &rp_origin)?;
@@ -237,6 +247,7 @@ impl Config {
                 overlap_seconds,
                 maintenance_seconds,
             },
+            trusted_proxy_hops,
             backup: BackupConfig::from_env()?,
         })
     }
@@ -337,9 +348,16 @@ fn decode_key(name: &str) -> Result<[u8; 32]> {
 
 fn decode_key_value(name: &str, value: &str) -> Result<[u8; 32]> {
     let bytes = hex::decode(value).with_context(|| format!("{name} must be hex"))?;
-    bytes
+    let key: [u8; 32] = bytes
         .try_into()
-        .map_err(|_| anyhow::anyhow!("{name} must contain exactly 32 bytes (64 hex characters)"))
+        .map_err(|_| anyhow::anyhow!("{name} must contain exactly 32 bytes (64 hex characters)"))?;
+    // The all-zero key is published in compose.yaml and .env.example; any key with
+    // a single repeated byte is a placeholder rather than generated material.
+    // Accepting one would wrap every signing key and backup under a public value.
+    if key.iter().all(|byte| *byte == key[0]) {
+        bail!("{name} is a placeholder with no entropy; generate one with `openssl rand -hex 32`");
+    }
+    Ok(key)
 }
 
 fn decode_keyring(active_name: &str, previous_name: &str, purpose: &str) -> Result<KeyRing> {
@@ -403,12 +421,20 @@ fn validate_rp(rp_id: &str, origin: &Url) -> Result<()> {
 
 fn validate_sable_url(environment: &Environment, value: &SecretString) -> Result<()> {
     let url = Url::parse(value.expose_secret()).context("SABLEDB_URL is invalid")?;
-    if url.scheme() != "redis" {
-        bail!("SABLEDB_URL must use the redis scheme");
+    // `rediss` is accepted so a deployment can encrypt datastore traffic. Rejecting
+    // it forced every operator onto plaintext, which no defence-in-depth posture
+    // should require of the link carrying sessions and wrapped signing keys.
+    if !matches!(url.scheme(), "redis" | "rediss") {
+        bail!("SABLEDB_URL must use the redis or rediss scheme");
     }
     let host = url.host_str().context("SABLEDB_URL has no host")?;
-    if environment == &Environment::Production && !host.ends_with(".railway.internal") {
-        bail!("production SABLEDB_URL must use Railway private networking (*.railway.internal)");
+    if environment == &Environment::Production
+        && url.scheme() == "redis"
+        && !host.ends_with(".railway.internal")
+    {
+        bail!(
+            "production SABLEDB_URL must use Railway private networking (*.railway.internal) or the rediss scheme"
+        );
     }
     Ok(())
 }
