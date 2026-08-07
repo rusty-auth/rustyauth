@@ -1,34 +1,11 @@
 //! RustyAuth process entry point and dependency composition root.
 //!
 //! Protocol handlers live in `auth`; durable state belongs to `store`; key
-//! material and token issuance belong to `jwt`. This module only initializes
-//! those capabilities, applies transport middleware, and owns process lifetime.
+//! material and token issuance belong to `jwt`; the operator command line
+//! lives in `cli`. This module only initializes those capabilities, applies
+//! transport middleware, and owns process lifetime.
 
-mod app_state;
-mod auth;
-mod backup;
-mod config;
-mod event_rpc;
-mod identity_rpc;
-#[cfg(test)]
-mod integration_tests;
-mod jwt;
-mod operator_auth;
-mod organization_rpc;
-mod rpc;
-mod service_account_rpc;
-mod store;
-
-mod proto {
-    connectrpc::include_generated!();
-}
-
-use std::{
-    io::{Read, Write},
-    net::TcpStream,
-    sync::Arc,
-    time::Duration,
-};
+use std::{sync::Arc, time::Duration};
 
 use anyhow::{Context, Result};
 use axum::{
@@ -41,31 +18,75 @@ use axum::{
 use redis::AsyncCommands;
 use secrecy::ExposeSecret;
 use serde::Serialize;
-use serde_json::json;
 use tokio::{net::TcpListener, sync::watch};
 use tower_http::{
+    catch_panic::CatchPanicLayer,
     cors::CorsLayer,
+    limit::RequestBodyLimitLayer,
     request_id::{MakeRequestUuid, PropagateRequestIdLayer, SetRequestIdLayer},
-    sensitive_headers::SetSensitiveRequestHeadersLayer,
+    sensitive_headers::{SetSensitiveRequestHeadersLayer, SetSensitiveResponseHeadersLayer},
     services::{ServeDir, ServeFile},
     set_header::SetResponseHeaderLayer,
+    timeout::TimeoutLayer,
     trace::TraceLayer,
 };
 use tracing::{info, warn};
 use webauthn_rs::WebauthnBuilder;
 use zeroize::Zeroize;
 
-use crate::{
+use rustyauth::{
     app_state::AppState,
+    auth,
     backup::BackupStore,
+    cli::{self, CLI_HELP, ProcessMode},
     config::{Config, Environment},
-    jwt::{JwtIssuer, validate_snapshot_keyset},
+    rate_limit::RateLimiter,
+    rpc,
     store::Store,
 };
+
+/// Ceiling on any single request. Long-lived RPC streams are served by the
+/// fallback service, which applies its own deadline.
+const REQUEST_TIMEOUT_SECONDS: u64 = 30;
+/// Ceiling on a request body. The RPC layer applies a tighter 64 KiB limit; this
+/// bounds the REST handlers, which otherwise inherit axum's 2 MiB default.
+const MAX_REQUEST_BODY_BYTES: usize = 256 * 1024;
+/// How long in-flight work may finish after a shutdown signal before the process
+/// exits anyway. Without a bound, a single open event stream blocks every deploy.
+const SHUTDOWN_GRACE_SECONDS: u64 = 20;
+/// Distinct rate-limit subjects tracked at once. Bounds the memory a flood of
+/// unique addresses or identifiers can cause the limiter itself to consume.
+const RATE_LIMIT_TRACKING_CAPACITY: usize = 65_536;
 
 #[derive(Serialize)]
 struct Health<'a> {
     status: &'a str,
+}
+
+/// Answers a panicking request without disclosing the panic message, which can
+/// carry internal state, and records it for operators.
+fn panic_response(panic: Box<dyn std::any::Any + Send + 'static>) -> http::Response<String> {
+    let detail = panic
+        .downcast_ref::<String>()
+        .map(String::as_str)
+        .or_else(|| panic.downcast_ref::<&'static str>().copied())
+        .unwrap_or("unknown panic");
+    tracing::error!(detail, "request handler panicked");
+    http::Response::builder()
+        .status(StatusCode::INTERNAL_SERVER_ERROR)
+        .header(header::CONTENT_TYPE, "application/json")
+        .body(r#"{"error":"authentication service failed closed"}"#.to_owned())
+        .unwrap_or_else(|_| http::Response::new(String::new()))
+}
+
+/// HSTS is only meaningful over TLS, and pinning it from a development origin
+/// would poison the browser for `http://localhost` well past the session.
+fn hsts_layer(production: bool) -> SetResponseHeaderLayer<Option<HeaderValue>> {
+    SetResponseHeaderLayer::if_not_present(
+        header::STRICT_TRANSPORT_SECURITY,
+        production
+            .then(|| HeaderValue::from_static("max-age=63072000; includeSubDomains; preload")),
+    )
 }
 
 #[derive(Serialize)]
@@ -74,47 +95,17 @@ struct Metadata<'a> {
     passkeys: bool,
     event_protocols: [&'a str; 4],
     identity_protocols: [&'a str; 3],
-    backup_sink_configured: bool,
-    scheduled_backups: bool,
-    last_backup_at: Option<u64>,
-    backup_healthy: Option<bool>,
-}
-
-#[derive(Debug, Eq, PartialEq)]
-struct LocalAgentRequest {
-    email: String,
-    redirect_url: Option<url::Url>,
-}
-
-#[derive(Debug, Eq, PartialEq)]
-enum ProcessMode {
-    Help,
-    Serve,
-    Healthcheck,
-    LocalAgent(LocalAgentRequest),
-    BackupCreate,
-    BackupList,
-    BackupVerify {
-        object_key: String,
-    },
-    BackupRestore {
-        object_key: String,
-        preserve_sessions: bool,
-    },
-    KeysStatus,
-    KeysRotate,
-    Doctor,
 }
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    let mode = parse_process_arguments(std::env::args().skip(1).collect())?;
+    let mode = cli::parse_process_arguments(std::env::args().skip(1).collect())?;
     if mode == ProcessMode::Help {
         println!("{CLI_HELP}");
         return Ok(());
     }
     if mode == ProcessMode::Healthcheck {
-        return container_healthcheck();
+        return cli::container_healthcheck();
     }
     init_tracing();
     let config = Config::from_env().context("invalid auth service configuration")?;
@@ -135,80 +126,7 @@ async fn main() -> Result<()> {
 
     match mode {
         ProcessMode::Serve => serve(config, redis, store).await,
-        ProcessMode::LocalAgent(request) => {
-            create_local_agent_handoff(&config, store, request).await
-        }
-        ProcessMode::BackupCreate => {
-            let _jwt = initialize_jwt(&config, redis, &store).await?;
-            let backup = configured_backup(&config).await?;
-            let receipt = backup
-                .create(&store, &config.tenant_id, &config.master_keys)
-                .await?;
-            println!("{}", serde_json::to_string_pretty(&receipt)?);
-            Ok(())
-        }
-        ProcessMode::BackupList => {
-            let backup = configured_backup(&config).await?;
-            println!(
-                "{}",
-                serde_json::to_string_pretty(&backup.list(&config.tenant_id).await?)?
-            );
-            Ok(())
-        }
-        ProcessMode::BackupVerify { object_key } => {
-            let backup = configured_backup(&config).await?;
-            let (receipt, snapshot) = backup.verify(&object_key, &config.tenant_id).await?;
-            validate_snapshot_keyset(snapshot.signing_keyset()?, &config.master_keys)?;
-            println!("{}", serde_json::to_string_pretty(&receipt)?);
-            Ok(())
-        }
-        ProcessMode::BackupRestore {
-            object_key,
-            preserve_sessions,
-        } => {
-            let backup = configured_backup(&config).await?;
-            let snapshot = backup.download(&object_key, &config.tenant_id).await?;
-            validate_snapshot_keyset(snapshot.signing_keyset()?, &config.master_keys)?;
-            let snapshot_id = snapshot.snapshot_id();
-            let captured_at = snapshot.captured_at();
-            let record_count = snapshot.record_count();
-            let restored = store
-                .restore_records(snapshot.records(), preserve_sessions)
-                .await?;
-            let jwt = initialize_jwt(&config, redis, &store).await?;
-            let key_status = jwt.force_rotate(true).await?;
-            store.append_event("recovery.restored", None).await?;
-            store.complete_restore().await?;
-            println!(
-                "{}",
-                serde_json::to_string_pretty(&json!({
-                    "snapshotId": snapshot_id,
-                    "capturedAt": captured_at,
-                    "snapshotRecordCount": record_count,
-                    "restoredRecordCount": restored,
-                    "sessionsPreserved": preserve_sessions,
-                    "activeSigningKey": key_status.active_kid,
-                }))?
-            );
-            Ok(())
-        }
-        ProcessMode::KeysStatus => {
-            let jwt = initialize_jwt(&config, redis, &store).await?;
-            println!(
-                "{}",
-                serde_json::to_string_pretty(&jwt.stored_status().await?)?
-            );
-            Ok(())
-        }
-        ProcessMode::KeysRotate => {
-            let jwt = initialize_jwt(&config, redis, &store).await?;
-            let status = jwt.force_rotate(false).await?;
-            println!("{}", serde_json::to_string_pretty(&status)?);
-            Ok(())
-        }
-        ProcessMode::Doctor => doctor(&config, redis, &store).await,
-        ProcessMode::Help => unreachable!("help exits before configuration"),
-        ProcessMode::Healthcheck => unreachable!("healthcheck exits before configuration"),
+        mode => cli::run(mode, config, redis, store).await,
     }
 }
 
@@ -223,7 +141,7 @@ async fn serve(
         .build()
         .context("build WebAuthn relying party")?;
     let issuer = config.issuer.as_str().trim_end_matches('/').to_owned();
-    let jwt = initialize_jwt(&config, redis, &store).await?;
+    let jwt = cli::initialize_jwt(&config, redis, &store).await?;
     store.ensure_organization(&config.rp_name).await?;
     let backup = match config.backup.clone() {
         Some(value) => Some(BackupStore::new(value).await?),
@@ -232,15 +150,19 @@ async fn serve(
             None
         }
     };
-    let rpc_service = rpc::service(
-        store.clone(),
-        &config.event_rpc_token,
-        &config.identity_rpc_token,
-        config.rp_origin.as_str(),
-        config.session_idle_seconds,
-        config.operator_emails.clone(),
-        jwt.clone(),
-    );
+    // Shared with the HTTP handlers so a client cannot spend one budget by
+    // switching protocols.
+    let rate_limiter = Arc::new(RateLimiter::new(RATE_LIMIT_TRACKING_CAPACITY));
+    let rpc_service = rpc::service(rpc::RpcServiceConfig {
+        store: store.clone(),
+        event_token: &config.event_rpc_token,
+        identity_token: &config.identity_rpc_token,
+        rp_origin: config.rp_origin.as_str(),
+        session_idle_seconds: config.session_idle_seconds,
+        operator_emails: config.operator_emails.clone(),
+        jwt: jwt.clone(),
+        rate_limiter: Arc::clone(&rate_limiter),
+    });
     config.event_rpc_token.zeroize();
     config.identity_rpc_token.zeroize();
 
@@ -248,6 +170,8 @@ async fn serve(
     let cors_origin = HeaderValue::from_str(config.rp_origin.as_str().trim_end_matches('/'))
         .context("WEBAUTHN_RP_ORIGIN cannot be represented as an Origin header")?;
     let state = AppState {
+        rate_limiter,
+        trusted_proxy_hops: config.trusted_proxy_hops,
         store: store.clone(),
         webauthn: Arc::new(webauthn),
         jwt,
@@ -280,7 +204,101 @@ async fn serve(
         .route_service("/favicon.svg", ServeFile::new(dashboard_favicon))
         .merge(auth::routes())
         .with_state(state)
-        .fallback_service(rpc_service)
+        .fallback_service(rpc_service);
+    let app = apply_transport_policy(
+        app,
+        cors_origin,
+        request_id,
+        config.environment == Environment::Production,
+    );
+
+    let listener = TcpListener::bind(bind)
+        .await
+        .context("bind auth listener")?;
+    info!(address = %listener.local_addr()?, "passkey auth service listening");
+    let (shutdown_tx, shutdown_rx) = watch::channel(false);
+    let signing_task = tokio::spawn(signing_worker.run_maintenance(shutdown_rx.clone()));
+    let backup_task = backup_worker.map(|backup| {
+        tokio::spawn(backup.run_scheduler(
+            store,
+            config.tenant_id.clone(),
+            config.master_keys.clone(),
+            shutdown_rx,
+        ))
+    });
+    let signal = shutdown_tx.clone();
+    // ConnectInfo carries the peer address, which the rate limiter needs to
+    // identify a client when no trusted proxy is configured.
+    let result = axum::serve(
+        listener,
+        app.into_make_service_with_connect_info::<std::net::SocketAddr>(),
+    )
+    .with_graceful_shutdown(async move {
+        shutdown_signal().await;
+        let _ = signal.send(true);
+    })
+    .await
+    .context("serve auth HTTP");
+    let _ = shutdown_tx.send(true);
+
+    // Both workers watch the shutdown channel and exit on their own. Give them a
+    // bounded window to finish — a backup mid-upload should checkpoint rather than
+    // die mid-write — then stop waiting so a stuck worker cannot block the deploy.
+    let workers = async {
+        let _ = signing_task.await;
+        if let Some(task) = backup_task {
+            let _ = task.await;
+        }
+    };
+    if tokio::time::timeout(Duration::from_secs(SHUTDOWN_GRACE_SECONDS), workers)
+        .await
+        .is_err()
+    {
+        warn!(
+            grace_seconds = SHUTDOWN_GRACE_SECONDS,
+            "background workers did not stop within the shutdown grace period"
+        );
+    }
+    result
+}
+
+/// Applies transport policy: timeouts, limits, panic capture, tracing, CORS and
+/// response security headers.
+///
+/// Extracted so the ordering can be exercised by a test. Ordering is the whole
+/// point of this function and it is not verifiable by reading, because
+/// `Router::layer` inverts the order these are written in.
+fn apply_transport_policy(
+    router: Router,
+    cors_origin: HeaderValue,
+    request_id: HeaderName,
+    production: bool,
+) -> Router {
+    router
+        // Layer order matters and is not the order these read in. `Router::layer`
+        // makes each newly added layer the OUTERMOST one, so this list runs from
+        // innermost to outermost. The layers that answer on their own — the timeout
+        // and the panic capture — must sit INSIDE the header and CORS layers, or the
+        // 408 and 500 they generate leave without CSP, nosniff, HSTS or
+        // Access-Control-Allow-Origin, and a browser sees an opaque network error
+        // instead of the status. The body limit only wraps the body, so its 413
+        // surfaces from the extractor and is already inside these layers.
+        //
+        // Slow-body clients would otherwise hold a connection open indefinitely:
+        // the RPC limits cap request size, never duration.
+        .layer(TimeoutLayer::with_status_code(
+            StatusCode::REQUEST_TIMEOUT,
+            Duration::from_secs(REQUEST_TIMEOUT_SECONDS),
+        ))
+        .layer(RequestBodyLimitLayer::new(MAX_REQUEST_BODY_BYTES))
+        // A panicking handler must cost one request, not the process.
+        .layer(CatchPanicLayer::custom(panic_response))
+        // Outside the panic layer, so a caught panic is still recorded against its
+        // request span rather than after the span has been left.
+        .layer(TraceLayer::new_for_http())
+        .layer(PropagateRequestIdLayer::new(request_id.clone()))
+        // Outside the trace layer, so the span carries the id.
+        .layer(SetRequestIdLayer::new(request_id, MakeRequestUuid))
         .layer(
             CorsLayer::new()
                 .allow_origin(cors_origin)
@@ -300,9 +318,6 @@ async fn serve(
                     HeaderName::from_static("x-user-agent"),
                 ]),
         )
-        .layer(SetSensitiveRequestHeadersLayer::new(std::iter::once(
-            header::AUTHORIZATION,
-        )))
         .layer(SetResponseHeaderLayer::if_not_present(
             header::X_CONTENT_TYPE_OPTIONS,
             HeaderValue::from_static("nosniff"),
@@ -311,233 +326,44 @@ async fn serve(
             header::REFERRER_POLICY,
             HeaderValue::from_static("no-referrer"),
         ))
-        .layer(PropagateRequestIdLayer::new(request_id.clone()))
-        .layer(SetRequestIdLayer::new(request_id, MakeRequestUuid))
-        .layer(TraceLayer::new_for_http());
-
-    let listener = TcpListener::bind(bind)
-        .await
-        .context("bind auth listener")?;
-    info!(address = %listener.local_addr()?, "passkey auth service listening");
-    let (shutdown_tx, shutdown_rx) = watch::channel(false);
-    let signing_task = tokio::spawn(signing_worker.run_maintenance(shutdown_rx.clone()));
-    let backup_task = backup_worker.map(|backup| {
-        tokio::spawn(backup.run_scheduler(
-            store,
-            config.tenant_id.clone(),
-            config.master_keys.clone(),
-            shutdown_rx,
+        // The dashboard is an admin surface served from this origin. It loads no
+        // third-party code, so the policy can be strict enough that an injected
+        // script has nowhere to run and nowhere to exfiltrate to.
+        .layer(SetResponseHeaderLayer::if_not_present(
+            header::CONTENT_SECURITY_POLICY,
+            HeaderValue::from_static(
+                "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; \
+                 img-src 'self' data:; font-src 'self'; connect-src 'self'; frame-ancestors 'none'; \
+                 form-action 'self'; base-uri 'none'; object-src 'none'",
+            ),
         ))
-    });
-    let signal = shutdown_tx.clone();
-    let result = axum::serve(listener, app)
-        .with_graceful_shutdown(async move {
-            shutdown_signal().await;
-            let _ = signal.send(true);
-        })
-        .await
-        .context("serve auth HTTP");
-    let _ = shutdown_tx.send(true);
-    signing_task.abort();
-    if let Some(task) = backup_task {
-        task.abort();
-    }
-    result
-}
-
-async fn initialize_jwt(
-    config: &Config,
-    redis: redis::aio::ConnectionManager,
-    store: &Store,
-) -> Result<JwtIssuer> {
-    JwtIssuer::load_or_create(
-        redis,
-        config.master_keys.clone(),
-        config.signing_rotation.clone(),
-        store.snapshot_gate(),
-        config.issuer.as_str().trim_end_matches('/').to_owned(),
-        config.audience.clone(),
-        config.tenant_id.clone(),
-        config.access_token_seconds,
-    )
-    .await
-    .context("initialize JWT signing keyset")
-}
-
-async fn configured_backup(config: &Config) -> Result<BackupStore> {
-    let backup = config
-        .backup
-        .clone()
-        .context("backups are not configured; provide the complete AUTH_BACKUP_* environment")?;
-    BackupStore::new(backup).await
-}
-
-async fn doctor(
-    config: &Config,
-    redis: redis::aio::ConnectionManager,
-    store: &Store,
-) -> Result<()> {
-    let mut connection = store.connection();
-    let pong: String = connection.ping().await.context("SableDB readiness check")?;
-    if pong != "PONG" {
-        anyhow::bail!("SableDB returned an unexpected readiness response");
-    }
-    let jwt = initialize_jwt(config, redis, store).await?;
-    let backup = match &config.backup {
-        Some(_) => {
-            let backup = configured_backup(config).await?;
-            let count = backup.list(&config.tenant_id).await?.len();
-            json!({ "configured": true, "reachable": true, "objects": count })
-        }
-        None => json!({ "configured": false }),
-    };
-    println!(
-        "{}",
-        serde_json::to_string_pretty(&json!({
-            "status": "ok",
-            "sabledb": "ready",
-            "signingKeys": jwt.stored_status().await?,
-            "backups": backup,
-        }))?
-    );
-    Ok(())
-}
-
-fn parse_process_arguments(arguments: Vec<String>) -> Result<ProcessMode> {
-    match arguments.as_slice() {
-        [] => return Ok(ProcessMode::Serve),
-        [value] if value == "--help" || value == "-h" || value == "help" => {
-            return Ok(ProcessMode::Help);
-        }
-        [value] if value == "--healthcheck" => return Ok(ProcessMode::Healthcheck),
-        [group, command] if group == "backup" && command == "create" => {
-            return Ok(ProcessMode::BackupCreate);
-        }
-        [group, command] if group == "backup" && command == "list" => {
-            return Ok(ProcessMode::BackupList);
-        }
-        [group, command, object_key] if group == "backup" && command == "verify" => {
-            return Ok(ProcessMode::BackupVerify {
-                object_key: object_key.clone(),
-            });
-        }
-        [group, command, object_key] if group == "backup" && command == "restore" => {
-            return Ok(ProcessMode::BackupRestore {
-                object_key: object_key.clone(),
-                preserve_sessions: false,
-            });
-        }
-        [group, command, object_key, flag]
-            if group == "backup" && command == "restore" && flag == "--preserve-sessions" =>
-        {
-            return Ok(ProcessMode::BackupRestore {
-                object_key: object_key.clone(),
-                preserve_sessions: true,
-            });
-        }
-        [group, command] if group == "keys" && command == "status" => {
-            return Ok(ProcessMode::KeysStatus);
-        }
-        [group, command] if group == "keys" && command == "rotate" => {
-            return Ok(ProcessMode::KeysRotate);
-        }
-        [command] if command == "doctor" => return Ok(ProcessMode::Doctor),
-        _ => {}
-    }
-    if arguments.first().map(String::as_str) != Some("--local-agent-session")
-        || !matches!(arguments.len(), 3 | 5)
-        || arguments[1] != "--email"
-        || (arguments.len() == 5 && arguments[3] != "--redirect")
-    {
-        anyhow::bail!("invalid command\n\n{CLI_HELP}");
-    }
-    let email = arguments[2].trim().to_ascii_lowercase();
-    if email.len() > 320 || !email.contains('@') || email.starts_with('@') || email.ends_with('@') {
-        anyhow::bail!("valid existing account email required");
-    }
-    let redirect_url = arguments
-        .get(4)
-        .map(|value| url::Url::parse(value).context("agent redirect is not a valid URL"))
-        .transpose()?;
-    Ok(ProcessMode::LocalAgent(LocalAgentRequest {
-        email,
-        redirect_url,
-    }))
-}
-
-const CLI_HELP: &str = "RustyAuth authentication and recovery service
-
-Usage:
-  passkey-auth-service
-  passkey-auth-service doctor
-  passkey-auth-service backup create
-  passkey-auth-service backup list
-  passkey-auth-service backup verify <object-key>
-  passkey-auth-service backup restore <object-key> [--preserve-sessions]
-  passkey-auth-service keys status
-  passkey-auth-service keys rotate
-
-Running without a command starts the HTTP service. Restore requires an empty SableDB namespace and
-invalidates existing sessions unless --preserve-sessions is explicitly supplied.";
-
-async fn create_local_agent_handoff(
-    config: &Config,
-    store: Store,
-    request: LocalAgentRequest,
-) -> Result<()> {
-    if config.environment != Environment::Development
-        || config.issuer.host_str() != Some("localhost")
-        || config.rp_origin.host_str() != Some("localhost")
-    {
-        anyhow::bail!("local agent handoff is disabled outside loopback development");
-    }
-    let redirect_url = validated_local_redirect(&config.rp_origin, request.redirect_url)?;
-    let code = store
-        .create_local_agent_handoff(&request.email, redirect_url, 60)
-        .await
-        .context("create one-use local agent handoff")?;
-    let mut url = config
-        .issuer
-        .join("/v1/local-agent-handoff")
-        .context("construct local handoff URL")?;
-    url.query_pairs_mut().append_pair("code", &code);
-    println!("{url}");
-    Ok(())
-}
-
-fn validated_local_redirect(rp_origin: &url::Url, requested: Option<url::Url>) -> Result<String> {
-    let requested = requested.unwrap_or_else(|| {
-        let mut value = rp_origin.clone();
-        value.set_fragment(Some("/dashboard"));
-        value
-    });
-    if requested.origin() != rp_origin.origin()
-        || requested.path() != "/"
-        || requested.query().is_some()
-        || requested.username() != ""
-        || requested.password().is_some()
-        || requested
-            .fragment()
-            .is_none_or(|fragment| !fragment.starts_with('/'))
-    {
-        anyhow::bail!("agent redirect must be a hash route on the configured loopback app origin");
-    }
-    Ok(requested.to_string())
-}
-
-fn container_healthcheck() -> Result<()> {
-    let port = std::env::var("PORT").unwrap_or_else(|_| "8080".into());
-    let mut stream = TcpStream::connect(format!("127.0.0.1:{port}"))
-        .context("connect to local health endpoint")?;
-    stream.set_read_timeout(Some(Duration::from_secs(2)))?;
-    stream.write_all(b"GET /healthz HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n")?;
-    let mut response = [0_u8; 128];
-    let count = stream.read(&mut response)?;
-    let status = std::str::from_utf8(&response[..count]).context("health response is not UTF-8")?;
-    if !status.starts_with("HTTP/1.1 200") {
-        anyhow::bail!("health endpoint returned a non-200 status");
-    }
-    Ok(())
+        .layer(SetResponseHeaderLayer::if_not_present(
+            header::X_FRAME_OPTIONS,
+            HeaderValue::from_static("DENY"),
+        ))
+        .layer(SetResponseHeaderLayer::if_not_present(
+            HeaderName::from_static("cross-origin-opener-policy"),
+            HeaderValue::from_static("same-origin"),
+        ))
+        .layer(SetResponseHeaderLayer::if_not_present(
+            HeaderName::from_static("cross-origin-resource-policy"),
+            HeaderValue::from_static("same-origin"),
+        ))
+        .layer(SetResponseHeaderLayer::if_not_present(
+            HeaderName::from_static("permissions-policy"),
+            HeaderValue::from_static("geolocation=(), camera=(), microphone=(), payment=()"),
+        ))
+        .layer(hsts_layer(production))
+        // Outermost, so nothing below observes the raw values. Cookie carries the
+        // operator session; x-bootstrap-token gates enrolment.
+        .layer(SetSensitiveRequestHeadersLayer::new([
+            header::AUTHORIZATION,
+            header::COOKIE,
+            HeaderName::from_static("x-bootstrap-token"),
+        ]))
+        .layer(SetSensitiveResponseHeadersLayer::new(std::iter::once(
+            header::SET_COOKIE,
+        )))
 }
 
 async fn live() -> Json<Health<'static>> {
@@ -558,27 +384,19 @@ async fn ready(State(state): State<AppState>) -> impl IntoResponse {
     }
 }
 
+/// Public protocol discovery.
+///
+/// Deliberately says nothing about backups. Reporting whether backups exist, when
+/// the last one succeeded, or whether they are currently failing tells an attacker
+/// how recoverable the deployment is before they attempt anything destructive.
+/// `doctor` and the operator dashboard carry that detail to authorized callers.
 async fn metadata(State(state): State<AppState>) -> Json<Metadata<'static>> {
     let _ = &state.webauthn;
-    let backup_status = match &state.backup {
-        Some(backup) => Some(backup.status().await),
-        None => None,
-    };
     Json(Metadata {
         issuer: state.issuer.to_string(),
         passkeys: true,
         event_protocols: ["http-poll", "connect", "grpc-web", "grpc"],
         identity_protocols: ["connect", "grpc-web", "grpc"],
-        backup_sink_configured: state.backup.is_some(),
-        scheduled_backups: state.backup.is_some(),
-        last_backup_at: backup_status
-            .as_ref()
-            .and_then(|status| status.last_success_at),
-        backup_healthy: backup_status.as_ref().and_then(|status| {
-            status
-                .last_attempt_at
-                .map(|_| status.last_success_at.is_some() && status.consecutive_failures == 0)
-        }),
     })
 }
 
@@ -606,7 +424,7 @@ async fn shutdown_signal() {
 
 fn init_tracing() {
     let filter = tracing_subscriber::EnvFilter::try_from_default_env()
-        .unwrap_or_else(|_| "passkey_auth_service=info,tower_http=info".into());
+        .unwrap_or_else(|_| "rustyauth=info,tower_http=info".into());
     tracing_subscriber::fmt()
         .with_env_filter(filter)
         .json()
@@ -616,56 +434,136 @@ fn init_tracing() {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use axum::body::{Body, to_bytes};
+    use axum::routing::post;
+    use http::Request;
+    use tower::ServiceExt;
 
-    #[test]
-    fn local_agent_cli_requires_an_existing_email_and_accepts_a_route() {
-        let mode = parse_process_arguments(vec![
-            "--local-agent-session".into(),
-            "--email".into(),
-            "Agent@Example.com".into(),
-            "--redirect".into(),
-            "http://localhost:5174/#/ownership".into(),
-        ])
-        .unwrap();
-        let ProcessMode::LocalAgent(request) = mode else {
-            panic!("expected local-agent mode");
-        };
-        assert_eq!(request.email, "agent@example.com");
-        assert_eq!(
-            request.redirect_url.unwrap().as_str(),
-            "http://localhost:5174/#/ownership"
-        );
+    /// Applies the real transport policy to a trivial router.
+    ///
+    /// The routes exist only to trigger each short-circuiting layer: a body limit
+    /// rejection, a caught panic, and an ordinary success.
+    fn policy_router(production: bool) -> Router {
+        let router = Router::new()
+            .route("/ok", get(|| async { "ok" }))
+            .route("/sink", post(|_: String| async { "accepted" }))
+            .route(
+                "/panic",
+                get(|| async {
+                    panic!("deliberate panic for the transport policy test");
+                    #[allow(unreachable_code)]
+                    ""
+                }),
+            );
+        apply_transport_policy(
+            router,
+            HeaderValue::from_static("https://app.example.test"),
+            HeaderName::from_static("x-request-id"),
+            production,
+        )
     }
 
-    #[test]
-    fn operational_commands_are_explicit_and_restore_is_safe_by_default() {
-        assert_eq!(
-            parse_process_arguments(vec![
-                "backup".into(),
-                "restore".into(),
-                "rustyauth-backups/v2/vtr/example.rauth".into(),
-            ])
-            .unwrap(),
-            ProcessMode::BackupRestore {
-                object_key: "rustyauth-backups/v2/vtr/example.rauth".into(),
-                preserve_sessions: false,
+    async fn response_for(request: Request<Body>, production: bool) -> http::Response<Body> {
+        policy_router(production)
+            .oneshot(request)
+            .await
+            .expect("the transport policy is infallible")
+    }
+
+    /// Every response leaves with the security headers, including the ones the
+    /// middleware itself generates.
+    ///
+    /// This is ordering, not configuration: `Router::layer` makes the last-added
+    /// layer outermost, so a timeout, body-limit or panic layer added after the
+    /// header layers would short-circuit outside them and answer without any of
+    /// these headers. Reading the chain does not reveal that; this does.
+    #[tokio::test]
+    async fn short_circuited_responses_still_carry_the_security_headers() {
+        let oversized = Request::builder()
+            .method(Method::POST)
+            .uri("/sink")
+            .body(Body::from("x".repeat(MAX_REQUEST_BODY_BYTES + 1)))
+            .expect("request builds");
+
+        let cases: Vec<(&str, http::Response<Body>)> = vec![
+            (
+                "success",
+                response_for(
+                    Request::builder().uri("/ok").body(Body::empty()).unwrap(),
+                    true,
+                )
+                .await,
+            ),
+            ("body limit", response_for(oversized, true).await),
+            (
+                "caught panic",
+                response_for(
+                    Request::builder()
+                        .uri("/panic")
+                        .body(Body::empty())
+                        .unwrap(),
+                    true,
+                )
+                .await,
+            ),
+        ];
+
+        for (label, response) in cases {
+            let headers = response.headers();
+            for name in [
+                header::X_CONTENT_TYPE_OPTIONS,
+                header::CONTENT_SECURITY_POLICY,
+                header::X_FRAME_OPTIONS,
+                header::REFERRER_POLICY,
+                header::STRICT_TRANSPORT_SECURITY,
+            ] {
+                assert!(
+                    headers.contains_key(&name),
+                    "{label} response is missing {name}"
+                );
             }
-        );
-        assert_eq!(
-            parse_process_arguments(vec!["keys".into(), "rotate".into()]).unwrap(),
-            ProcessMode::KeysRotate
+        }
+    }
+
+    /// A panicking handler costs one request, not the process, and the response
+    /// says nothing about the panic.
+    #[tokio::test]
+    async fn a_panicking_handler_returns_a_generic_error() {
+        let response = response_for(
+            Request::builder()
+                .uri("/panic")
+                .body(Body::empty())
+                .unwrap(),
+            true,
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
+        let body = to_bytes(response.into_body(), 64 * 1024)
+            .await
+            .expect("body reads");
+        let body = String::from_utf8_lossy(&body);
+        assert!(
+            !body.contains("deliberate panic"),
+            "the panic message must not reach the client: {body}"
         );
     }
 
-    #[test]
-    fn local_agent_redirect_cannot_escape_the_configured_app() {
-        let origin = url::Url::parse("http://localhost:5174").unwrap();
-        let accepted = url::Url::parse("http://localhost:5174/#/tax").unwrap();
-        assert_eq!(
-            validated_local_redirect(&origin, Some(accepted)).unwrap(),
-            "http://localhost:5174/#/tax"
+    /// HSTS instructs a browser to refuse plain HTTP to this host for two years.
+    /// Emitting it from a loopback development origin would strand the developer.
+    #[tokio::test]
+    async fn hsts_is_production_only() {
+        let request = || Request::builder().uri("/ok").body(Body::empty()).unwrap();
+        assert!(
+            response_for(request(), true)
+                .await
+                .headers()
+                .contains_key(header::STRICT_TRANSPORT_SECURITY)
         );
-        let escaped = url::Url::parse("http://localhost:9999/#/tax").unwrap();
-        assert!(validated_local_redirect(&origin, Some(escaped)).is_err());
+        assert!(
+            !response_for(request(), false)
+                .await
+                .headers()
+                .contains_key(header::STRICT_TRANSPORT_SECURITY)
+        );
     }
 }

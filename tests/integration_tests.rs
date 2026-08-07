@@ -1,11 +1,12 @@
 //! HTTP-boundary and clean-room recovery coverage against real SableDB and S3 services.
 
-use std::{env, sync::Arc};
+use std::{env, net::SocketAddr, sync::Arc};
 
 use anyhow::{Context, Result};
 use axum::{
     Router,
     body::{Body, to_bytes},
+    extract::ConnectInfo,
     http::{Method, Request, StatusCode, header},
 };
 use redis::AsyncCommands;
@@ -17,12 +18,13 @@ use url::Url;
 use uuid::Uuid;
 use webauthn_rs::WebauthnBuilder;
 
-use crate::{
+use rustyauth::{
     app_state::AppState,
     auth,
     backup::BackupStore,
     config::{BackupConfig, KeyRing, SigningRotationConfig},
     jwt::{JwtIssuer, validate_snapshot_keyset},
+    rate_limit::RateLimiter,
     store::{
         AccountIdentifier, AccountProfile, IdentifierKind, IdentifierValue, Session, Store, User,
         now,
@@ -123,6 +125,8 @@ async fn clean_room_backup_restore_and_rotation() -> Result<()> {
         .rp_name("RustyAuth integration")
         .build()?;
     let app = auth::routes().with_state(AppState {
+        rate_limiter: Arc::new(RateLimiter::new(1_024)),
+        trusted_proxy_hops: 0,
         store: source.clone(),
         webauthn: Arc::new(webauthn),
         jwt: source_jwt.clone(),
@@ -499,7 +503,13 @@ async fn request(
     } else {
         Body::empty()
     };
-    let response = app.clone().oneshot(builder.body(body)?).await?;
+    // `axum::serve` supplies this from the accepted socket; a tower oneshot has no
+    // socket, so the rate limiter's peer address has to be injected here.
+    let mut request = builder.body(body)?;
+    request
+        .extensions_mut()
+        .insert(ConnectInfo(SocketAddr::from(([127, 0, 0, 1], 50_000))));
+    let response = app.clone().oneshot(request).await?;
     let status = response.status();
     let bytes = to_bytes(response.into_body(), 1_048_576).await?;
     let body = if bytes.is_empty() {
