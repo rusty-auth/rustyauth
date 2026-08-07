@@ -1,0 +1,87 @@
+---
+import type { Solution } from "../../data/solutions";
+import { solutions } from "../../data/solutions";
+import SolutionBoundary3D from "../../components/SolutionBoundary3D";
+import BaseLayout from "../../layouts/BaseLayout.astro";
+
+export function getStaticPaths() {
+  return solutions.map((solution) => ({ params: { slug: solution.slug }, props: { solution } }));
+}
+
+const { solution } = Astro.props as { solution: Solution };
+---
+
+<BaseLayout title={`${solution.sector} · RustyAuth`} description={solution.intro}>
+  <main class={`solution-detail solution-${solution.slug}`}>
+    <section class="solution-detail-hero shell">
+      <div class="solution-detail-copy">
+        <a class="back-link" href="/solutions">← All solutions</a>
+        <p class="kicker"><span></span> {solution.eyebrow}</p>
+        <h1>{solution.headline}</h1>
+        <p>{solution.intro}</p>
+        <div class="reference-pill"><span>Illustrative reference scenario</span><small>Not a customer or compliance claim</small></div>
+      </div>
+      <SolutionBoundary3D sector={solution.sector} steps={solution.boundary} client:load />
+    </section>
+
+    <section class="solution-story shell">
+      <div class="solution-story-heading">
+        <p class="kicker"><span></span> The operating reality</p>
+        <h2>{solution.scenarioTitle}</h2>
+        <p>{solution.scenario}</p>
+      </div>
+      <div class="pressure-grid">
+        {
+          solution.pressures.map(([title, body], index) => (
+            <article><span>0{index + 1}</span><h3>{title}</h3><p>{body}</p></article>
+          ))
+        }
+      </div>
+    </section>
+
+    <section class="solution-capabilities">
+      <div class="shell solution-capabilities-inner">
+        <div>
+          <p class="kicker light"><span></span> What the core contributes</p>
+          <h2>Authentication stays small.<br />The product stays authoritative.</h2>
+          <p>RustyAuth establishes who authenticated and issues narrow claims. Sector-specific systems keep every business decision.</p>
+        </div>
+        <div class="solution-capability-grid">
+          {
+            solution.capabilities.map(([title, body], index) => (
+              <article><span>0{index + 1}</span><h3>{title}</h3><p>{body}</p></article>
+            ))
+          }
+        </div>
+      </div>
+    </section>
+
+    <section class="solution-scope shell">
+      <div class="solution-scope-heading">
+        <p class="kicker"><span></span> Honest boundary</p>
+        <h2>What this story does—and does not—claim.</h2>
+        <p>Regulated infrastructure earns trust through evidence. These boundaries remain explicit while RustyAuth is pre-release.</p>
+      </div>
+      <div class="scope-panels">
+        <article>
+          <p>RustyAuth does not replace</p>
+          <ul>{solution.doesNotReplace.map((item) => <li>{item}</li>)}</ul>
+        </article>
+        <article class="production-panel">
+          <p>Production profile requires</p>
+          <ul>{solution.productionNeeds.map((item) => <li>{item}</li>)}</ul>
+        </article>
+      </div>
+    </section>
+
+    <section class="solution-detail-cta shell">
+      <p class="kicker centered"><span></span> Begin with evidence</p>
+      <h2>Evaluate the boundary<br />inside your environment.</h2>
+      <p>RustyAuth is pre-release. Start with a synthetic account and a controlled evaluation—not a sole production identity dependency.</p>
+      <div class="hero-actions centered-actions">
+        <a class="button button-primary" href="/docs/getting-started">Start locally <span>→</span></a>
+        <a class="button button-secondary" href="/docs/architecture">Review the architecture <span>→</span></a>
+      </div>
+    </section>
+  </main>
+</BaseLayout>

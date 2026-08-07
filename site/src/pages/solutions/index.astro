@@ -1,0 +1,75 @@
+---
+import BaseLayout from "../../layouts/BaseLayout.astro";
+import { solutions } from "../../data/solutions";
+
+const foundations = [
+  ["Passkey-first", "WebAuthn ceremonies keep reusable passwords out of the core sign-in path."],
+  ["Short-lived trust", "Revocable sessions and audience-bound tokens limit what moves between systems."],
+  ["Customer-controlled", "Identity state, signing keys and recovery operations stay inside the deployed boundary."],
+  ["Explicit scope", "The protected application—not RustyAuth—owns business permissions and resource decisions."],
+];
+---
+
+<BaseLayout
+  title="Solutions · RustyAuth"
+  description="Reference scenarios for deploying RustyAuth across SaaS, gambling, banking, financial services, healthcare products and secure systems."
+>
+  <main class="solutions-hub">
+    <section class="solution-hub-hero shell">
+      <p class="kicker"><span></span> Deployment stories</p>
+      <h1>One identity boundary.<br /><em>Different operating realities.</em></h1>
+      <p>
+        RustyAuth starts as a fast path to passkey authentication for SaaS teams. The same compact boundary can
+        move into customer cloud, installed products and—after further assurance work—disconnected systems.
+      </p>
+      <div class="scenario-notice">
+        <span>Reference scenarios</span>
+        <p>These stories illustrate product direction. They are not named customer deployments, certifications or compliance claims.</p>
+      </div>
+    </section>
+
+    <section class="shell solutions-hub-grid" aria-label="Industry reference scenarios">
+      {
+        solutions.map((solution, index) => (
+          <a
+            class={`solution-hub-card solution-hub-card-${index + 1}`}
+            href={`/solutions/${solution.slug}`}
+            style={`--card-image: url('/solutions/industry/${solution.slug}.jpg')`}
+          >
+            <div><span>{String(index + 1).padStart(2, "0")}</span><small>Reference scenario</small></div>
+            <p>{solution.sector}</p>
+            <h2>{solution.shortTitle}</h2>
+            <span>{solution.cardBody}</span>
+            <strong>Read the story <i>→</i></strong>
+          </a>
+        ))
+      }
+    </section>
+
+    <section class="solution-foundation">
+      <div class="shell solution-foundation-inner">
+        <div>
+          <p class="kicker light"><span></span> Shared foundation</p>
+          <h2>Different sectors.<br />The same narrow promise.</h2>
+        </div>
+        <div class="solution-foundation-grid">
+          {
+            foundations.map(([title, body], index) => (
+              <article><span>0{index + 1}</span><h3>{title}</h3><p>{body}</p></article>
+            ))
+          }
+        </div>
+      </div>
+    </section>
+
+    <section class="solution-hub-cta shell">
+      <p class="kicker centered"><span></span> Open-source core</p>
+      <h2>Start locally.<br />Decide where trust belongs.</h2>
+      <p>Evaluate the implemented authentication boundary before designing a regulated or disconnected production profile.</p>
+      <div class="hero-actions centered-actions">
+        <a class="button button-primary" href="/docs/getting-started">Run the quickstart <span>→</span></a>
+        <a class="button button-secondary" href="https://github.com/rusty-auth/rustyauth/discussions">Discuss a deployment <span>↗</span></a>
+      </div>
+    </section>
+  </main>
+</BaseLayout>

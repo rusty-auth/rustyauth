@@ -6,14 +6,15 @@ import DocsLayout from "../../layouts/DocsLayout.astro";
   <h2>Start the stack</h2><pre class="doc-code"><code>git clone https://github.com/rusty-auth/rustyauth.git
 cd rustyauth
 cp .env.example .env
-docker compose up --build</code></pre>
+  docker compose up --build</code></pre>
   <div class="doc-callout"><strong>Private by design</strong><p>The Compose topology publishes RustyAuth only on loopback. SableDB remains on the internal container network and writes to a persistent volume.</p></div>
+  <div class="doc-callout doc-callout-railway"><strong>Prefer a hosted evaluation?</strong><p>Launch the same stack from the Railway template, then return here to verify readiness and explore the operator experience.</p><p><a class="button button-railway" href="https://railway.com/new/template/rustyauth?utm_medium=integration&utm_source=button&utm_campaign=rustyauth" target="_blank" rel="noreferrer">Deploy on Railway <span aria-hidden="true">↗</span></a></p></div>
   <h2>Verify readiness</h2><pre class="doc-code"><code>curl --fail http://127.0.0.1:8081/healthz
 curl --fail http://127.0.0.1:8081/readyz
 curl --fail http://127.0.0.1:8081/.well-known/passkey-auth</code></pre>
   <p>The health endpoint proves the process is alive. Readiness confirms the private SableDB dependency is reachable, while capability discovery reports the runtime's backup status.</p>
   <h2>Check the operator experience</h2><pre class="doc-code"><code>docker compose exec auth passkey-auth-service --help
 docker compose exec auth passkey-auth-service doctor</code></pre>
-  <p><code>doctor</code> validates configuration, SableDB connectivity, signing-key state and backup access when backups are enabled. The blank backup variables in <code>.env.example</code> deliberately leave the local scheduler disabled.</p>
+  <p>Open <a href="http://localhost:8081">the local control plane</a>. A passkey account listed in <code>AUTH_OPERATOR_EMAILS</code> can bootstrap the owner; add <code>?preview=1</code> to inspect populated sample data. <code>doctor</code> validates configuration, SableDB connectivity, signing-key state and backup access when backups are enabled.</p>
   <h2>Next steps</h2><p>Review <a href="/docs/configuration"><code>WEBAUTHN_RP_ORIGIN</code>, token and backup settings</a>, follow the endpoint contracts in the <a href="/docs/api">API guide</a>, and rehearse the <a href="/docs/recovery">backup and recovery workflow</a>.</p>
 </DocsLayout>
