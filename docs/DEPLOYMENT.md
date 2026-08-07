@@ -111,8 +111,12 @@ RustyAuth expects the deployment platform to terminate TLS. `AUTH_ISSUER` and
 `WEBAUTHN_RP_ORIGIN` must describe the public HTTPS origins, not internal container URLs. Do not
 rewrite browser `Origin` headers to bypass exact-origin enforcement.
 
-Preserve `Set-Cookie`, `Origin`, `Content-Type` and request IDs through any proxy. Do not cache token,
-credential or session responses.
+Preserve `Set-Cookie`, `Origin`, `Authorization`, `Content-Type`, request IDs and RPC trailers through
+any proxy. Disable response buffering for
+`/rustyauth.events.v1.AuthEventService/Subscribe`. Connect and gRPC-Web can traverse HTTP/1.1, while
+native gRPC requires HTTP/2 from the client through the public proxy to RustyAuth. Configure stream
+idle and request timeouts above the consumer's checkpoint interval. Do not cache token, credential,
+session or event-stream responses.
 
 ## Upgrade procedure
 
@@ -141,9 +145,9 @@ RustyAuth writes structured JSON logs and propagates or creates `x-request-id`. 
 passkey_auth_service=info,tower_http=info
 ```
 
-Never enable body logging for WebAuthn credentials, cookies, JWTs, bootstrap tokens or backup
-secrets. The application marks the `Authorization` request header as sensitive; operational tooling
-must also redact `Cookie`, `Set-Cookie` and `x-bootstrap-token`.
+Never enable body logging for WebAuthn credentials, cookies, JWTs, bootstrap tokens, event RPC
+tokens or backup secrets. The application marks the `Authorization` request header as sensitive;
+operational tooling must also redact `Cookie`, `Set-Cookie` and `x-bootstrap-token`.
 
 Monitor at least:
 

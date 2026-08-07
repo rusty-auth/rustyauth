@@ -14,7 +14,7 @@ const status = [
   ["Passkey registration and sign-in", "Available"],
   ["Sessions and credential management", "Available"],
   ["ES256 tokens and JWKS", "Available"],
-  ["Protobuf + gRPC service boundary", "Planned"],
+  ["Protobuf + gRPC event stream", "Available"],
   ["Recovery and signing-key rotation", "Before 1.0"],
 ];
 ---
@@ -42,12 +42,12 @@ const status = [
       <div class="section-heading">
         <p class="kicker"><span></span> Deliberate technology choices</p>
         <h2>Secure and lightweight.<br />Ready to scale.</h2>
-        <p>Each layer has one job: Rust protects the public boundary, SableDB keeps identity state compact and private, and typed contracts will keep application integrations explicit.</p>
+        <p>Each layer has one job: Rust protects the public boundary, SableDB keeps identity state compact and private, and typed contracts keep application integrations explicit.</p>
       </div>
       <div class="stack-grid">
         <article><span class="stack-index">01</span><p>Why Rust</p><h3>Safety without a runtime tax.</h3><ul><li>Memory safety without garbage-collection pauses</li><li>Predictable latency at the authentication boundary</li><li>One small binary with a narrow operational surface</li><li>A mature cryptography and WebAuthn ecosystem</li></ul><strong>Shipped today</strong></article>
         <article class="stack-featured"><span class="stack-index">02</span><p>Why SableDB</p><h3>Durable state, without database sprawl.</h3><ul><li>Rust-native, Valkey-compatible persistence</li><li>Private, volume-backed identity storage</li><li>Fast atomic pipelines for credentials and sessions</li><li>A compact topology that remains easy to own</li></ul><strong>Shipped today</strong></article>
-        <article><span class="stack-index">03</span><p>Why typed contracts</p><h3>Protocol clarity across services.</h3><ul><li>Protobuf schemas as an explicit interface</li><li>Efficient gRPC for trusted service communication</li><li>Generated clients instead of hand-written payloads</li><li>Versionable contracts as RustyAuth grows</li></ul><strong class="roadmap">Planned boundary</strong></article>
+        <article><span class="stack-index">03</span><p>Why typed contracts</p><h3>Protocol clarity across services.</h3><ul><li>Versioned Protobuf event schema</li><li>Connect, gRPC-Web and native gRPC streaming</li><li>Generated clients instead of hand-written payloads</li><li>Consumer-owned cursors for at-least-once delivery</li></ul><strong>Shipped today</strong></article>
       </div>
     </section>
 

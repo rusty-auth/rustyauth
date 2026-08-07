@@ -8,8 +8,13 @@ mod app_state;
 mod auth;
 mod backup;
 mod config;
+mod event_rpc;
 mod jwt;
 mod store;
+
+mod proto {
+    connectrpc::include_generated!();
+}
 
 use std::{
     io::{Read, Write},
@@ -58,7 +63,7 @@ struct Health<'a> {
 struct Metadata<'a> {
     issuer: String,
     passkeys: bool,
-    event_protocols: [&'a str; 1],
+    event_protocols: [&'a str; 4],
     backup_sink_configured: bool,
     scheduled_backups: bool,
 }
@@ -120,8 +125,11 @@ async fn main() -> Result<()> {
     let bind = (config.bind, config.port);
     let cors_origin = HeaderValue::from_str(config.rp_origin.as_str().trim_end_matches('/'))
         .context("WEBAUTHN_RP_ORIGIN cannot be represented as an Origin header")?;
+    let store = Store::new(redis, config.tenant_id);
+    let event_rpc = event_rpc::service(store.clone(), &config.event_rpc_token);
+    config.event_rpc_token.zeroize();
     let state = AppState {
-        store: Store::new(redis, config.tenant_id),
+        store,
         webauthn: Arc::new(webauthn),
         jwt,
         issuer,
@@ -143,14 +151,23 @@ async fn main() -> Result<()> {
         .route("/.well-known/passkey-auth", get(metadata))
         .merge(auth::routes())
         .with_state(state)
+        .fallback_service(event_rpc)
         .layer(
             CorsLayer::new()
                 .allow_origin(cors_origin)
                 .allow_credentials(true)
                 .allow_methods([Method::GET, Method::POST, Method::OPTIONS])
                 .allow_headers([
+                    header::AUTHORIZATION,
                     header::CONTENT_TYPE,
+                    HeaderName::from_static("connect-protocol-version"),
+                    HeaderName::from_static("connect-timeout-ms"),
+                    HeaderName::from_static("grpc-accept-encoding"),
+                    HeaderName::from_static("grpc-encoding"),
+                    HeaderName::from_static("grpc-timeout"),
                     HeaderName::from_static("x-bootstrap-token"),
+                    HeaderName::from_static("x-grpc-web"),
+                    HeaderName::from_static("x-user-agent"),
                 ]),
         )
         .layer(SetSensitiveRequestHeadersLayer::new(std::iter::once(
@@ -293,7 +310,7 @@ async fn metadata(State(state): State<AppState>) -> Json<Metadata<'static>> {
     Json(Metadata {
         issuer: state.issuer.to_string(),
         passkeys: true,
-        event_protocols: ["http-poll"],
+        event_protocols: ["http-poll", "connect", "grpc-web", "grpc"],
         backup_sink_configured: state.backup.is_some(),
         scheduled_backups: false,
     })

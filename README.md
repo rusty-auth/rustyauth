@@ -45,7 +45,7 @@ permissions, entitlements and resource ownership.
 - ES256 JWT issuance with issuer, audience, tenant, subject, session and authentication-method
   claims;
 - OpenID-style discovery and a public JWKS endpoint;
-- ordered, cursor-based authentication-event polling;
+- ordered authentication-event delivery over HTTP polling, Connect, gRPC-Web and native gRPC;
 - exact-origin CORS and request-origin enforcement;
 - liveness, dependency readiness, request IDs and structured JSON logging;
 - development-only, one-use agent browser handoffs for an existing account; and
@@ -61,6 +61,7 @@ flowchart LR
     Auth -->|"private Valkey protocol"| Sable["SableDB\nidentity state"]
     Auth -->|"short-lived ES256 JWT"| API["Application API / SpacetimeDB"]
     API -->|"JWKS verification"| Auth
+    Auth -->|"authenticated event stream"| Events["Trusted event consumer"]
     Auth -.->|"AES-256-GCM envelope\nnot yet scheduled"| Bucket["S3-compatible bucket"]
 ```
 
@@ -152,9 +153,10 @@ are stored only as SHA-256-derived SableDB keys; the raw bearer value lives in t
 | `POST /v1/credentials/rename` | Session + origin | Rename a passkey |
 | `POST /v1/credentials/revoke` | Recent session + origin | Remove a non-final passkey |
 | `GET /v1/events?after=N` | Bootstrap | Poll up to 500 ordered events |
+| `POST /rustyauth.events.v1.AuthEventService/Subscribe` | Event RPC bearer | Replay and follow ordered events |
 | `POST /v1/email-links` | Origin | Record a sign-in request; delivery is not implemented |
 
-The complete request/response contract and error behavior are documented in [HTTP API](docs/API.md).
+The complete request/response contract and error behavior are documented in the [API reference](docs/API.md).
 The API may change before `1.0`; pin a release or commit.
 
 ## Configuration and deployment
@@ -180,17 +182,17 @@ RustyAuth is currently `0.1.0` pre-release software.
 | Passkey registration and authentication | Implemented |
 | Durable sessions and credential management | Implemented |
 | ES256 JWT and JWKS | Implemented; rotation not implemented |
-| Ordered HTTP event polling | Implemented |
+| Ordered event polling and streaming | Implemented; pre-`1.0` contract |
 | Email sign-in and verification delivery | Event recording only |
 | Account recovery | Not implemented |
 | S3 envelope encryption/upload primitive | Implemented but not scheduled |
 | Snapshot export and point-in-time restore | Not implemented |
-| Stable streaming/webhook contract | Not implemented |
+| Webhook delivery | Not implemented |
 | Multi-tenant runtime isolation | Claims/events are tenant-tagged; one configured tenant per instance |
 | Independent security review | Not completed |
 
 Production `1.0` requires recovery and abuse controls, scheduled export plus tested restore,
-signing-key overlap/rotation, stable events, cross-instance concurrency review, dependency and
+signing-key overlap/rotation, event-contract stabilization, cross-instance concurrency review, dependency and
 protocol audits, authenticator coverage and an independent security assessment. The detailed gate
 is documented in [Architecture](docs/ARCHITECTURE.md) and the [Security policy](SECURITY.md).
 
@@ -205,9 +207,10 @@ cargo test
 cargo build --locked --release
 ```
 
-Tests currently cover configuration validation, browser-handoff confinement, credential input
-validation and backup-envelope properties. Integration, concurrency and protocol-negative coverage
-must expand before production readiness.
+Tests cover configuration validation, browser-handoff confinement, credential input validation,
+backup-envelope properties, RPC authentication, event-log integrity, and Connect/gRPC-Web/gRPC
+wire compatibility. Storage integration, concurrency and protocol-negative coverage must expand
+before production readiness.
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for the development workflow and security-sensitive change
 requirements.

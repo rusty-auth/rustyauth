@@ -14,7 +14,8 @@ listener. Missing or invalid required values stop startup.
 | `WEBAUTHN_RP_NAME` | `Example Account` | Name shown by the authenticator |
 | `SABLEDB_URL` | `redis://sabledb.railway.internal:6379` | Valkey-protocol URL; production host must end in `.railway.internal` |
 | `AUTH_MASTER_KEY_HEX` | 64 hex characters | 32-byte AES key protecting persisted JWT private material |
-| `BOOTSTRAP_TOKEN` | high-entropy secret | Administrative initial-enrolment/event credential; at least 32 characters in production |
+| `BOOTSTRAP_TOKEN` | high-entropy secret | Administrative initial-enrolment and HTTP-event-polling credential; at least 32 characters in production |
+| `AUTH_EVENT_RPC_TOKEN` | independent high-entropy secret | Bearer credential for Connect/gRPC event subscriptions; at least 32 characters and must differ from `BOOTSTRAP_TOKEN` |
 | `SPACETIME_AUDIENCE` | `example-dashboard` | Exact `aud` written into access tokens |
 
 `AUTH_ENV` is logically required even though omission selects development. Set it explicitly in
@@ -60,15 +61,16 @@ Generate each secret independently. Example commands:
 
 ```sh
 openssl rand -hex 32       # AUTH_MASTER_KEY_HEX
-openssl rand -base64 48   # BOOTSTRAP_TOKEN
+openssl rand -base64 48    # BOOTSTRAP_TOKEN
+openssl rand -base64 48    # AUTH_EVENT_RPC_TOKEN
 openssl rand -hex 32       # AUTH_BACKUP_ENCRYPTION_KEY_HEX
 ```
 
 Do not reuse keys across purposes, tenants or environments. Keep backup encryption keys outside the
 bucket and its provider account; losing that key makes encrypted snapshots unrecoverable.
 
-The zero development master key and `vtr-local-enrolment-only` bootstrap token in `.env.example` are
-public fixtures. They must not appear in a shared deployment.
+The development master key, bootstrap token and event RPC token in `.env.example` are public
+fixtures. They must not appear in a shared deployment.
 
 ## Origin and relying-party rules
 
@@ -112,6 +114,7 @@ WEBAUTHN_RP_NAME=Example Account
 SABLEDB_URL=redis://sabledb.railway.internal:6379
 AUTH_MASTER_KEY_HEX=<64-hex-secret>
 BOOTSTRAP_TOKEN=<high-entropy-secret>
+AUTH_EVENT_RPC_TOKEN=<independent-high-entropy-secret>
 SPACETIME_AUDIENCE=example-dashboard
 AUTH_TENANT_ID=example
 AUTH_ACCESS_TOKEN_SECONDS=300
@@ -127,6 +130,8 @@ system.
 ## Rotation impact
 
 - Rotating `BOOTSTRAP_TOKEN` affects future enrolment and event polling only.
+- Rotating `AUTH_EVENT_RPC_TOKEN` terminates authorization for new subscriptions; reconnect trusted
+  consumers with the replacement secret.
 - Rotating `AUTH_MASTER_KEY_HEX` without re-encrypting the stored signing key prevents startup.
 - Rotating `AUTH_BACKUP_ENCRYPTION_KEY_HEX` makes earlier envelopes unreadable unless old keys are
   retained in a controlled keyring.

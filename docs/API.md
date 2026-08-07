@@ -1,4 +1,4 @@
-# RustyAuth HTTP API
+# RustyAuth API
 
 This is the pre-`1.0` contract implemented by the Rust service. All JSON request bodies use
 `Content-Type: application/json`. Error responses have the form:
@@ -43,7 +43,7 @@ Returns runtime capability metadata:
 {
   "issuer": "https://auth.example.com",
   "passkeys": true,
-  "event_protocols": ["http-poll"],
+  "event_protocols": ["http-poll", "connect", "grpc-web", "grpc"],
   "backup_sink_configured": false,
   "scheduled_backups": false
 }
@@ -265,7 +265,11 @@ Returns at most 500 events strictly after the supplied cursor:
       "tenantId": "vtr",
       "type": "session.created",
       "subject": "3e706d6b-091d-4dc5-a885-5de9ccbf89e8",
-      "occurredAt": 1786096800
+      "occurredAt": 1786096800,
+      "data": {
+        "authMethod": "passkey",
+        "credentialId": "base64url-credential-id"
+      }
     }
   ]
 }
@@ -280,7 +284,61 @@ Known event types include:
 - `session.created`; and
 - `agent.handoff.created`.
 
-There is no retention, acknowledgement or stable streaming contract yet.
+HTTP polling remains available for bootstrap and diagnostics. New durable consumers should use the
+streaming RPC below. No retention or compaction policy is implemented yet.
+
+## Event streaming RPC
+
+### `rustyauth.events.v1.AuthEventService/Subscribe`
+
+Access: `Authorization: Bearer <AUTH_EVENT_RPC_TOKEN>`.
+
+The server exposes one protobuf server-streaming RPC on the same port as the HTTP API:
+
+```protobuf
+rpc Subscribe(SubscribeRequest) returns (stream SubscribeResponse);
+```
+
+The canonical schema is
+[`proto/rustyauth/events/v1/events.proto`](../proto/rustyauth/events/v1/events.proto). The route is
+`/rustyauth.events.v1.AuthEventService/Subscribe` and accepts Connect, gRPC-Web and native gRPC.
+
+`SubscribeRequest` fields:
+
+| Field | Meaning |
+| --- | --- |
+| `after_sequence` | Last sequence durably processed; zero starts from the beginning |
+| `event_types` | Up to 50 exact event types; empty selects all |
+| `checkpoint_interval_seconds` | Zero selects 15 seconds, otherwise 5–60 |
+| `tenant_ids` | Up to 50 exact tenant IDs; empty selects all events in this instance |
+
+Each response is either an `AuthEvent` or an idle `AuthEventCheckpoint`. Events contain sequence,
+event UUID, type, optional subject UUID, RFC 3339 timestamp, tenant ID and `data_json`. The latter is
+a UTF-8 JSON object with redacted event-specific fields. It can still contain personal data such as
+an email address or a credential identifier, so consumers must protect it accordingly. Assertions,
+cookies, JWTs, session tokens and handoff codes are never included.
+
+Delivery is at least once. A consumer must commit its own work and the received event sequence in
+one durable operation, then reconnect with that value as `after_sequence`. Filtered events still
+advance the server's internal scan cursor; checkpoint `latest_sequence` is the latest global cursor,
+including events excluded by filters.
+
+For a local native-gRPC smoke test:
+
+```sh
+grpcurl -plaintext \
+  -import-path proto \
+  -proto rustyauth/events/v1/events.proto \
+  -H "authorization: Bearer ${AUTH_EVENT_RPC_TOKEN}" \
+  -d '{"afterSequence":"0","checkpointIntervalSeconds":15}' \
+  127.0.0.1:8081 \
+  rustyauth.events.v1.AuthEventService/Subscribe
+```
+
+Invalid cursors or filters return `INVALID_ARGUMENT`; missing or invalid credentials return
+`UNAUTHENTICATED`; exhausted stream capacity returns `RESOURCE_EXHAUSTED`; a non-contiguous or
+malformed event log returns `DATA_LOSS`; and a storage failure returns `UNAVAILABLE`. One process
+accepts at most 32 concurrent subscriptions.
 
 ## Development-only agent handoff
 

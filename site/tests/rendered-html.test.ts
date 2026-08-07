@@ -11,8 +11,16 @@ Deno.test("renders the RustyAuth landing page", async () => {
   assertMatch(html, /Deploy on Railway/);
   assertMatch(html, /railway\.com\/new\/template\/rustyauth/);
   assertMatch(html, /Why Rust/);
-  assertMatch(html, /Protobuf \+ gRPC service boundary/);
+  assertMatch(html, /Protobuf \+ gRPC event stream/);
+  assertMatch(html, /Connect, gRPC-Web and native gRPC streaming/);
   assertNotMatch(html, /codex-preview|Your site is taking shape/);
+});
+
+Deno.test("documents the event streaming wire", async () => {
+  const html = await Deno.readTextFile(outputFor("/docs/api"));
+  assertMatch(html, /rustyauth\.events\.v1\.AuthEventService\/Subscribe/);
+  assertMatch(html, /AUTH_EVENT_RPC_TOKEN/);
+  assertMatch(html, /at least once/i);
 });
 
 Deno.test("renders every documentation route", async () => {

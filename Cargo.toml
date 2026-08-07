@@ -15,12 +15,15 @@ publish = false
 [dependencies]
 aes-gcm = "0.10"
 anyhow = "1"
+async-stream = "0.3"
 aws-config = "1.8"
 aws-credential-types = "1.2"
 aws-sdk-s3 = "1.141"
 axum = "0.8"
 base64 = "0.22"
-connectrpc = "0.8.1"
+buffa = "0.8.1"
+connectrpc = { version = "0.8.1", features = ["axum"] }
+futures = "0.3"
 hex = "0.4"
 http = "1"
 jsonwebtoken = { version = "11", default-features = false, features = ["rust_crypto"] }
@@ -31,9 +34,10 @@ secrecy = { version = "0.10", features = ["serde"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 sha2 = "0.10"
+subtle = "2"
 thiserror = "2"
 time = { version = "0.3", features = ["formatting", "serde"] }
-tokio = { version = "1", features = ["macros", "net", "rt-multi-thread", "signal", "time"] }
+tokio = { version = "1", features = ["macros", "net", "rt-multi-thread", "signal", "sync", "time"] }
 tower-http = { version = "0.6", features = ["cors", "request-id", "sensitive-headers", "set-header", "trace"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
@@ -41,6 +45,13 @@ url = { version = "2", features = ["serde"] }
 uuid = { version = "1", features = ["serde", "v4"] }
 webauthn-rs = { version = "=0.5.5", default-features = false, features = ["danger-allow-state-serialisation", "danger-credential-internals"] }
 zeroize = "1"
+
+[build-dependencies]
+connectrpc-build = "=0.8.0"
+protoc-bin-vendored = "3"
+
+[dev-dependencies]
+connectrpc = { version = "0.8.1", features = ["client"] }
 
 [profile.release]
 codegen-units = 1

@@ -13,6 +13,7 @@ use anyhow::{Context, Result, bail};
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use redis::AsyncCommands;
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
+use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use tokio::sync::Mutex;
 use uuid::Uuid;
@@ -102,6 +103,18 @@ pub struct AuthEvent {
     pub event_type: String,
     pub subject: Option<Uuid>,
     pub occurred_at: u64,
+    #[serde(default = "empty_event_data")]
+    pub data: Value,
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum EventLogIntegrityError {
+    #[error("auth event log is missing sequence {0}")]
+    MissingSequence(u64),
+    #[error("auth event log record {sequence} is malformed")]
+    MalformedRecord { sequence: u64 },
+    #[error("auth event log record {expected} contains sequence {actual}")]
+    UnexpectedSequence { expected: u64, actual: u64 },
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -219,22 +232,30 @@ impl Store {
                 passkey,
             }],
         };
+        let mut event_inputs = vec![("identity.created", Some(user_id), json!({ "email": email }))];
+        if !email_verified {
+            event_inputs.push((
+                "email.verification.requested",
+                Some(user_id),
+                json!({ "email": email }),
+            ));
+        }
+        let events = self.next_events(event_inputs).await?;
         let mut connection = self.redis.clone();
-        let serialized = serde_json::to_string(&user)?;
-        let _: () = redis::pipe()
+        let mut pipeline = redis::pipe();
+        pipeline
             .atomic()
-            .set(format!("auth:user:{user_id}"), serialized)
+            .set(
+                format!("auth:user:{user_id}"),
+                serde_json::to_string(&user)?,
+            )
             .set(format!("auth:email:{email}"), user_id.to_string())
-            .set(format!("auth:credential:{id}"), user_id.to_string())
+            .set(format!("auth:credential:{id}"), user_id.to_string());
+        queue_events(&mut pipeline, &events)?;
+        let _: () = pipeline
             .query_async(&mut connection)
             .await
-            .context("persist user and passkey")?;
-        drop(_guard);
-        self.append_event("identity.created", Some(user_id)).await?;
-        if !email_verified {
-            self.append_event("email.verification.requested", Some(user_id))
-                .await?;
-        }
+            .context("persist user, passkey, and events")?;
         Ok(user)
     }
 
@@ -297,20 +318,27 @@ impl Store {
             last_used_at: None,
             passkey,
         });
+        let event = self
+            .next_event(
+                "credential.created",
+                Some(user_id),
+                json!({ "credentialId": id }),
+            )
+            .await?;
         let mut connection = self.redis.clone();
-        let _: () = redis::pipe()
+        let mut pipeline = redis::pipe();
+        pipeline
             .atomic()
             .set(
                 format!("auth:user:{user_id}"),
                 serde_json::to_string(&user)?,
             )
-            .set(format!("auth:credential:{id}"), user_id.to_string())
+            .set(format!("auth:credential:{id}"), user_id.to_string());
+        queue_events(&mut pipeline, &[event])?;
+        let _: () = pipeline
             .query_async(&mut connection)
             .await
-            .context("persist additional passkey")?;
-        drop(_guard);
-        self.append_event("credential.created", Some(user_id))
-            .await?;
+            .context("persist additional passkey and event")?;
         Ok(user)
     }
 
@@ -331,11 +359,24 @@ impl Store {
             .find(|passkey| passkey.id == credential_id)
             .ok_or(StorePolicyError::CredentialNotLinked)?;
         passkey.label = label;
-        self.set_json(&format!("auth:user:{user_id}"), &user)
+        let event = self
+            .next_event(
+                "credential.renamed",
+                Some(user_id),
+                json!({ "credentialId": credential_id }),
+            )
             .await?;
-        drop(_guard);
-        self.append_event("credential.renamed", Some(user_id))
-            .await?;
+        let mut connection = self.redis.clone();
+        let mut pipeline = redis::pipe();
+        pipeline.atomic().set(
+            format!("auth:user:{user_id}"),
+            serde_json::to_string(&user)?,
+        );
+        queue_events(&mut pipeline, &[event])?;
+        let _: () = pipeline
+            .query_async(&mut connection)
+            .await
+            .context("rename passkey and persist event")?;
         Ok(user)
     }
 
@@ -354,20 +395,27 @@ impl Store {
             .position(|passkey| passkey.id == credential_id)
             .ok_or(StorePolicyError::CredentialNotLinked)?;
         user.passkeys.remove(position);
+        let event = self
+            .next_event(
+                "credential.revoked",
+                Some(user_id),
+                json!({ "credentialId": credential_id }),
+            )
+            .await?;
         let mut connection = self.redis.clone();
-        let _: () = redis::pipe()
+        let mut pipeline = redis::pipe();
+        pipeline
             .atomic()
             .set(
                 format!("auth:user:{user_id}"),
                 serde_json::to_string(&user)?,
             )
-            .del(format!("auth:credential:{credential_id}"))
+            .del(format!("auth:credential:{credential_id}"));
+        queue_events(&mut pipeline, &[event])?;
+        let _: () = pipeline
             .query_async(&mut connection)
             .await
-            .context("revoke passkey")?;
-        drop(_guard);
-        self.append_event("credential.revoked", Some(user_id))
-            .await?;
+            .context("revoke passkey and persist event")?;
         Ok(user)
     }
 
@@ -378,21 +426,41 @@ impl Store {
         current_credential_id: Option<String>,
         absolute_seconds: u64,
     ) -> Result<(String, Session)> {
+        let _guard = self.mutation.lock().await;
         let token = URL_SAFE_NO_PAD.encode(rand::random::<[u8; 32]>());
         let current = now();
         let session = Session {
             id: Uuid::new_v4(),
             user_id: user.id,
             auth_method: auth_method.into(),
-            current_credential_id,
+            current_credential_id: current_credential_id.clone(),
             session_version: user.session_version,
             created_at: current,
             last_seen_at: current,
             absolute_expires_at: current + absolute_seconds,
         };
-        self.set_json_ex(&session_key(&token), &session, absolute_seconds)
+        let event = self
+            .next_event(
+                "session.created",
+                Some(user.id),
+                json!({
+                    "authMethod": auth_method,
+                    "credentialId": current_credential_id,
+                }),
+            )
             .await?;
-        self.append_event("session.created", Some(user.id)).await?;
+        let mut connection = self.redis.clone();
+        let mut pipeline = redis::pipe();
+        pipeline.atomic().set_ex(
+            session_key(&token),
+            serde_json::to_string(&session)?,
+            absolute_seconds,
+        );
+        queue_events(&mut pipeline, &[event])?;
+        let _: () = pipeline
+            .query_async(&mut connection)
+            .await
+            .context("persist session and event")?;
         Ok((token, session))
     }
 
@@ -434,6 +502,7 @@ impl Store {
         redirect_url: String,
         lifetime_seconds: u64,
     ) -> Result<String> {
+        let _guard = self.mutation.lock().await;
         let user = self
             .user_by_email(email)
             .await?
@@ -444,10 +513,21 @@ impl Store {
             redirect_url,
             expires_at: now() + lifetime_seconds,
         };
-        self.set_json_ex(&handoff_key(&code), &handoff, lifetime_seconds)
+        let event = self
+            .next_event("agent.handoff.created", Some(user.id), json!({}))
             .await?;
-        self.append_event("agent.handoff.created", Some(user.id))
-            .await?;
+        let mut connection = self.redis.clone();
+        let mut pipeline = redis::pipe();
+        pipeline.atomic().set_ex(
+            handoff_key(&code),
+            serde_json::to_string(&handoff)?,
+            lifetime_seconds,
+        );
+        queue_events(&mut pipeline, &[event])?;
+        let _: () = pipeline
+            .query_async(&mut connection)
+            .await
+            .context("persist local agent handoff and event")?;
         Ok(code)
     }
 
@@ -465,35 +545,105 @@ impl Store {
         Ok(handoff)
     }
 
-    pub async fn append_event(&self, event_type: &str, subject: Option<Uuid>) -> Result<AuthEvent> {
+    pub async fn append_event(
+        &self,
+        event_type: &str,
+        subject: Option<Uuid>,
+        data: Value,
+    ) -> Result<AuthEvent> {
         let _guard = self.mutation.lock().await;
+        let event = self.next_event(event_type, subject, data).await?;
         let mut connection = self.redis.clone();
-        let sequence: u64 = connection.incr("auth:event-sequence", 1_u8).await?;
-        let event = AuthEvent {
-            sequence,
-            id: Uuid::new_v4(),
-            tenant_id: self.tenant_id.clone(),
-            event_type: event_type.into(),
-            subject,
-            occurred_at: now(),
-        };
-        self.set_json(&format!("auth:event:{sequence}"), &event)
-            .await?;
+        let mut pipeline = redis::pipe();
+        pipeline.atomic();
+        queue_events(&mut pipeline, std::slice::from_ref(&event))?;
+        let _: () = pipeline
+            .query_async(&mut connection)
+            .await
+            .context("persist auth event")?;
         Ok(event)
     }
 
     pub async fn events(&self, after: u64, limit: u64) -> Result<Vec<AuthEvent>> {
-        let mut connection = self.redis.clone();
-        let latest: Option<u64> = connection.get("auth:event-sequence").await?;
-        let latest = latest.unwrap_or(0);
+        if limit == 0 {
+            return Ok(Vec::new());
+        }
+        let latest = self.latest_event_sequence().await?;
         let end = latest.min(after.saturating_add(limit));
-        let mut result = Vec::new();
-        for sequence in after.saturating_add(1)..=end {
-            if let Some(event) = self.get_json(&format!("auth:event:{sequence}")).await? {
-                result.push(event);
+        if end <= after {
+            return Ok(Vec::new());
+        }
+        let keys = (after + 1..=end)
+            .map(|sequence| format!("auth:event:{sequence}"))
+            .collect::<Vec<_>>();
+        let mut connection = self.redis.clone();
+        let values: Vec<Option<String>> = redis::cmd("MGET")
+            .arg(&keys)
+            .query_async(&mut connection)
+            .await
+            .context("read auth event batch")?;
+        let mut result = Vec::with_capacity(values.len());
+        for (index, value) in values.into_iter().enumerate() {
+            let expected = after + index as u64 + 1;
+            let value = value.ok_or(EventLogIntegrityError::MissingSequence(expected))?;
+            let event = serde_json::from_str::<AuthEvent>(&value)
+                .map_err(|_| EventLogIntegrityError::MalformedRecord { sequence: expected })?;
+            if event.sequence != expected {
+                return Err(EventLogIntegrityError::UnexpectedSequence {
+                    expected,
+                    actual: event.sequence,
+                }
+                .into());
             }
+            result.push(event);
         }
         Ok(result)
+    }
+
+    pub async fn latest_event_sequence(&self) -> Result<u64> {
+        Ok(self.get::<u64>("auth:event-sequence").await?.unwrap_or(0))
+    }
+
+    async fn next_event(
+        &self,
+        event_type: &str,
+        subject: Option<Uuid>,
+        data: Value,
+    ) -> Result<AuthEvent> {
+        let mut events = self.next_events(vec![(event_type, subject, data)]).await?;
+        Ok(events.pop().expect("one event input produces one event"))
+    }
+
+    async fn next_events(
+        &self,
+        inputs: Vec<(&str, Option<Uuid>, Value)>,
+    ) -> Result<Vec<AuthEvent>> {
+        if inputs.iter().any(|(_, _, data)| !data.is_object()) {
+            bail!("auth event data must be a JSON object");
+        }
+        let first = self
+            .latest_event_sequence()
+            .await?
+            .checked_add(1)
+            .context("auth event sequence exhausted")?;
+        inputs
+            .into_iter()
+            .enumerate()
+            .map(|(index, (event_type, subject, data))| {
+                let sequence = first
+                    .checked_add(index as u64)
+                    .context("auth event sequence exhausted")?;
+                Ok(AuthEvent {
+                    sequence,
+                    id: Uuid::new_v4(),
+                    tenant_id: self.tenant_id.clone(),
+                    event_type: event_type.into(),
+                    subject,
+                    occurred_at: now(),
+                    data,
+                })
+            })
+            .collect()
     }
 
     async fn get<T: redis::FromRedisValue>(&self, key: &str) -> Result<Option<T>> {
@@ -551,6 +701,23 @@ pub fn now() -> u64 {
 
 fn credential_id(passkey: &Passkey) -> String {
     URL_SAFE_NO_PAD.encode(passkey.cred_id().as_ref())
+}
+
+fn empty_event_data() -> Value {
+    json!({})
+}
+
+fn queue_events(pipeline: &mut redis::Pipeline, events: &[AuthEvent]) -> Result<()> {
+    for event in events {
+        pipeline.set(
+            format!("auth:event:{}", event.sequence),
+            serde_json::to_string(event)?,
+        );
+    }
+    if let Some(event) = events.last() {
+        pipeline.set("auth:event-sequence", event.sequence);
+    }
+    Ok(())
 }
 
 fn session_key(token: &str) -> String {

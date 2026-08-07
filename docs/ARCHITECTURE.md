@@ -22,6 +22,7 @@ flowchart TB
     subgraph Public["Public boundary"]
       Browser["Relying-party browser"]
       Consumer["Token-consuming API"]
+      EventConsumer["Trusted event consumer"]
       Auth["RustyAuth HTTP service"]
     end
 
@@ -33,6 +34,7 @@ flowchart TB
     Browser -->|"exact origin, WebAuthn, cookie"| Auth
     Auth -->|"ES256 access token"| Browser
     Consumer -->|"JWKS discovery"| Auth
+    Auth -->|"Connect / gRPC event stream"| EventConsumer
     Auth -->|"Valkey protocol"| Sable
     Auth -.->|"encrypted envelope; scheduler pending"| Bucket
 ```
@@ -52,7 +54,7 @@ One Axum process owns:
 - session creation and validation;
 - credential-management policy;
 - JWT signing and JWKS publication;
-- ordered event creation and polling; and
+- atomic ordered event creation, polling and streaming; and
 - health/readiness reporting.
 
 ### SableDB
@@ -87,7 +89,7 @@ RustyAuth stores JSON values and indexes under these logical key families:
 | `auth:session:<sha256>` | Session metadata keyed by a digest of the bearer token | Bounded absolute lifetime |
 | `auth:jwt:active` | Public JWK and AES-GCM-encrypted PKCS#8 private key | Durable |
 | `auth:event-sequence` | Monotonic event cursor | Durable |
-| `auth:event:<sequence>` | Redacted event type, subject and tenant | Durable |
+| `auth:event:<sequence>` | Redacted event type, subject, tenant and JSON data | Durable |
 | `auth:agent-handoff:<sha256>` | Development-only one-use handoff | 60 seconds by default |
 
 Raw session and handoff bearer values are not used as database keys. Their SHA-256 digests are.
@@ -190,12 +192,20 @@ production gate.
 
 ## Events
 
-Events contain only a sequence, UUID, configured tenant ID, event type, optional user UUID and
-timestamp. They deliberately exclude passkey assertions, cookies, JWTs, handoff codes and email-link
+Events contain a sequence, UUID, configured tenant ID, event type, optional user UUID, timestamp and
+a redacted JSON data object. The data may contain an email address or credential identifier. Events
+deliberately exclude passkey assertions, cookies, JWTs, session tokens, handoff codes and email-link
 tokens.
 
 `GET /v1/events?after=N` returns at most 500 subsequent records. It is authenticated by the bootstrap
-token. Streaming, consumer acknowledgements, retention and webhook delivery are not implemented.
+token. `AuthEventService.Subscribe` replays after a consumer-owned cursor and follows new records over
+Connect, gRPC-Web or native gRPC using a dedicated bearer token. Both paths fail on sequence gaps
+instead of silently skipping corrupt or missing records.
+
+Domain state and its corresponding event records are written in the same atomic SableDB pipeline.
+Stream delivery is at least once: RustyAuth does not store consumer acknowledgements, so each
+consumer owns and durably advances its cursor. Retention, compaction and webhook delivery are not
+implemented.
 
 ## Tenancy
 
@@ -229,4 +239,4 @@ Internal errors are logged server-side and returned to callers as a generic fail
 
 See [SECURITY.md](../SECURITY.md) and the README status matrix. The largest gaps are account
 recovery, verified email delivery, snapshot export/restore, signing-key lifecycle, revoke-all,
-cross-instance concurrency, stable event delivery and independent review.
+cross-instance concurrency, event-contract stabilization and independent review.

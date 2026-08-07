@@ -29,8 +29,8 @@ channel. Include:
 - whether credentials or real accounts were involved; and
 - any suggested mitigation.
 
-Do not include live session cookies, JWTs, passkey assertions, bootstrap tokens, database URLs or
-backup keys. Replace them with unmistakable placeholders.
+Do not include live session cookies, JWTs, passkey assertions, bootstrap or event RPC tokens,
+database URLs or backup keys. Replace them with unmistakable placeholders.
 
 The maintainers will acknowledge a usable report, coordinate validation and publish remediation
 information appropriate to the pre-release status. This project does not currently operate a bug
@@ -44,7 +44,7 @@ High-priority reports include:
 - account or tenant crossing;
 - session fixation, theft, expiry or revocation failures;
 - JWT signature, issuer, audience, key-storage or claim-validation weaknesses;
-- bootstrap-token exposure or enrolment bypass;
+- bootstrap-token or event-RPC-token exposure, or enrolment/event-stream authorization bypass;
 - SableDB public exposure caused by the supplied deployment;
 - leakage of passkey material, bearer tokens or backup secrets;
 - unsafe backup encryption or restore behavior; and
@@ -85,6 +85,7 @@ access to environment secrets and the SableDB volume.
 - SableDB is private and volume-backed.
 - Missing state or invalid configuration fails closed.
 - Logs and events must never contain bearer or credential payloads.
+- Event streaming requires a dedicated, high-entropy bearer token distinct from the bootstrap token.
 
 ## Known limitations
 
@@ -96,7 +97,8 @@ These are explicit reasons RustyAuth is pre-release:
 - Credential removal uses session-creation recency rather than a dedicated fresh step-up ceremony.
 - Signing-key rotation and retired-key overlap are absent.
 - Backup export, scheduling, manifest verification and restore are absent.
-- Event access uses the bootstrap token and polling; stable scoped consumers are absent.
+- HTTP event polling still uses the bootstrap token; the streaming token is instance-wide rather
+  than scoped per consumer or tenant.
 - Stored keys are one configured tenant per instance rather than tenant-prefixed.
 - Compound-mutation coordination is process-local; multiple writer replicas are unqualified.
 - Automated dependency auditing, protocol fuzzing and an independent assessment are not complete.

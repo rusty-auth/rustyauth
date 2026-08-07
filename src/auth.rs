@@ -455,7 +455,11 @@ async fn email_link(
         .map(|user| user.id);
     state
         .store
-        .append_event("email.sign_in.requested", subject)
+        .append_event(
+            "email.sign_in.requested",
+            subject,
+            json!({ "email": email }),
+        )
         .await
         .map_err(ApiError::internal)?;
     Ok(StatusCode::ACCEPTED)

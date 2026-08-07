@@ -17,8 +17,9 @@ The template creates RustyAuth and SableDB services from versioned public contai
 TCP proxy and stores identity state on a Railway volume mounted at `/var/lib/sabledb`.
 
 Railway generates `AUTH_MASTER_KEY_HEX` and `BOOTSTRAP_TOKEN` independently for every template deployment.
-`SABLEDB_URL` is assembled from the SableDB service's Railway private-domain reference, so no database
-hostname or credential needs to be copied between services.
+This release also requires an independently generated `AUTH_EVENT_RPC_TOKEN`; the published Railway template
+must supply it before deploying the gRPC-enabled image. `SABLEDB_URL` is assembled from the SableDB service's
+Railway private-domain reference, so no database hostname or credential needs to be copied between services.
 
 The deploy form asks for the browser application's WebAuthn origin and RP ID. The RP ID must exactly match the
 hostname in the WebAuthn origin, and production origins must use HTTPS. Other values have safe template
@@ -35,6 +36,7 @@ defaults but remain editable during the environment step.
 | `SABLEDB_URL`         | Automatically references SableDB on Railway's private network          |
 | `AUTH_MASTER_KEY_HEX` | Automatically generated 256-bit hexadecimal secret                     |
 | `BOOTSTRAP_TOKEN`     | Automatically generated 64-character secret                            |
+| `AUTH_EVENT_RPC_TOKEN` | Required independent event-stream bearer secret, at least 32 characters |
 
 ## Why Deploy RustyAuth on Railway
 
@@ -66,5 +68,5 @@ application-specific authorization policy.
 - A relying-party HTTPS origin whose hostname exactly matches `WEBAUTHN_RP_ID`.
 
 After deployment, check `/healthz` for process liveness and `/readyz` for SableDB-backed readiness. Keep the
-generated bootstrap token out of browser bundles: it is an administrative enrollment and event-polling
-credential.
+generated bootstrap and event RPC tokens out of browser bundles: they are administrative and trusted-consumer
+credentials.

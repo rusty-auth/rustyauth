@@ -35,6 +35,7 @@ pub struct Config {
     pub sabledb_url: SecretString,
     pub master_key: [u8; 32],
     pub bootstrap_token: SecretString,
+    pub event_rpc_token: SecretString,
     pub audience: String,
     pub tenant_id: String,
     pub access_token_seconds: u64,
@@ -65,6 +66,7 @@ impl Config {
         let sabledb_url = SecretString::from(required("SABLEDB_URL")?);
         let master_key = decode_key("AUTH_MASTER_KEY_HEX")?;
         let bootstrap_token = SecretString::from(required("BOOTSTRAP_TOKEN")?);
+        let event_rpc_token = SecretString::from(required("AUTH_EVENT_RPC_TOKEN")?);
         let audience = required("SPACETIME_AUDIENCE")?;
         let tenant_id = optional("AUTH_TENANT_ID").unwrap_or_else(|| "vtr".into());
         let access_token_seconds = integer("AUTH_ACCESS_TOKEN_SECONDS", 300, 60, 900)?;
@@ -79,6 +81,12 @@ impl Config {
         if environment == Environment::Production && bootstrap_token.expose_secret().len() < 32 {
             bail!("BOOTSTRAP_TOKEN must contain at least 32 characters in production");
         }
+        if event_rpc_token.expose_secret().len() < 32 {
+            bail!("AUTH_EVENT_RPC_TOKEN must contain at least 32 characters");
+        }
+        if event_rpc_token.expose_secret() == bootstrap_token.expose_secret() {
+            bail!("AUTH_EVENT_RPC_TOKEN must not reuse BOOTSTRAP_TOKEN");
+        }
 
         Ok(Self {
             environment,
@@ -91,6 +99,7 @@ impl Config {
             sabledb_url,
             master_key,
             bootstrap_token,
+            event_rpc_token,
             audience,
             tenant_id,
             access_token_seconds,

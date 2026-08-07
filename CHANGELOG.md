@@ -11,10 +11,19 @@ versioning after its public contract stabilises.
 - RustyAuth public identity, logo lockup and brand guidance.
 - Architecture, API, configuration, deployment, security and contribution documentation.
 - Apache-2.0 project licence and explicit SableDB attribution.
+- A versioned protobuf event service with authenticated Connect, gRPC-Web and native gRPC
+  server-streaming delivery.
+- At-least-once replay from consumer-owned cursors, exact event/tenant filters and idle checkpoints.
+
+### Changed
+
+- Domain mutations and their authentication events now commit in the same atomic SableDB pipeline;
+  polling and streaming fail closed on gaps or malformed records.
 
 ### Security
 
 - Documented the pre-release threat model, current controls and production blockers.
+- Added a dedicated event RPC bearer secret with constant-time verification and redacted event data.
 
 ## 0.1.0 - 2026-08-07
 
