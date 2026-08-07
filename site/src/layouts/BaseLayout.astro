@@ -8,8 +8,8 @@ interface Props {
 }
 
 const {
-  title = "RustyAuth — Passkey-first authentication",
-  description = "Passkey-first authentication built in Rust on SableDB. Secure, lightweight identity infrastructure that scales.",
+  title = "RustyAuth — Authentication for the agentic threat era",
+  description = "Passkey-first authentication for SaaS products, customer-controlled infrastructure and disconnected environments.",
 } = Astro.props;
 const canonical = new URL(Astro.url.pathname, Astro.site);
 ---
@@ -26,12 +26,12 @@ const canonical = new URL(Astro.url.pathname, Astro.site);
     <meta property="og:type" content="website" />
     <meta property="og:title" content={title} />
     <meta property="og:description" content={description} />
-    <meta property="og:image" content={new URL("/og.png", Astro.site)} />
+    <meta property="og:image" content={new URL("/og-agentic.png", Astro.site)} />
     <meta property="og:url" content={canonical} />
     <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:title" content={title} />
     <meta name="twitter:description" content={description} />
-    <meta name="twitter:image" content={new URL("/og.png", Astro.site)} />
+    <meta name="twitter:image" content={new URL("/og-agentic.png", Astro.site)} />
     <title>{title}</title>
   </head>
   <body>
@@ -42,7 +42,8 @@ const canonical = new URL(Astro.url.pathname, Astro.site);
           <span>Rusty<strong>Auth</strong></span>
         </a>
         <nav aria-label="Primary navigation">
-          <a href="/#why-rustyauth">Why RustyAuth</a>
+          <a href="/#why-rustyauth">Product</a>
+          <a href="/solutions">Solutions</a>
           <a href="/docs">Docs</a>
           <a href="https://github.com/rusty-auth/rustyauth">GitHub</a>
         </nav>
@@ -55,9 +56,10 @@ const canonical = new URL(Astro.url.pathname, Astro.site);
       <div class="shell footer-grid">
         <div>
           <a class="brand footer-brand" href="/"><img src="/brand/rustyauth-mark.png" width="42" height="42" alt="" /><span>Rusty<strong>Auth</strong></span></a>
-          <p>Built in Rust. Built on SableDB. Built for passkeys.</p>
+          <p>Authentication for the agentic threat era. Passkey-first, customer-controlled and deliberately small.</p>
         </div>
         <div class="footer-links">
+          <div><strong>Solutions</strong><a href="/solutions/saas">SaaS</a><a href="/solutions/banking-payments">Banking</a><a href="/solutions/defence-secure-systems">Secure systems</a></div>
           <div><strong>Project</strong><a href="/docs">Documentation</a><a href="https://github.com/rusty-auth/rustyauth">Source</a><a href="https://github.com/rusty-auth/rustyauth/releases">Releases</a></div>
           <div><strong>Community</strong><a href="https://github.com/rusty-auth/rustyauth/issues">Issues</a><a href="https://github.com/rusty-auth/rustyauth/discussions">Discussions</a><a href="https://github.com/rusty-auth/rustyauth/blob/main/CONTRIBUTING.md">Contributing</a></div>
           <div><strong>Trust</strong><a href="https://github.com/rusty-auth/rustyauth/blob/main/SECURITY.md">Security</a><a href="https://github.com/rusty-auth/rustyauth/blob/main/LICENSE">Apache-2.0</a><a href="https://github.com/rusty-auth/rustyauth/blob/main/THIRD_PARTY_NOTICES.md">Notices</a></div>
