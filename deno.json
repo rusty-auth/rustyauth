@@ -1,7 +1,6 @@
 {
   "workspace": [
     "./site",
-    "./dashboard",
     "./packages/connect-solid",
     "./packages/protocol"
   ],
@@ -11,9 +10,6 @@
     "site:build": "deno task --cwd site build",
     "site:check": "deno task --cwd site check",
     "site:test": "deno task --cwd site test",
-    "dashboard:dev": "deno task --cwd dashboard dev",
-    "dashboard:build": "deno task --cwd dashboard build",
-    "dashboard:check": "deno task --cwd dashboard check",
     "gen": "buf lint && buf generate",
     "connect:check": "deno task --cwd packages/connect-solid check && deno task --cwd packages/protocol check",
     "connect:test": "deno task --cwd packages/connect-solid test",
