@@ -1,0 +1,130 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: Verify tag and tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Tag matches Cargo.toml version
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          version="$(grep -m1 '^version = ' Cargo.toml | cut -d'"' -f2)"
+          if [[ "${tag}" != "${version}" ]]; then
+            echo "::error file=Cargo.toml::tag v${tag} does not match Cargo.toml version ${version}"
+            exit 1
+          fi
+      - uses: dtolnay/rust-toolchain@75be91dd2711b583df57c31d0873b4145c89f1d9 # 1.94.1
+        with:
+          toolchain: 1.94.1
+      - uses: Swatinem/rust-cache@49a0bdc70d2e1b713ca9e2869b211fcce03d3c1c # v2
+      - run: cargo test --locked
+
+  container:
+    name: Publish container image
+    runs-on: ubuntu-latest
+    needs: verify
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+      - uses: docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567 # v3.3.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      # Single-platform for now: an emulated arm64 Rust release build multiplies release time
+      # for a target no supported deployment uses yet. The cache scope is shared with CI's
+      # container job, so a release normally reuses already-verified layers.
+      - uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          context: .
+          push: true
+          platforms: linux/amd64
+          tags: |
+            ghcr.io/${{ github.repository }}:${{ github.ref_name }}
+            ghcr.io/${{ github.repository }}:latest
+          cache-from: type=gha,scope=rustyauth-image
+          cache-to: type=gha,scope=rustyauth-image,mode=max
+
+  sabledb-container:
+    name: Publish SableDB container image
+    runs-on: ubuntu-latest
+    needs: verify
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+      - uses: docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567 # v3.3.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      # Tagged with the RustyAuth release version: the image is RustyAuth's build of the
+      # pinned SABLEDB_REVISION in sabledb/Dockerfile, and the pair are qualified together.
+      - uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          context: ./sabledb
+          push: true
+          platforms: linux/amd64
+          tags: |
+            ghcr.io/rusty-auth/sabledb:${{ github.ref_name }}
+            ghcr.io/rusty-auth/sabledb:latest
+          cache-from: type=gha,scope=sabledb-image
+          cache-to: type=gha,scope=sabledb-image,mode=max
+
+  jsr:
+    name: Publish TypeScript packages to JSR
+    runs-on: ubuntu-latest
+    needs: verify
+    permissions:
+      contents: read
+      id-token: write # JSR authenticates CI publishes with GitHub OIDC
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: denoland/setup-deno@22d081ff2d3a40755e97629de92e3bcbfa7cf2ed # v2
+        with:
+          deno-version: 2.9.3
+      - run: deno install --frozen
+      # A package whose version is already on JSR fails its publish; that must not block a
+      # server-only release, so each package publishes independently.
+      - name: Publish @rustyauth/protocol
+        working-directory: packages/protocol
+        continue-on-error: true
+        run: deno publish
+      - name: Publish @rustyauth/connect-solid
+        working-directory: packages/connect-solid
+        continue-on-error: true
+        run: deno publish
+      - name: Publish @rustyauth/client
+        working-directory: packages/client
+        continue-on-error: true
+        run: deno publish
+
+  github-release:
+    name: Create GitHub release
+    runs-on: ubuntu-latest
+    needs: [container, sabledb-container, jsr]
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${GITHUB_REF_NAME}" \
+            --title "RustyAuth ${GITHUB_REF_NAME}" \
+            --generate-notes \
+            --notes "Full details in [CHANGELOG.md](https://github.com/${GITHUB_REPOSITORY}/blob/${GITHUB_REF_NAME}/CHANGELOG.md). Container image: \`ghcr.io/${GITHUB_REPOSITORY}:${GITHUB_REF_NAME}\`."
