@@ -89,9 +89,16 @@ delivery provider. Production registration and browser-added identifiers are unv
 `email.verification.requested` or `phone.verification.requested` event. RustyAuth `0.1.0` does not
 deliver or consume email/SMS challenges itself.
 
-The private `IdentityService` can add an identifier with an explicit trusted verification state and
-can set or clear verification later. Treat that RPC as a control-plane authority; never expose its
-bearer credential to a browser.
+The private `IdentityService` cannot create a verified identifier in one step. `AddIdentifier`
+rejects `verified: true` with `invalid_argument` and always stores the new identifier unverified;
+`SetIdentifierVerification` is the only way to set or clear the flag, and it requires the administer
+capability rather than support.
+
+The split exists because `verified` is load-bearing in two places at once: it feeds the
+`email_verified` claim downstream consumers act on, and it is what browser operator bootstrap
+matches against `AUTH_OPERATOR_EMAILS`. Writing it is an identity-proofing decision, so it is priced
+as one. Treat that RPC as a control-plane authority; never expose its bearer credential to a
+browser.
 
 ## Profile
 
@@ -154,6 +161,12 @@ A successful passkey authentication or development agent handoff creates a separ
 The cookie contains a random bearer token. RustyAuth stores only its SHA-256 digest in the SableDB
 key, never the raw token. Successful authenticated requests advance `last_seen_at`. Expired,
 orphaned or version-mismatched sessions are deleted and rejected.
+
+`current_credential_id` is also an authorization input, not just metadata. When it names a passkey
+that is no longer in the account's `passkeys` list, the session is deleted and rejected on its next
+use. Revoking a passkey therefore ends the sessions created with it immediately, rather than leaving
+them alive until `absolute_expires_at`. Sessions with no `current_credential_id` — development agent
+handoffs — are unaffected.
 
 Agent sessions can read account and credential metadata but cannot mutate profile, identifiers or
 passkeys. Sensitive identifier and credential changes require a passkey session created within five

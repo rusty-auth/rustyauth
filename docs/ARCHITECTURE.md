@@ -52,6 +52,7 @@ the JWT only in memory.
 One Axum process owns:
 
 - HTTP origin and CORS enforcement;
+- transport hardening: response security headers, request timeout and body ceilings;
 - WebAuthn relying-party configuration and ceremony verification;
 - session creation and validation;
 - credential-management policy;
@@ -164,12 +165,30 @@ Every authenticated request checks:
 2. session existence;
 3. absolute expiry;
 4. idle expiry;
-5. referenced user existence; and
-6. equality between the user's and session's `session_version`.
+5. referenced user existence;
+6. equality between the user's and session's `session_version`; and
+7. that the session's originating passkey is still attached to the account.
 
-Successful validation advances `last_seen_at`. Sign-out deletes the current session. The data model supports
-invalidating sessions by advancing a user's session version, but a public revoke-all operation is not
-implemented.
+Any failed check deletes the session record before rejecting the request, so a session invalidated once stays
+invalidated. Successful validation advances `last_seen_at`. Sign-out deletes the current session. The data
+model supports invalidating sessions by advancing a user's session version, but a public revoke-all operation
+is not implemented.
+
+### Passkey revocation ends the sessions that passkey created
+
+Check 7 is what makes credential revocation a containment control rather than a bookkeeping change. A session
+records the `current_credential_id` it was created with; when that credential is no longer in the account's
+passkey list, the session is deleted on its next use.
+
+Previously a revoked passkey left its sessions alive until `AUTH_SESSION_ABSOLUTE_SECONDS` elapsed — up to
+seven days at the default. An operator responding to a lost or stolen authenticator removed the credential,
+saw it disappear from the dashboard, and the thief's existing browser session kept working. The control the
+interface presented as the stop for a stolen device did not stop it.
+
+The guarantee is now: revoking a passkey ends every session created with it, on that session's next request.
+It is not a revoke-all — other passkeys on the same account keep their sessions, which is the intended
+behaviour when a user retires one of several authenticators. Sessions with no originating credential
+(development agent handoffs) are unaffected.
 
 ## Credential-management policy
 
@@ -261,15 +280,71 @@ operator session. Passkey responses are projected through a metadata-only type b
 stored WebAuthn credentials, public keys and counters never cross the boundary. New credential material still
 requires a WebAuthn registration ceremony.
 
+Attaching an identifier and asserting the account controls it are separated. `AddIdentifier` rejects a
+`verified: true` request outright and always stores the identifier unverified; only
+`SetIdentifierVerification`, at the administer capability, can mark one verified. Verification feeds the
+`email_verified` claim and operator bootstrap, so it is an identity-proofing decision rather than routine
+support work.
+
 `rustyauth.organization.v1.OrganizationService` and administrative
 `rustyauth.service_accounts.v1.ServiceAccountService` methods require an exact-origin session whose
-`auth_method` is `passkey`. The allowlisted first owner bootstrap is explicit; local-agent handoffs cannot
-become operators. Owner and administrator roles manage organization and service-account state, support may
-manage identity records, and auditor remains read-only.
+`auth_method` is `passkey`. Owner and administrator roles manage organization and service-account state,
+support may manage identity records, and auditor remains read-only. Local-agent handoffs cannot become
+operators.
+
+### Method authorization is an exhaustive table
+
+Every RPC method's policy is named individually in `METHOD_POLICIES`. Resolution strips a known service prefix
+and looks the method up by exact name; a method with no entry is denied. This replaced a scheme that derived
+the capability from suffix matches with an `else` branch, where an unrecognized method inherited whatever the
+fallback happened to be and a newly generated proto method became reachable the moment it existed. A unit test
+reads the checked-in `.proto` sources and asserts that every method of a served service has an entry, that no
+entry is dead, and that the declared-but-unimplemented `rustyauth.metrics.v1` and `rustyauth.webhooks.v1`
+services still resolve to no policy — so widening the surface cannot happen silently.
+
+Streaming resolves against the same table but accepts only bearer policies. The operator check is async and
+the streaming hook is not, so a method that needs an operator session must remain unary rather than quietly
+downgrade to no check.
+
+### First operator
+
+Browser bootstrap requires the passkey account to hold a verified email identifier from
+`AUTH_OPERATOR_EMAILS`. Production never marks a self-service identifier verified, and verifying one is
+itself an administer-capability operator action, so on an empty deployment the two requirements form a cycle:
+no operator can exist until an address is verified, and no address can be verified until an operator exists.
+
+`rustyauth operator promote <email> <role>` breaks the cycle from the host. It writes the operator
+record and marks that address verified so the account can bootstrap through the browser afterwards. The cost
+is deliberate — creating the first Owner requires shell access to the deployment rather than control of an
+inbox, which is a materially harder thing for an attacker to obtain than an unclaimed email address.
 
 Service-account secrets are high-entropy random `rsa_` values shown once. SableDB stores only their SHA-256
 locator and a six-character display hint. A live, unexpired credential can be exchanged for a short-lived
 ES256 JWT containing only the service-account subject and an allowed subset of stored scopes.
+
+## Transport hardening
+
+The dashboard is an administrative surface served from the same origin as the authentication API, so browser
+policy is part of the trust boundary rather than a deployment nicety.
+
+RustyAuth sets `Content-Security-Policy`, `X-Frame-Options`, `Cross-Origin-Opener-Policy`,
+`Cross-Origin-Resource-Policy`, `Permissions-Policy`, `X-Content-Type-Options` and `Referrer-Policy` on every
+response, and `Strict-Transport-Security` in production only — pinning HSTS from a `http://localhost`
+development origin would poison the browser for that host long past the session. The dashboard loads no
+third-party code, so the CSP can deny inline and remote script, frame ancestors, `base` rewriting, plugins and
+non-self `connect-src` outright: an injected script has neither a place to execute nor a destination to
+exfiltrate to. Every header is set only when absent, so a deliberate proxy-level policy still wins.
+
+Three ceilings bound a single request: a 30-second timeout, a 256 KiB REST body limit and a 64 KiB RPC body
+limit. The timeout is the one the size limits cannot substitute for — a client that dribbles a small body
+slowly holds a connection indefinitely, and size caps never expire.
+
+Shutdown is bounded at 20 seconds. Background signing and backup workers watch a shutdown channel and exit on
+their own, and a backup mid-upload should checkpoint rather than die mid-write; the bound stops one stuck
+worker, or a single long-lived event stream, from blocking every deploy indefinitely.
+
+Sensitive-header marking is the outermost layer, so the tracing layer beneath it never observes raw
+`Authorization`, `Cookie`, `x-bootstrap-token` or `Set-Cookie` values.
 
 ## Tenancy
 
@@ -287,10 +362,13 @@ writer instance until cross-instance transaction/locking behavior has dedicated 
 
 RustyAuth rejects startup or requests when required state cannot be validated. Examples include:
 
+- an unset or unrecognized `AUTH_ENV`;
+- a master or backup encryption key whose 32 bytes are all identical;
 - invalid or non-HTTPS production origins;
 - an RP ID that does not exactly match the application origin host;
-- a non-private production SableDB hostname;
+- a plaintext production SableDB URL outside Railway private networking;
 - partial backup configuration;
+- an RPC method with no entry in the authorization table;
 - a backup whose authenticated envelope, manifest or tenant cannot be validated;
 - a restore destination that contains auth state or an incomplete restore marker;
 - missing, expired or replayed ceremony state;

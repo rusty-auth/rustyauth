@@ -16,6 +16,12 @@ cp .env.example .env
 docker compose up --build
 ```
 
+RustyAuth refuses a 32-byte encryption key whose bytes are all identical, so an unedited `0000…` placeholder
+now stops startup with `AUTH_MASTER_KEY_HEX is a placeholder with no entropy`. The `AUTH_MASTER_KEY_HEX` in
+`.env.example` and `compose.yaml` carries real entropy solely so a loopback stack starts. It is committed to
+this repository and therefore public; it protects nothing. Generate a per-environment key with
+`openssl rand -hex 32` for anything shared.
+
 The Compose topology publishes only `127.0.0.1:8081` for RustyAuth. SableDB joins an internal Docker network
 and has no host port. Its named volume is `sabledb_data`. The same Rust container serves the built operator
 dashboard at `http://localhost:8081`; `?preview=1` opens realistic local preview data.
@@ -63,12 +69,39 @@ Use the repository root as the source root and `Dockerfile` as the builder. Set:
 - all production variables in [Configuration](CONFIGURATION.md); and
 - `SABLEDB_URL` through a Railway private-domain resource reference.
 
+`AUTH_ENV` has no default. A deployment that omits it fails to start rather than falling back to development
+settings, which would drop `Secure` from the session cookie, accept an HTTP relying-party origin and treat
+self-service identifiers as verified. Set `AUTH_ENV=production`.
+
 The container serves the dashboard and RPC APIs from the same public origin. Configure `WEBAUTHN_RP_ORIGIN` to
 that Railway HTTPS origin, set `WEBAUTHN_RP_ID` to its exact hostname and set `AUTH_OPERATOR_EMAILS` before
 the first operator signs in.
 
 Readiness should also be monitored separately at `/readyz`. A liveness-only deploy can be running while unable
 to authenticate users.
+
+### First operator
+
+`AUTH_OPERATOR_EMAILS` is no longer sufficient to become an operator. Browser bootstrap requires the account
+to hold a **verified** email identifier from that list, and production never marks a self-service identifier
+verified — so on a fresh deployment nothing can verify one, because verifying an identifier is itself an
+operator action. Create the first Owner from a shell on the deployed container:
+
+```sh
+rustyauth operator promote founder@example.com owner
+rustyauth operator list
+```
+
+Roles are `owner`, `administrator`, `support` and `auditor`. The account must already exist — enrol it
+through the normal bootstrap-token registration flow first. Promotion writes the operator record and marks
+that address verified, so the same account can bootstrap through the browser afterwards.
+
+This deliberately costs shell access to the deployment rather than control of an inbox. Treat the ability to
+run `operator promote` as equivalent to Owner: anyone who can execute in the container can grant themselves
+the control plane. Restrict container exec the way you restrict the master key.
+
+`operator list` prints every stored operator with role, primary email and last authentication time. Review it
+after any promotion and as part of routine access review.
 
 ### SableDB service
 
@@ -100,10 +133,12 @@ deliberately excluded. Upload succeeds only after a read-after-write decrypt and
 Use the binary inside the deployed container for operator checks:
 
 ```sh
-passkey-auth-service doctor
-passkey-auth-service backup create
-passkey-auth-service backup list
-passkey-auth-service backup verify <object-key>
+rustyauth doctor
+rustyauth backup create
+rustyauth backup list
+rustyauth backup verify <object-key>
+rustyauth operator list
+rustyauth operator promote <email> <owner|administrator|support|auditor>
 ```
 
 ## Container properties
@@ -128,6 +163,43 @@ bypass exact-origin enforcement.
 Preserve `Set-Cookie`, `Origin`, `Content-Type` and request IDs through any proxy. Do not cache token,
 credential or session responses.
 
+### Response headers
+
+RustyAuth sets these on every response it serves, including dashboard assets. Each is applied only when the
+header is absent, so a proxy that already sets one wins:
+
+| Header | Value | Applies |
+| --- | --- | --- |
+| `Content-Security-Policy` | `default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; frame-ancestors 'none'; form-action 'self'; base-uri 'none'; object-src 'none'` | Always |
+| `X-Frame-Options` | `DENY` | Always |
+| `Cross-Origin-Opener-Policy` | `same-origin` | Always |
+| `Cross-Origin-Resource-Policy` | `same-origin` | Always |
+| `Permissions-Policy` | `geolocation=(), camera=(), microphone=(), payment=()` | Always |
+| `X-Content-Type-Options` | `nosniff` | Always |
+| `Referrer-Policy` | `no-referrer` | Always |
+| `Strict-Transport-Security` | `max-age=63072000; includeSubDomains; preload` | Production only |
+
+HSTS is withheld outside production on purpose. Emitting it from a `http://localhost` development origin
+pins the browser to HTTPS for that host for two years, well past the session that caused it.
+
+Do not add a proxy-level CSP that loosens these directives to make a third-party script, analytics tag or
+embedded frame work on the dashboard. The dashboard loads no third-party code; the policy is strict so an
+injected script has nowhere to execute and nowhere to send what it reads.
+
+If you front RustyAuth with a proxy that strips unknown response headers, allowlist the table above.
+
+### Request limits
+
+| Limit | Value | Behaviour |
+| --- | --- | --- |
+| Request timeout | 30 seconds | Returns `408`. Bounds slow-body clients, which the size limits alone cannot |
+| Request body | 256 KiB | Returns `413`. Applies to the REST handlers |
+| RPC request body | 64 KiB | Applies to Connect, gRPC and gRPC-Web methods |
+| Shutdown grace | 20 seconds | Background signing and backup workers get this long to finish after a shutdown signal, then the process exits regardless |
+
+Set the platform's own request timeout and drain window above 30 and 20 seconds respectively, so RustyAuth's
+bounded shutdown completes rather than being killed mid-write.
+
 ## Upgrade procedure
 
 There is not yet a formal storage migration framework. Until one exists:
@@ -147,17 +219,48 @@ Run one RustyAuth writer replica in version `0.1.0`. Multi-key operations use Sa
 compound mutations are additionally protected only by a process-local mutex. Cross-replica registration and
 credential mutation have not been qualified.
 
+`railway.json` pins `numReplicas: 1` and `overlapSeconds: 0` so a scale-up or a rolling deploy cannot
+silently start a second writer. This narrows the window rather than removing it: `drainingSeconds`
+(25) is the time the outgoing process has between `SIGTERM` and `SIGKILL`, and for that period the old
+process is still finishing in-flight requests while the new one is live. It stops accepting new work at
+`SIGTERM`, so the overlap covers requests already in progress, not new mutations — but it is not zero.
+Treat a deploy as a short window in which the single-writer invariant is weakest, and avoid deploying
+during a bulk migration.
+
+Raising `numReplicas` above 1 is not supported in this version. Nothing in the process detects a second
+writer; the event-sequence counter is read-then-written without a compare-and-set, so a concurrent
+writer silently overwrites audit events.
+
 ## Observability
 
 RustyAuth writes structured JSON logs and propagates or creates `x-request-id`. The default filter is:
 
 ```text
-passkey_auth_service=info,tower_http=info
+rustyauth=info,tower_http=info
 ```
 
-Never enable body logging for WebAuthn credentials, cookies, JWTs, bootstrap tokens or backup secrets. The
-application marks the RPC `Authorization` request header as sensitive; operational tooling must also redact
-`Cookie`, `Set-Cookie` and `x-bootstrap-token`.
+Never enable body logging for WebAuthn credentials, cookies, JWTs, bootstrap tokens or backup secrets.
+
+RustyAuth marks four headers sensitive before its own tracing layer sees them, so their values never reach
+the structured log:
+
+| Header | Direction | Carries |
+| --- | --- | --- |
+| `Authorization` | Request | RPC bearer credentials and service-account tokens |
+| `Cookie` | Request | The operator and end-user session bearer |
+| `x-bootstrap-token` | Request | The enrolment and event-polling credential |
+| `Set-Cookie` | Response | A newly issued session bearer |
+
+That covers RustyAuth's own logs only. It has no effect on anything upstream or downstream of the process,
+so operators must still redact the same four headers in:
+
+- reverse proxy, ingress and load-balancer access logs;
+- platform request logs and any HTTP tracing or APM collector;
+- log shippers and aggregation search indexes; and
+- support bundles, `curl -v` transcripts and browser HAR captures attached to tickets.
+
+A HAR file from an authenticated dashboard session contains a live session cookie. Treat one as a credential
+until the session's absolute lifetime has passed.
 
 Monitor at least:
 
@@ -166,7 +269,9 @@ Monitor at least:
 - SableDB volume usage and persistence;
 - authentication failure rate without storing credential payloads;
 - signing-key maintenance failures and `keys status`;
-- `last_backup_at` and `backup_healthy` from `/.well-known/passkey-auth`;
+- `operator.created` and `operator.promoted` events, and the output of `operator list`;
+- backup freshness and failure count from `rustyauth doctor` (the public metadata endpoint no longer
+  reports them, so this check must run on the host or in a scheduled job);
 - backup scheduler errors and bucket retention; and
 - event-consumer cursor lag.
 
@@ -177,10 +282,10 @@ release with the original tenant ID, active master key plus any required previou
 backup key plus any required previous backup keys:
 
 ```sh
-passkey-auth-service backup list
-passkey-auth-service backup verify <object-key>
-passkey-auth-service backup restore <object-key>
-passkey-auth-service doctor
+rustyauth backup list
+rustyauth backup verify <object-key>
+rustyauth backup restore <object-key>
+rustyauth doctor
 ```
 
 The restore command validates the authenticated envelope, tenant, manifest, signing keyset, index references

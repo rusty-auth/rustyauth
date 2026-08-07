@@ -45,6 +45,9 @@ High-priority reports include:
 - session fixation, theft, expiry or revocation failures;
 - JWT signature, issuer, audience, key-storage or claim-validation weaknesses;
 - bootstrap-token exposure or enrolment bypass;
+- operator-role escalation, or any route to a verified identifier the account did not prove control
+  of;
+- an RPC method reachable at a lower capability than its documented policy;
 - SableDB public exposure caused by the supplied deployment;
 - leakage of passkey material, bearer tokens or backup secrets;
 - unsafe backup encryption or restore behavior; and
@@ -84,9 +87,25 @@ identity projections.
   session that created them; initial and additional registration ceremonies are not interchangeable.
 - Private endpoints require both exact origin and a valid durable session.
 - The production session cookie is HttpOnly, Secure, SameSite=Strict and time bounded.
+- `AUTH_ENV` must be set explicitly. It gates Secure cookies, HTTPS origin validation and
+  identity-verification enforcement, so no default can be safe in both directions.
+- A master or backup encryption key whose 32 bytes are all identical is rejected as a placeholder.
 - Agent handoff sessions are read-only for profile, identifier and passkey mutations.
 - The final passkey cannot be removed.
+- Revoking a passkey invalidates every session created with that passkey on its next use.
 - A credential-removal session must be no older than five minutes.
+- Every RPC method's authorization is named in an exhaustive table; an unlisted method is denied and
+  a test fails until it is assigned a policy. Streaming accepts bearer policies only.
+- An identifier cannot be created already verified. Marking one verified requires the administer
+  capability, because verification feeds the `email_verified` claim and operator bootstrap.
+- Browser operator bootstrap requires a verified allowlisted email; the first Owner is created from
+  the host with `operator promote`, which costs shell access rather than control of an inbox.
+- The bootstrap token is compared in constant time over fixed-width digests.
+- Every response carries CSP, frame denial, cross-origin isolation, a restrictive permissions policy
+  and, in production, HSTS.
+- Request duration, request body size and shutdown grace are all bounded.
+- `Authorization`, `Cookie`, `x-bootstrap-token` and `Set-Cookie` are marked sensitive before the
+  tracing layer observes them.
 - Stored accounts must have exactly one primary identifier, unique canonical phone identifiers and
   internally consistent verification state; malformed records and reverse indexes fail closed.
 - Non-zero passkey signature counters cannot regress.
@@ -106,9 +125,16 @@ identity projections.
 
 These are explicit reasons RustyAuth is pre-release:
 
-- Production email verification has no delivery/consumption implementation.
+- Production email verification has no delivery/consumption implementation. Because operator
+  bootstrap now requires a verified address, the first Owner must be created with the host CLI.
 - Account recovery is absent.
-- There is no public revoke-all-sessions operation.
+- There is no public revoke-all-sessions operation. Revoking a passkey ends the sessions that
+  passkey created, not every session on the account.
+- Passkey-revocation session invalidation is evaluated when a session is next used. A request
+  already in flight when the credential is revoked completes.
+- Anyone who can execute a shell in the deployed container can grant themselves the Owner role with
+  `operator promote`. Container exec is an operator-equivalent privilege and must be restricted as
+  such.
 - Credential removal uses session-creation recency rather than a dedicated fresh step-up ceremony.
 - HTTP event polling still uses the bootstrap credential; private event streaming and identity RPCs
   use separate static bearer credentials rather than workload identity or mTLS.

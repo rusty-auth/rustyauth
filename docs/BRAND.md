@@ -19,7 +19,7 @@ Do not call RustyAuth production-ready until the README's production gates are c
 
 - Product: **RustyAuth** — one word, capital R and A.
 - Repository slug: `rustyauth` when the standalone split occurs.
-- Current internal crate and binary: `passkey-auth-service`.
+- Current internal crate and binary: `rustyauth`.
 - Never write `Rusty Auth`, `RustyAUTH`, `Rust Auth` or `Rusty-Auth` in product copy.
 
 Internal protocol identifiers such as `passkey_auth_session` and

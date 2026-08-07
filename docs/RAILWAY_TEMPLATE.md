@@ -29,18 +29,36 @@ editable during the environment step.
 
 | Variable              | Deployment behavior                                                    |
 | --------------------- | ---------------------------------------------------------------------- |
+| `AUTH_ENV`            | Must be set to `production`. There is no default; an unset value stops startup |
 | `WEBAUTHN_RP_ORIGIN`  | Exact HTTPS origin of the public RustyAuth dashboard                    |
 | `WEBAUTHN_RP_ID`      | Exact hostname from `WEBAUTHN_RP_ORIGIN`                               |
 | `WEBAUTHN_RP_NAME`    | Editable display name; defaults to `RustyAuth`                         |
-| `AUTH_OPERATOR_EMAILS` | Required canonical email(s) allowed to bootstrap the owner operator   |
+| `AUTH_OPERATOR_EMAILS` | Required canonical email(s) permitted to bootstrap the owner operator through the browser, once that address is verified |
 | `SPACETIME_AUDIENCE`  | Editable access-token audience; defaults to `rustyauth`                |
 | `AUTH_TENANT_ID`      | Editable tenant claim; defaults to `default`                           |
 | `AUTH_ISSUER`         | Automatically references the RustyAuth public Railway domain           |
 | `SABLEDB_URL`         | Automatically references SableDB on Railway's private network          |
-| `AUTH_MASTER_KEY_HEX` | Automatically generated 256-bit hexadecimal secret                     |
+| `AUTH_MASTER_KEY_HEX` | Automatically generated 256-bit hexadecimal secret. A placeholder whose 32 bytes are all identical is rejected at startup |
 | `BOOTSTRAP_TOKEN`     | Automatically generated 64-character secret                            |
 | `AUTH_EVENT_RPC_TOKEN` | Required generated private event-stream credential                     |
 | `AUTH_IDENTITY_RPC_TOKEN` | Required generated private identity-control credential              |
+
+### Creating the first operator
+
+`AUTH_OPERATOR_EMAILS` on its own does not grant operator access. Browser bootstrap additionally requires the
+account to have verified that address, and production never marks a self-service identifier verified — so a
+fresh deployment cannot produce its first operator through the browser alone.
+
+Enrol the founding account, then run from the Railway service shell:
+
+```sh
+rustyauth operator promote founder@example.com owner
+rustyauth operator list
+```
+
+Promotion writes the operator record and marks the address verified, after which the same account can sign in
+to the dashboard normally. Because this path costs shell access to the service, restrict who can open a
+Railway shell on the RustyAuth service as tightly as who can read `AUTH_MASTER_KEY_HEX`.
 
 Signing-key maintenance runs automatically with prepublication and retired-key overlap. Encrypted scheduled
 backups are optional and require the complete S3-compatible `AUTH_BACKUP_*` environment; the base two-service
@@ -78,6 +96,6 @@ application-specific authorization policy.
 
 After deployment, check `/healthz` for process liveness and `/readyz` for SableDB-backed readiness. Keep the
 generated bootstrap and RPC tokens out of browser bundles. They are independently scoped administrative
-credentials; RPC consumers send only the token for their service. Run `passkey-auth-service doctor` after
+credentials; RPC consumers send only the token for their service. Run `rustyauth doctor` after
 configuration changes and follow the repository deployment guide for backup verification and clean-room
 restore drills.

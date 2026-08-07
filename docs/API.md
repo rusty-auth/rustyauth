@@ -1,6 +1,7 @@
 # RustyAuth HTTP and private RPC API
 
-This is the pre-`1.0` contract implemented by the Rust service. All JSON request bodies use
+This is the pre-`1.0` contract implemented by the Rust service. The public HTTP surface is also
+available as a machine-readable [OpenAPI 3.1 document](openapi.yaml). All JSON request bodies use
 `Content-Type: application/json`. Error responses have the form:
 
 ```json
@@ -25,11 +26,17 @@ The endpoint tables use these terms:
 - **Operator administer** — an owner or administrator passkey session.
 
 The bootstrap and RPC tokens are administrative service secrets, not end-user browser credentials.
-They are independently scoped and configuration rejects reuse between them.
+They are independently scoped and configuration rejects reuse between them. The bootstrap token is
+compared in constant time over SHA-256 digests, so a wrong value takes the same time to reject
+whatever its length or leading bytes.
 
-The first passkey-authenticated user whose canonical primary email appears in
-`AUTH_OPERATOR_EMAILS` creates the durable owner operator. Local-agent sessions are deliberately
-rejected by every operator RPC.
+Browser operator bootstrap requires a passkey-authenticated account holding a **verified** email
+identifier listed in `AUTH_OPERATOR_EMAILS`. An unverified match is refused: every identifier on the
+self-service API is caller-chosen and unverified in production, so trusting one would let any
+enrolled account claim an unclaimed operator address. Because production has no way to verify an
+identifier before an operator exists, the first Owner is created with
+`rustyauth operator promote <email> owner` from the host. Local-agent sessions are
+deliberately rejected by every operator RPC.
 
 For the authoritative field-by-field persistence contract—including internal fields deliberately
 excluded from these APIs—see [Identity data model](IDENTITY_DATA_MODEL.md).
@@ -40,19 +47,41 @@ RustyAuth serves Connect, gRPC-Web and native gRPC on the same listener as HTTP.
 protobuf sources are in `proto/rustyauth`. These methods are intended for trusted back-office and
 service-to-service consumers; browser WebAuthn ceremonies remain on the HTTP API.
 
+Authorization is a table naming every method one by one, not a match on the service prefix. A method
+that is not in the table is rejected with `unauthenticated`, so a newly generated proto method is
+unreachable until someone assigns it a policy. Streaming accepts only bearer-authenticated methods;
+any method needing an operator session must stay unary.
+
 ### `rustyauth.identity.v1.IdentityService`
 
-| RPC | Purpose |
-| --- | --- |
-| `GetUser` | Read one user by stable UUID |
-| `SearchUsers` | Find users by exact UUID, canonical email/phone, passkey credential ID or label, and profile names |
-| `UpdateProfile` | Replace given, family and display names; empty values clear fields |
-| `AddIdentifier` | Add a canonical email or E.164 phone, with explicit trusted verification state |
-| `RemoveIdentifier` | Remove a non-final linked identifier |
-| `SetPrimaryIdentifier` | Select the account's primary identifier |
-| `SetIdentifierVerification` | Set or clear trusted verification state and timestamp |
-| `RenamePasskey` | Change passkey display metadata |
-| `RevokePasskey` | Remove a non-final passkey |
+| RPC | Access | Purpose |
+| --- | --- | --- |
+| `GetUser` | Identity RPC or operator read | Read one user by stable UUID |
+| `SearchUsers` | Identity RPC or operator read | Find users by exact UUID, canonical email/phone, passkey credential ID or label, and profile names |
+| `UpdateProfile` | Identity RPC or operator support | Replace given, family and display names; empty values clear fields |
+| `AddIdentifier` | Identity RPC or operator support | Add a canonical email or E.164 phone. Always stored unverified |
+| `RemoveIdentifier` | Identity RPC or operator support | Remove a non-final linked identifier |
+| `SetPrimaryIdentifier` | Identity RPC or operator support | Select the account's primary identifier |
+| `SetIdentifierVerification` | Identity RPC or operator administer | Set or clear trusted verification state and timestamp |
+| `RenamePasskey` | Identity RPC or operator support | Change passkey display metadata |
+| `RevokePasskey` | Identity RPC or operator support | Remove a non-final passkey and end the sessions it created |
+
+#### Identifier verification is a separate, higher privilege
+
+`AddIdentifier` **rejects** a request with `verified: true` and returns `invalid_argument`:
+
+```json
+{ "code": "invalid_argument", "message": "verified may not be set when adding an identifier; use SetIdentifierVerification" }
+```
+
+Attaching an address to an account and asserting that the account controls it are two different
+decisions. Honouring `verified` on the add path let any Support-capable caller create a trusted
+address in one step, which produces an `email_verified` claim for an address nobody proved they own
+and, in the same motion, an identifier that satisfies operator bootstrap.
+
+The verification decision now lives only in `SetIdentifierVerification`, which requires **operator
+administer** rather than operator support. A caller that needs to add and then verify makes two
+calls at two privilege levels, and the second one is auditable on its own.
 
 `SearchUsers` combines every populated criterion with AND and rejects an empty search. Email and
 phone searches use their canonical exact indexes. Name and passkey-label filters are exact,
@@ -78,7 +107,7 @@ sequence terminates the stream with `DATA_LOSS` instead of silently skipping the
 | `GetOrganization` | Operator read | Read the deployment's durable organization |
 | `GetCurrentOperator` | Operator read | Resolve the current passkey session to an operator |
 | `UpdateOrganization` | Operator administer | Replace the organization display name |
-| `ListOperators` | Operator administer | Page through durable operator records |
+| `ListOperators` | Operator read | Page through durable operator records |
 
 Version `0.1.0` supports one organization per SableDB namespace. The explicit resource and stable
 UUID allow a future migration without claiming multi-tenant isolation today.
@@ -125,17 +154,15 @@ Returns runtime capability metadata:
   "issuer": "https://auth.example.com",
   "passkeys": true,
   "event_protocols": ["http-poll", "connect", "grpc-web", "grpc"],
-  "identity_protocols": ["connect", "grpc-web", "grpc"],
-  "backup_sink_configured": true,
-  "scheduled_backups": true,
-  "last_backup_at": 1786093200,
-  "backup_healthy": true
+  "identity_protocols": ["connect", "grpc-web", "grpc"]
 }
 ```
 
-The backup fields are `false`, `false`, `null` and `null` when backup configuration is absent.
-`backup_healthy` remains `null` until the first scheduled attempt and becomes true only after a
-verified upload with no later failure. Timestamps are Unix seconds.
+This endpoint is unauthenticated and deliberately says nothing about backups. Reporting whether
+backups exist, when the last one succeeded, or whether they are currently failing tells an attacker
+how recoverable the deployment is before they attempt anything destructive. Backup posture is
+available to an operator on the host through `rustyauth doctor`, which reports `lastAttemptAt`,
+`lastSuccessAt` and `consecutiveFailures` alongside object count and reachability.
 
 ### `GET /.well-known/openid-configuration`
 
@@ -425,6 +452,15 @@ Access: Recent passkey.
 Returns `204`. RustyAuth rejects removal of the final passkey with `409`. Version `0.1.0` measures
 recency from session creation; it does not run a separate step-up ceremony.
 
+Revoking a passkey also ends every session that passkey created. The next request presenting such a
+session finds that its `current_credential_id` is no longer attached to the account; the session
+record is deleted and the request is rejected as unauthenticated. This applies to the HTTP API and
+to `rustyauth.identity.v1.IdentityService/RevokePasskey` equally, because both paths validate
+sessions through the same check.
+
+Sessions with no originating credential — development agent handoffs — are unaffected, since there
+is no passkey to revoke.
+
 ## Events and email hooks
 
 ### `POST /v1/email-links`
@@ -468,8 +504,13 @@ Known event types include:
 - `identifier.added`, `identifier.removed`, `identifier.primary_changed`,
   `identifier.verified`, `identifier.unverified` and `profile.updated`;
 - `credential.created`, `credential.renamed`, `credential.revoked`;
-- `session.created`; and
+- `session.created`;
+- `operator.created` and `operator.promoted`; and
 - `agent.handoff.created`.
+
+`operator.promoted` records a role granted with `rustyauth operator promote`. Because that
+command is the only way to create the first Owner, treat an unexplained `operator.promoted` as a
+privilege-escalation signal.
 
 There is no retention or server-side acknowledgement record. The private event RPC provides
 at-least-once replay/follow streaming; consumers persist their own sequence after processing.
@@ -483,6 +524,20 @@ lasts one hour.
 
 The endpoint is disabled in production and is not a general login or impersonation API.
 
+## Response headers and limits
+
+Every response carries `Content-Security-Policy`, `X-Frame-Options: DENY`,
+`Cross-Origin-Opener-Policy: same-origin`, `Cross-Origin-Resource-Policy: same-origin`,
+`Permissions-Policy`, `X-Content-Type-Options: nosniff` and `Referrer-Policy: no-referrer`.
+`Strict-Transport-Security` is added in production only. The exact values are in
+[Deployment](DEPLOYMENT.md#response-headers).
+
+`Cross-Origin-Resource-Policy: same-origin` means a cross-origin page cannot embed RustyAuth
+responses as subresources. It does not affect the CORS-authorized `WEBAUTHN_RP_ORIGIN` fetches the
+browser client makes, which remain governed by the exact-origin CORS policy.
+
+Requests are bounded at 30 seconds, a 256 KiB REST body and a 64 KiB RPC body.
+
 ## Status codes
 
 | Status | Meaning |
@@ -494,6 +549,8 @@ The endpoint is disabled in production and is not a general login or impersonati
 | `303` | Development handoff consumed and redirected |
 | `400` | Invalid caller input or account/credential relationship |
 | `401` | Missing/invalid origin, bootstrap, session, ceremony or WebAuthn verification |
+| `408` | Request exceeded the 30-second ceiling |
 | `409` | Existing identifier/credential, identifier limit, or prohibited final removal |
+| `413` | Request body exceeded 256 KiB |
 | `500` | Internal dependency/state failure, reported generically |
 | `503` | SableDB readiness failure |

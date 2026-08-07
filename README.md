@@ -42,6 +42,7 @@ permissions, entitlements and resource ownership.
   stable account UUID;
 - HttpOnly, SameSite=Strict sessions with idle and absolute expiry;
 - multiple passkeys per account, labels, last-used timestamps and final-credential protection;
+- passkey revocation that immediately ends the sessions that passkey created;
 - recent-authentication enforcement before credential removal;
 - passkey sign-counter regression detection;
 - ES256 JWT issuance with issuer, audience, tenant, subject, session and authentication-method
@@ -55,6 +56,9 @@ permissions, entitlements and resource ownership.
 - scoped service accounts with independently revocable, one-time credentials and short-lived ES256
   token exchange;
 - exact-origin CORS and request-origin enforcement;
+- browser response hardening with CSP, frame denial, cross-origin isolation, a restrictive
+  permissions policy and production HSTS;
+- bounded request duration, request body size and shutdown grace;
 - liveness, dependency readiness, request IDs and structured JSON logging;
 - development-only, one-use agent browser handoffs for an existing account;
 - automatic staged signing-key rotation with overlapping JWKS publication; and
@@ -112,28 +116,38 @@ intentionally want to erase the local identity store.
 
 > [!IMPORTANT]
 > The checked-in development key and bootstrap token are public test values. They are only safe on
-> loopback. Generate independent secrets before any shared deployment.
+> loopback. Generate independent secrets before any shared deployment. RustyAuth also refuses a
+> 32-byte encryption key whose bytes are all identical, so an unedited `0000…` or `1111…`
+> placeholder now stops startup rather than silently protecting nothing.
 
-## Backup and key operations
+## Backup, key and operator operations
 
 The same binary provides a small operator CLI. When backup storage is configured, the service
 creates a verified logical backup after startup and every six hours by default; signing-key
 maintenance is automatic.
 
 ```sh
-passkey-auth-service doctor
-passkey-auth-service backup create
-passkey-auth-service backup list
-passkey-auth-service backup verify <object-key>
-passkey-auth-service keys status
-passkey-auth-service keys rotate
+rustyauth doctor
+rustyauth backup create
+rustyauth backup list
+rustyauth backup verify <object-key>
+rustyauth keys status
+rustyauth keys rotate
+rustyauth operator list
+rustyauth operator promote <email> <owner|administrator|support|auditor>
 ```
+
+`operator promote` is the supported way to create the first Owner. Dashboard bootstrap requires an
+operator email the account has already **verified**, and verifying an identifier is itself an
+operator action — so on a fresh deployment neither can happen first. The CLI breaks that cycle, and
+deliberately costs shell access to the deployment rather than control of an inbox. Setting
+`AUTH_OPERATOR_EMAILS` alone is no longer enough to become an operator.
 
 Run restore as an offline operation against an empty RustyAuth namespace:
 
 ```sh
-passkey-auth-service backup restore <object-key>
-passkey-auth-service doctor
+rustyauth backup restore <object-key>
+rustyauth doctor
 ```
 
 Restore invalidates sessions by default, creates fresh signing-key material and fails closed if its
@@ -142,6 +156,11 @@ incident response. See [Configuration](docs/CONFIGURATION.md) for key-overlap se
 [Deployment](docs/DEPLOYMENT.md) for the clean-room recovery runbook.
 
 ## How integration works
+
+Runnable end-to-end material lives in [examples/](examples/README.md): a static relying party
+exercising the full ceremony flow and a Node service verifying issued tokens against JWKS. The
+[`@rustyauth/client`](packages/client/README.md) package wraps the browser side of these flows,
+including the WebAuthn JSON encoding.
 
 ### Registration
 
@@ -205,9 +224,9 @@ The API may change before `1.0`; pin a release or commit.
 
 ## Configuration and deployment
 
-RustyAuth validates all required configuration at startup and fails closed on partial backup
-configuration, invalid origins, weak production bootstrap tokens and public production SableDB
-addresses.
+RustyAuth validates all required configuration at startup and fails closed on an unset `AUTH_ENV`,
+placeholder encryption keys with no entropy, partial backup configuration, invalid origins, weak
+production bootstrap tokens and plaintext production SableDB addresses outside private networking.
 
 - [Configuration reference](docs/CONFIGURATION.md)
 - [Docker and Railway deployment](docs/DEPLOYMENT.md)
@@ -229,7 +248,7 @@ RustyAuth is currently `0.1.0` pre-release software.
 | ES256 JWT, JWKS and automatic rotation | Implemented with prepublication and retired-key overlap |
 | Ordered HTTP event polling and gRPC event streaming | Implemented |
 | Private identity gRPC reads, exact search and mutations | Implemented |
-| Passkey-authenticated operator dashboard | Implemented; allowlisted first owner bootstrap |
+| Passkey-authenticated operator dashboard | Implemented; first owner created with `operator promote`, browser bootstrap requires a verified allowlisted email |
 | Organization and operator control plane | Implemented for one organization per instance |
 | Service accounts and credential exchange | Implemented with scoped, one-time credentials |
 | Email sign-in and verification delivery | Event recording only |
@@ -276,7 +295,8 @@ deno task dashboard:build
 ```
 
 ConnectRPC contracts and the Solid Query adapter live in `packages/protocol` and
-`packages/connect-solid`. Regenerate and verify them with:
+`packages/connect-solid`; the browser client for the public HTTP surface lives in
+`packages/client`. Regenerate and verify them with:
 
 ```sh
 deno task gen
@@ -298,10 +318,12 @@ Pulumi configuration.
 | [Dashboard control-plane decision](docs/decisions/0001-dashboard-control-plane.md) | SolidJS, ConnectRPC, Rust, Railway and SableDB trust boundaries |
 | [Engineering](docs/ENGINEERING.md) | Module ownership, coding standards and quality gates |
 | [HTTP API](docs/API.md) | Endpoints, inputs, responses and access requirements |
+| [OpenAPI specification](docs/openapi.yaml) | Machine-readable contract for the public HTTP endpoints |
+| [Examples](examples/README.md) | Runnable relying-party and JWT-verification integrations |
+| [Releasing](RELEASING.md) | Tagged releases, container image, JSR and BSR publishing |
 | [Configuration](docs/CONFIGURATION.md) | Every environment variable and validation rule |
 | [Deployment](docs/DEPLOYMENT.md) | Docker, Railway, persistence and operations |
 | [Security policy](SECURITY.md) | Reporting, threat model and known limitations |
-| [Future product strategy](docs/business/FUTURE_FEATURES.md) | Exploratory business direction for people, agents and delegated authority |
 | [Contributing](CONTRIBUTING.md) | Build, review and pull-request expectations |
 | [Code of conduct](CODE_OF_CONDUCT.md) | Community expectations and enforcement |
 | [Brand guide](docs/BRAND.md) | Naming, voice, logo and attribution usage |

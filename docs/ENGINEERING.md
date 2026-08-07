@@ -8,18 +8,21 @@ failure behavior and a small operational surface—not framework novelty or spec
 | Path | Responsibility | Must not own |
 | --- | --- | --- |
 | `src/main.rs` | Process lifecycle and dependency composition | Authentication policy or storage keys |
+| `src/cli.rs` | Operator CLI parsing and doctor/backup/keys/operator commands | Server routing or request handling |
+| `src/lib.rs` | Library crate root declaring the service modules | Runtime logic or process lifecycle |
 | `src/app_state.rs` | Initialized capabilities shared by handlers | Request-scoped or mutable global data |
-| `src/auth.rs` | HTTP contract, origin policy and response mapping | Direct SableDB commands or key custody |
-| `src/store.rs` | Durable records, key layout and atomic mutations | HTTP status codes or browser policy |
-| `src/identity_rpc.rs` | Safe identity projection and private control-plane RPC | WebAuthn material exposure or storage keys |
+| `src/auth.rs`, `src/auth/` | HTTP contract, origin policy and response mapping | Direct SableDB commands or key custody |
+| `src/store.rs`, `src/store/` | Durable records, key layout and atomic mutations | HTTP status codes or browser policy |
+| `src/identity_rpc.rs`, `src/identity_rpc/` | Safe identity projection and private control-plane RPC | WebAuthn material exposure or storage keys |
 | `src/event_rpc.rs` | Ordered replay/follow event projection | Event mutation or consumer checkpoints |
 | `src/operator_auth.rs` | Exact-origin passkey operator sessions and role capabilities | RPC persistence or browser state |
 | `src/organization_rpc.rs` | Single-organization and operator RPC projection | Session policy or storage keys |
-| `src/service_account_rpc.rs` | Service principal policy, credentials and token exchange | Secret persistence or signing-key custody |
+| `src/service_account_rpc.rs`, `src/service_account_rpc/` | Service principal policy, credentials and token exchange | Secret persistence or signing-key custody |
 | `src/rpc.rs` | RPC composition, limits and scoped service authentication | Identity persistence policy |
-| `src/jwt.rs` | Signing-key custody and token issuance | Session validation or application authorization |
+| `src/jwt.rs`, `src/jwt/` | Signing-key custody and token issuance | Session validation or application authorization |
 | `src/config.rs` | Typed configuration and deployment validation | Runtime defaults that weaken production |
-| `src/backup.rs` | Logical snapshot validation, authenticated envelopes and S3 backup operations | HTTP policy or storage mutations outside the snapshot boundary |
+| `src/backup.rs`, `src/backup/` | Logical snapshot validation, authenticated envelopes and S3 backup operations | HTTP policy or storage mutations outside the snapshot boundary |
+| `tests/` | Integration coverage against the real compose services | Unit tests, which live beside their modules |
 | `site/src` | Static public site and documentation UI | Product secrets or service-side auth logic |
 | `dashboard/src` | SolidJS operator experience and safe RPC projections | Authorization policy or raw credential persistence |
 | `infra/cloudflare` | Cloudflare Pages and DNS control plane | Application deployment or secret values |
@@ -27,6 +30,25 @@ failure behavior and a small operational surface—not framework novelty or spec
 The current service is intentionally a single binary. New modules should represent a real security,
 protocol, persistence or operational boundary. Do not create layers whose only purpose is to rename a
 function call.
+
+## Module layout
+
+A module that grows past roughly 800 lines is split into `<name>.rs` plus a `<name>/` directory of
+domain submodules, the pattern `store`, `auth`, `jwt` and the RPC services already follow. The rules
+that keep a split auditable:
+
+- **The facade file owns the contract.** `<name>.rs` declares the submodules, re-exports their items
+  so every existing `crate::<name>::X` path keeps resolving, and holds only glue genuinely shared by
+  all submodules. Callers never change in a split commit.
+- **Boundaries follow domains, not line counts.** Split by resource, lifecycle or protocol concern —
+  the way an auditor would ask questions — never into `part1.rs`/`part2.rs` chunks that merely hit a
+  number.
+- **Every submodule states its single responsibility** in a one- or two-line `//!` header comment.
+- **A split commit is structural only.** Code, comments and tests move verbatim; behavior, error
+  mapping and cryptographic constructions do not change in the same commit. Unit tests move beside
+  the code they exercise.
+- **Visibility widens only as far as the split requires.** Prefer `pub(super)` and `pub(crate)`;
+  items become `pub` only when the binary or `tests/` genuinely consumes them.
 
 ## Identity persistence changes
 
