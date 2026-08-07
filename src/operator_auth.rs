@@ -4,8 +4,9 @@ use std::{collections::HashSet, sync::Arc};
 
 use connectrpc::{ConnectError, ErrorCode};
 use http::{HeaderMap, header};
+use uuid::Uuid;
 
-use crate::store::{OperatorRecord, OperatorRoleRecord, Store, User};
+use crate::store::{IdentifierKind, OperatorRecord, OperatorRoleRecord, Store, User};
 
 const SESSION_COOKIE: &str = "passkey_auth_session";
 
@@ -67,22 +68,47 @@ impl OperatorAuthorizer {
         if session.auth_method != "passkey" {
             return Err(unauthenticated("passkey operator session required"));
         }
-        let bootstrap_allowed = user
-            .primary_email()
-            .is_some_and(|identifier| self.bootstrap_emails.contains(&identifier.value));
-        let operator = self
+        let allowed = bootstrap_allowed(&user, &self.bootstrap_emails);
+        let Some(operator) = self
             .store
-            .ensure_operator(&user, bootstrap_allowed)
+            .ensure_operator(&user, allowed)
             .await
             .map_err(internal)?
-            .ok_or_else(|| permission_denied("account is not a RustyAuth operator"))?;
+        else {
+            return Err(operator_denied(user.id, OperatorDenial::NotAnOperator));
+        };
         if !allows(operator.role, capability) {
-            return Err(permission_denied(
-                "operator role does not permit this action",
+            return Err(operator_denied(
+                user.id,
+                OperatorDenial::RoleLacksCapability(operator.role, capability),
             ));
         }
         Ok(OperatorActor { user, operator })
     }
+}
+
+/// Why an authenticated caller was refused operator access. Recorded in the log,
+/// never in the response.
+#[derive(Clone, Copy, Debug)]
+enum OperatorDenial {
+    NotAnOperator,
+    RoleLacksCapability(OperatorRoleRecord, OperatorCapability),
+}
+
+/// Whether `user` may be bootstrapped into the operator table.
+///
+/// Operator bootstrap must never trust an address the account has not proven it
+/// controls. Every identifier on the self-service API is attacker-chosen and
+/// unverified in production, so dropping the `verified` check here would let any
+/// enrolled account claim an unclaimed operator address and mint itself Owner.
+/// All identifiers are scanned rather than only the primary one, so an attacker
+/// cannot suppress a real operator's access by claiming primary on their behalf.
+fn bootstrap_allowed(user: &User, bootstrap_emails: &HashSet<String>) -> bool {
+    user.identifiers.iter().any(|identifier| {
+        identifier.kind == IdentifierKind::Email
+            && identifier.verified
+            && bootstrap_emails.contains(&identifier.value)
+    })
 }
 
 fn allows(role: OperatorRoleRecord, capability: OperatorCapability) -> bool {
@@ -119,6 +145,28 @@ fn permission_denied(message: &'static str) -> ConnectError {
     ConnectError::new(ErrorCode::PermissionDenied, message)
 }
 
+/// The one response every post-authentication operator failure gets.
+///
+/// Answering "you are not an operator" differently from "your role is too low"
+/// turns any authenticated session into an oracle for enumerating who holds
+/// privileged access, so the reason goes to the log and never to the caller.
+fn operator_denied(user_id: Uuid, reason: OperatorDenial) -> ConnectError {
+    match reason {
+        OperatorDenial::NotAnOperator => {
+            tracing::debug!(user_id = %user_id, "operator access denied: not an operator");
+        }
+        OperatorDenial::RoleLacksCapability(role, capability) => {
+            tracing::debug!(
+                user_id = %user_id,
+                role = ?role,
+                capability = ?capability,
+                "operator access denied: role lacks the required capability"
+            );
+        }
+    }
+    permission_denied("operator access denied")
+}
+
 fn internal(error: impl std::fmt::Display) -> ConnectError {
     tracing::error!(error = %error, "operator authorization failed");
     ConnectError::new(ErrorCode::Internal, "operator authorization failed")
@@ -127,6 +175,167 @@ fn internal(error: impl std::fmt::Display) -> ConnectError {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::store::{AccountIdentifier, AccountProfile};
+
+    const OPERATOR_EMAIL: &str = "operator@example.invalid";
+
+    fn identifier(
+        kind: IdentifierKind,
+        value: &str,
+        verified: bool,
+        primary: bool,
+    ) -> AccountIdentifier {
+        AccountIdentifier {
+            kind,
+            value: value.to_owned(),
+            verified,
+            verified_at: verified.then_some(100),
+            primary,
+            created_at: 100,
+        }
+    }
+
+    fn user_with(identifiers: Vec<AccountIdentifier>) -> User {
+        User {
+            id: Uuid::new_v4(),
+            email: String::new(),
+            email_verified: false,
+            profile: AccountProfile::default(),
+            identifiers,
+            session_version: 1,
+            created_at: 100,
+            passkeys: Vec::new(),
+        }
+    }
+
+    fn bootstrap_set() -> HashSet<String> {
+        HashSet::from([OPERATOR_EMAIL.to_owned()])
+    }
+
+    /// Prevents privilege escalation to Owner: identifiers on the self-service
+    /// API are attacker-chosen, so an account that merely *claims* an operator
+    /// address must not be bootstrapped. Only a proven-controlled address counts.
+    #[test]
+    fn bootstrap_requires_a_verified_matching_email() {
+        let emails = bootstrap_set();
+
+        assert!(bootstrap_allowed(
+            &user_with(vec![identifier(
+                IdentifierKind::Email,
+                OPERATOR_EMAIL,
+                true,
+                true
+            )]),
+            &emails
+        ));
+        assert!(!bootstrap_allowed(
+            &user_with(vec![identifier(
+                IdentifierKind::Email,
+                OPERATOR_EMAIL,
+                false,
+                true
+            )]),
+            &emails
+        ));
+        assert!(!bootstrap_allowed(
+            &user_with(vec![identifier(
+                IdentifierKind::Email,
+                "someone-else@example.invalid",
+                true,
+                true
+            )]),
+            &emails
+        ));
+        assert!(!bootstrap_allowed(
+            &user_with(vec![identifier(
+                IdentifierKind::Phone,
+                OPERATOR_EMAIL,
+                true,
+                true
+            )]),
+            &emails
+        ));
+    }
+
+    #[test]
+    fn bootstrap_denies_everything_when_no_emails_are_configured() {
+        let emails = HashSet::new();
+        assert!(!bootstrap_allowed(
+            &user_with(vec![identifier(
+                IdentifierKind::Email,
+                OPERATOR_EMAIL,
+                true,
+                true
+            )]),
+            &emails
+        ));
+        assert!(!bootstrap_allowed(&user_with(Vec::new()), &emails));
+    }
+
+    /// A verified operator address bootstraps even when some other identifier is
+    /// primary, so an attacker cannot lock a real operator out by racing to claim
+    /// the primary slot.
+    #[test]
+    fn bootstrap_accepts_a_verified_non_primary_email() {
+        let user = user_with(vec![
+            identifier(IdentifierKind::Phone, "+447700900123", true, true),
+            identifier(
+                IdentifierKind::Email,
+                "personal@example.invalid",
+                false,
+                false,
+            ),
+            identifier(IdentifierKind::Email, OPERATOR_EMAIL, true, false),
+        ]);
+        assert!(bootstrap_allowed(&user, &bootstrap_set()));
+    }
+
+    #[test]
+    fn bootstrap_ignores_an_unverified_duplicate_of_a_verified_match() {
+        let user = user_with(vec![
+            identifier(IdentifierKind::Email, OPERATOR_EMAIL, false, true),
+            identifier(
+                IdentifierKind::Email,
+                "personal@example.invalid",
+                true,
+                false,
+            ),
+        ]);
+        assert!(!bootstrap_allowed(&user, &bootstrap_set()));
+    }
+
+    /// A caller that already holds a valid session must not learn whether it is
+    /// an operator, nor how privileged it is. Distinguishable refusals let any
+    /// enrolled account enumerate the operator roster to phish or target it.
+    #[test]
+    fn post_authentication_denials_are_indistinguishable() {
+        let user_id = Uuid::new_v4();
+        let not_an_operator = operator_denied(user_id, OperatorDenial::NotAnOperator);
+        let wrong_role = operator_denied(
+            user_id,
+            OperatorDenial::RoleLacksCapability(
+                OperatorRoleRecord::Auditor,
+                OperatorCapability::Administer,
+            ),
+        );
+        assert_eq!(not_an_operator.code, ErrorCode::PermissionDenied);
+        assert_eq!(not_an_operator.code, wrong_role.code);
+        assert_eq!(not_an_operator.message, wrong_role.message);
+        assert_eq!(
+            not_an_operator.message.as_deref(),
+            Some("operator access denied")
+        );
+        // The origin and session refusals stay distinct on purpose: they are not an
+        // operator-status oracle and legitimate clients act on the difference.
+        assert_ne!(
+            permission_denied("request origin is not allowed").message,
+            not_an_operator.message
+        );
+        assert_ne!(
+            unauthenticated("passkey operator session required").code,
+            not_an_operator.code
+        );
+    }
 
     #[test]
     fn roles_are_least_privilege() {
