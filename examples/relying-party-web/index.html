@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>RustyAuth relying-party example</title>
+    <style>
+    body {
+      font-family: system-ui, sans-serif;
+      max-width: 40rem;
+      margin: 2rem auto;
+      padding: 0 1rem;
+      line-height: 1.5;
+    }
+    fieldset {
+      margin-bottom: 1.5rem;
+      border: 1px solid #ccc;
+      border-radius: 6px;
+    }
+    label {
+      display: block;
+      margin: 0.5rem 0 0.25rem;
+    }
+    input {
+      width: 100%;
+      box-sizing: border-box;
+      padding: 0.4rem;
+    }
+    button {
+      margin-top: 0.75rem;
+      padding: 0.5rem 1rem;
+    }
+    #status {
+      font-weight: 600;
+    }
+    pre {
+      background: #f4f4f4;
+      padding: 0.75rem;
+      border-radius: 6px;
+      overflow-x: auto;
+      white-space: pre-wrap;
+      word-break: break-all;
+    }
+    </style>
+  </head>
+  <body>
+    <h1>RustyAuth relying-party example</h1>
+    <p>
+      Exercises the public HTTP API at <code>http://localhost:8081</code>: register a passkey, sign
+      in, mint a short-lived token, inspect its claims and sign out. Serve this page from the exact
+      origin RustyAuth is configured to trust — see the README.
+    </p>
+
+    <fieldset>
+      <legend>1. Register a passkey</legend>
+      <label for="register-email">Email</label>
+      <input id="register-email" type="email" value="person@example.com" />
+      <label for="register-name">Display name (optional)</label>
+      <input id="register-name" type="text" value="Ada Lovelace" />
+      <label for="bootstrap-token">Bootstrap token (initial enrolment is administrative)</label>
+      <input id="bootstrap-token" type="text" value="vtr-local-enrolment-only" />
+      <button id="register">Register</button>
+    </fieldset>
+
+    <fieldset>
+      <legend>2. Sign in</legend>
+      <label for="signin-email">Email</label>
+      <input id="signin-email" type="email" value="person@example.com" />
+      <button id="sign-in">Sign in</button>
+    </fieldset>
+
+    <fieldset>
+      <legend>3. Session</legend>
+      <button id="mint-token">Mint token</button>
+      <button id="sign-out">Sign out</button>
+    </fieldset>
+
+    <p id="status">Idle.</p>
+    <h2>Token response</h2>
+    <pre id="token-output">—</pre>
+    <h2>Decoded JWT claims</h2>
+    <pre id="claims-output">—</pre>
+
+    <script type="module" src="./main.js"></script>
+  </body>
+</html>

@@ -1,0 +1,12 @@
+{
+  "name": "rustyauth-verify-jwt-node",
+  "private": true,
+  "type": "module",
+  "description": "Downstream verification of RustyAuth access tokens against the JWKS endpoint",
+  "scripts": {
+    "verify": "node index.mjs"
+  },
+  "dependencies": {
+    "jose": "5.9.6"
+  }
+}

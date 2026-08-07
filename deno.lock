@@ -2960,6 +2960,11 @@
           "npm:vite@^7.1.1"
         ]
       },
+      "packages/client": {
+        "dependencies": [
+          "jsr:@std/assert@^1.0.14"
+        ]
+      },
       "packages/connect-solid": {
         "dependencies": [
           "jsr:@std/assert@^1.0.14",
