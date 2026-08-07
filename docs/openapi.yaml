@@ -1,0 +1,1452 @@
+openapi: 3.1.0
+info:
+  title: RustyAuth public HTTP API
+  version: 0.1.0
+  license:
+    name: Apache-2.0
+    identifier: Apache-2.0
+  description: |
+    RustyAuth's public JSON API. This is the pre-`1.0` contract implemented by the
+    Rust service; it may change before `1.0`. The private Connect/gRPC-Web/gRPC
+    services (identity, events, organization, service accounts) are served on the
+    same listener but are not part of this document.
+
+    ## Authentication model
+
+    Browsers enrol and sign in with WebAuthn passkey ceremonies. A successful
+    ceremony sets the `passkey_auth_session` HttpOnly cookie (SameSite=Strict;
+    `Secure` in production), which identifies a durable session. `POST /v1/token`
+    exchanges that session for a fresh short-lived ES256 bearer access token
+    (verifiable against `/.well-known/jwks.json`). Contact details and profile
+    fields are not embedded in the JWT.
+
+    All JSON request bodies use `Content-Type: application/json`. Error responses
+    have the form `{ "error": "authentication required" }`. Internal failures
+    intentionally return the generic message `authentication service failed closed`.
+
+    ## Access controls
+
+    Operations name their access requirement using these terms:
+
+    - **Origin** — the `Origin` header exactly equals `WEBAUTHN_RP_ORIGIN` without
+      a trailing slash. Origin enforcement cannot be expressed as an OpenAPI
+      security scheme, so it is stated in each operation's description.
+    - **Bootstrap** — `x-bootstrap-token` exactly matches `BOOTSTRAP_TOKEN`. The
+      bootstrap token is an administrative service secret, not an end-user browser
+      credential. It is compared in constant time over SHA-256 digests.
+    - **Session** — a valid `passkey_auth_session` HttpOnly cookie plus the exact
+      origin.
+    - **Passkey session** — a session created by WebAuthn, rather than a local
+      agent handoff.
+    - **Recent passkey** — the valid session was created by a passkey no more than
+      five minutes ago. Version `0.1.0` measures recency from session creation; it
+      does not run a separate step-up ceremony.
+
+    ## Response headers
+
+    Every response carries `Content-Security-Policy`, `X-Frame-Options: DENY`,
+    `Cross-Origin-Opener-Policy: same-origin`,
+    `Cross-Origin-Resource-Policy: same-origin`, `Permissions-Policy`,
+    `X-Content-Type-Options: nosniff` and `Referrer-Policy: no-referrer`.
+    `Strict-Transport-Security` is added in production only.
+    `Cross-Origin-Resource-Policy: same-origin` means a cross-origin page cannot
+    embed RustyAuth responses as subresources; it does not affect the
+    CORS-authorized `WEBAUTHN_RP_ORIGIN` fetches the browser client makes.
+
+    ## Limits
+
+    Requests are bounded at 30 seconds (`408` on breach) and a 256 KiB REST body
+    (`413` on breach). The private RPC body bound is 64 KiB.
+servers:
+  - url: http://localhost:8081
+    description: Local development
+  - url: https://{host}
+    description: Production deployment placeholder
+    variables:
+      host:
+        default: auth.example.com
+        description: Hostname of the deployed RustyAuth service.
+tags:
+  - name: Health & discovery
+    description: Liveness, readiness and public runtime/key metadata.
+  - name: Registration
+    description: Initial WebAuthn passkey enrolment (Origin + Bootstrap).
+  - name: Authentication
+    description: WebAuthn sign-in, token refresh and sign-out.
+  - name: Account
+    description: Account profile and contact identifiers.
+  - name: Credentials
+    description: Passkey listing, addition, rename and revocation.
+  - name: Events
+    description: Durable auth event log and email hooks.
+  - name: Development
+    description: Development-only endpoints. Disabled in production.
+paths:
+  /healthz:
+    get:
+      tags: [Health & discovery]
+      operationId: getHealthz
+      summary: Liveness probe
+      description: Returns `200` when the HTTP process is live. No access control.
+      security: []
+      responses:
+        "200":
+          description: The HTTP process is live.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthStatus"
+              example:
+                status: ok
+        "408":
+          $ref: "#/components/responses/RequestTimeout"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /readyz:
+    get:
+      tags: [Health & discovery]
+      operationId: getReadyz
+      summary: Readiness probe
+      description: Pings SableDB. No access control.
+      security: []
+      responses:
+        "200":
+          description: SableDB responded; the service is ready.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthStatus"
+              example:
+                status: ready
+        "408":
+          $ref: "#/components/responses/RequestTimeout"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          description: SableDB readiness failure.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthStatus"
+              example:
+                status: not_ready
+  /.well-known/passkey-auth:
+    get:
+      tags: [Health & discovery]
+      operationId: getPasskeyAuthMetadata
+      summary: Runtime capability metadata
+      description: |
+        Returns runtime capability metadata. Unauthenticated, and deliberately
+        silent about backups: reporting whether they exist or are failing tells an
+        attacker how recoverable the deployment is. Backup posture is available to
+        an operator on the host through `rustyauth doctor`.
+      security: []
+      responses:
+        "200":
+          description: Capability metadata for this deployment.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PasskeyAuthMetadata"
+        "408":
+          $ref: "#/components/responses/RequestTimeout"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /.well-known/openid-configuration:
+    get:
+      tags: [Health & discovery]
+      operationId: getOpenidConfiguration
+      summary: OpenID-style discovery metadata
+      description: |
+        Returns issuer, JWKS URL, token URL, `ES256` and public subject metadata.
+        This resembles OpenID discovery but RustyAuth is not claiming full OpenID
+        Provider conformance. No access control.
+      security: []
+      responses:
+        "200":
+          description: Discovery metadata.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OpenIdConfiguration"
+        "408":
+          $ref: "#/components/responses/RequestTimeout"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /.well-known/jwks.json:
+    get:
+      tags: [Health & discovery]
+      operationId: getJwks
+      summary: Public P-256 signing keyset
+      description: |
+        Returns the public P-256 signing keyset. The set contains the active key,
+        any prepublished staged key and unexpired retired keys needed to verify
+        existing access tokens. Responses are publicly cacheable for five minutes.
+        No access control.
+      security: []
+      responses:
+        "200":
+          description: The public signing keyset.
+          headers:
+            Cache-Control:
+              description: Publicly cacheable for five minutes.
+              schema:
+                type: string
+                example: public, max-age=300, must-revalidate
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Jwks"
+        "408":
+          $ref: "#/components/responses/RequestTimeout"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /v1/passkeys/registration/options:
+    post:
+      tags: [Registration]
+      operationId: createRegistrationOptions
+      summary: Begin initial passkey registration
+      description: |
+        Access: Origin + Bootstrap. The `Origin` header must exactly equal
+        `WEBAUTHN_RP_ORIGIN` in addition to the bootstrap token.
+
+        Exactly one identifier is required. New clients can supply an explicit
+        `identifier` with type `email` or `phone`; `{ "email": … }` remains
+        supported, and `{ "phone": … }` is shorthand for a phone identifier.
+        Emails are trimmed, lowercased and must use the supported ASCII dot-atom
+        address form. Phone numbers are normalized to international E.164 form and
+        must contain 8–15 digits. Existing identifiers return `409`.
+
+        The three profile names are optional. Given and family names contain at
+        most 100 characters; display names contain at most 200. Values are
+        trimmed; control and invisible directional-formatting characters are
+        rejected. The display name, or the joined given and family names, becomes
+        the WebAuthn display label. The stable RustyAuth user UUID remains the
+        WebAuthn user handle.
+      security:
+        - bootstrapToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RegistrationOptionsRequest"
+            example:
+              identifier:
+                type: phone
+                value: "+44 7700 900123"
+              givenName: Ada
+              familyName: Lovelace
+              displayName: Ada Lovelace
+      responses:
+        "200":
+          description: Registration ceremony created.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RegistrationCeremony"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "408":
+          $ref: "#/components/responses/RequestTimeout"
+        "409":
+          description: The identifier already exists.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "413":
+          $ref: "#/components/responses/PayloadTooLarge"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /v1/passkeys/registration/verify:
+    post:
+      tags: [Registration]
+      operationId: verifyRegistration
+      summary: Complete initial passkey registration
+      description: |
+        Access: Origin + Bootstrap. The `Origin` header must exactly equal
+        `WEBAUTHN_RP_ORIGIN` in addition to the bootstrap token.
+
+        The response is a browser `RegisterPublicKeyCredential`. The ceremony is
+        atomically consumed before verification, so a failed or replayed
+        submission must begin again.
+      security:
+        - bootstrapToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RegistrationVerifyRequest"
+      responses:
+        "201":
+          description: Account and initial session created. Sets the session cookie.
+          headers:
+            Set-Cookie:
+              $ref: "#/components/headers/SessionCookie"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TokenResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "408":
+          $ref: "#/components/responses/RequestTimeout"
+        "413":
+          $ref: "#/components/responses/PayloadTooLarge"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /v1/passkeys/authentication/options:
+    post:
+      tags: [Authentication]
+      operationId: createAuthenticationOptions
+      summary: Begin passkey authentication
+      description: |
+        Access: Origin. The `Origin` header must exactly equal
+        `WEBAUTHN_RP_ORIGIN`.
+
+        The request accepts the same explicit identifier and email/phone
+        shorthand shapes as registration. An absent user returns the same
+        `401 passkey authentication is unavailable` class as unavailable
+        authentication state. RustyAuth loads every passkey attached to the
+        resolved account; identifiers are account discovery keys, not passkey
+        credentials. The returned `ceremonyId` is valid for five minutes.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AuthenticationOptionsRequest"
+            example:
+              phone: "+44 7700 900123"
+      responses:
+        "200":
+          description: Authentication ceremony created (five-minute `ceremonyId`).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthenticationCeremony"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "408":
+          $ref: "#/components/responses/RequestTimeout"
+        "413":
+          $ref: "#/components/responses/PayloadTooLarge"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /v1/passkeys/authentication/verify:
+    post:
+      tags: [Authentication]
+      operationId: verifyAuthentication
+      summary: Complete passkey authentication
+      description: |
+        Access: Origin. The `Origin` header must exactly equal
+        `WEBAUTHN_RP_ORIGIN`.
+
+        The response is a browser `PublicKeyCredential`. RustyAuth requires user
+        verification, validates the stored credential, rejects a regressing
+        non-zero sign counter, updates last-used state and creates a session.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AuthenticationVerifyRequest"
+      responses:
+        "200":
+          description: Signed in. Sets the session cookie.
+          headers:
+            Set-Cookie:
+              $ref: "#/components/headers/SessionCookie"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TokenResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "408":
+          $ref: "#/components/responses/RequestTimeout"
+        "413":
+          $ref: "#/components/responses/PayloadTooLarge"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /v1/token:
+    post:
+      tags: [Authentication]
+      operationId: refreshToken
+      summary: Mint a fresh short-lived access token
+      description: |
+        Access: Session (valid `passkey_auth_session` cookie plus the exact
+        origin). Returns a fresh short-lived token for the existing durable
+        session and refreshes session activity.
+      security:
+        - sessionCookie: []
+      responses:
+        "200":
+          description: Fresh token issued for the existing session.
+          headers:
+            Set-Cookie:
+              $ref: "#/components/headers/SessionCookie"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TokenResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "408":
+          $ref: "#/components/responses/RequestTimeout"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /v1/sign-out:
+    post:
+      tags: [Authentication]
+      operationId: signOut
+      summary: Sign out
+      description: |
+        Access: Origin. The `Origin` header must exactly equal
+        `WEBAUTHN_RP_ORIGIN`.
+
+        Deletes the current session when present, expires the cookie and returns
+        `204`. The operation is idempotent.
+      security: []
+      responses:
+        "204":
+          description: Session deleted (if present) and cookie expired.
+          headers:
+            Set-Cookie:
+              description: Expires the `passkey_auth_session` cookie.
+              schema:
+                type: string
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "408":
+          $ref: "#/components/responses/RequestTimeout"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /v1/account:
+    get:
+      tags: [Account]
+      operationId: getAccount
+      summary: Read the current account
+      description: |
+        Access: Session (valid `passkey_auth_session` cookie plus the exact
+        origin). Passkeys, identifiers and the basic profile belong to the stable
+        account UUID. Changing a contact address or number never changes the
+        WebAuthn user handle and does not require re-registering the account's
+        passkeys.
+      security:
+        - sessionCookie: []
+      responses:
+        "200":
+          description: The current account.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Account"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "408":
+          $ref: "#/components/responses/RequestTimeout"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /v1/account/profile:
+    post:
+      tags: [Account]
+      operationId: updateProfile
+      summary: Replace the account profile
+      description: |
+        Access: Passkey session (a session created by WebAuthn, plus the exact
+        origin). Replaces the small profile and returns the account response.
+        Omitted or blank fields clear their current values. Local agent sessions
+        remain read-only for identity data.
+      security:
+        - sessionCookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProfileUpdateRequest"
+            example:
+              givenName: Ada
+              familyName: Lovelace
+              displayName: Ada
+      responses:
+        "200":
+          description: Profile replaced; returns the account response.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Account"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "408":
+          $ref: "#/components/responses/RequestTimeout"
+        "413":
+          $ref: "#/components/responses/PayloadTooLarge"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /v1/account/identifiers:
+    post:
+      tags: [Account]
+      operationId: addIdentifier
+      summary: Add a contact identifier
+      description: |
+        Access: Recent passkey (the valid session was created by a passkey no
+        more than five minutes ago, plus the exact origin).
+
+        Adds a globally unique identifier and returns `201` with the account
+        response. An account may hold at most 20 identifiers. Development marks
+        the identifier verified immediately. Production stores it unverified and
+        appends `email.verification.requested` or `phone.verification.requested`
+        for an external delivery/verification workflow. RustyAuth `0.1.0` does
+        not itself deliver or consume a verification challenge.
+      security:
+        - sessionCookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/IdentifierRef"
+            example:
+              type: phone
+              value: "+44 7700 900123"
+      responses:
+        "201":
+          description: Identifier added; returns the account response.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Account"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "408":
+          $ref: "#/components/responses/RequestTimeout"
+        "409":
+          description: The identifier already exists, or the 20-identifier limit was reached.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "413":
+          $ref: "#/components/responses/PayloadTooLarge"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /v1/account/identifiers/primary:
+    post:
+      tags: [Account]
+      operationId: setPrimaryIdentifier
+      summary: Make a linked identifier primary
+      description: |
+        Access: Recent passkey (the valid session was created by a passkey no
+        more than five minutes ago, plus the exact origin). Makes the linked
+        identifier primary and returns the account response.
+      security:
+        - sessionCookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/IdentifierRef"
+            example:
+              type: email
+              value: person@example.com
+      responses:
+        "200":
+          description: Primary identifier updated; returns the account response.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Account"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "408":
+          $ref: "#/components/responses/RequestTimeout"
+        "413":
+          $ref: "#/components/responses/PayloadTooLarge"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /v1/account/identifiers/remove:
+    post:
+      tags: [Account]
+      operationId: removeIdentifier
+      summary: Remove a linked identifier
+      description: |
+        Access: Recent passkey (the valid session was created by a passkey no
+        more than five minutes ago, plus the exact origin). Removes the linked
+        identifier and returns the account response. Removing the final
+        identifier returns `409`; when the primary identifier is removed, the
+        oldest remaining identifier becomes primary.
+      security:
+        - sessionCookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/IdentifierRef"
+            example:
+              type: phone
+              value: "+447700900123"
+      responses:
+        "200":
+          description: Identifier removed; returns the account response.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Account"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "408":
+          $ref: "#/components/responses/RequestTimeout"
+        "409":
+          description: Removing the final identifier is prohibited.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "413":
+          $ref: "#/components/responses/PayloadTooLarge"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /v1/credentials:
+    get:
+      tags: [Credentials]
+      operationId: listCredentials
+      summary: List the account's passkeys
+      description: |
+        Access: Session (valid `passkey_auth_session` cookie plus the exact
+        origin). `lastUsedAt` is an empty string before first use. `current`
+        identifies the credential used to create the current passkey session.
+      security:
+        - sessionCookie: []
+      responses:
+        "200":
+          description: The account's passkey credentials.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CredentialList"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "408":
+          $ref: "#/components/responses/RequestTimeout"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /v1/passkeys/registration/add/options:
+    post:
+      tags: [Credentials]
+      operationId: createAdditionalRegistrationOptions
+      summary: Begin adding another passkey
+      description: |
+        Access: Recent passkey (the valid session was created by a passkey no
+        more than five minutes ago, plus the exact origin).
+
+        Labels are trimmed, contain 1–80 characters and may not contain control
+        or invisible directional-formatting characters. The response is the same
+        ceremony/options shape as initial registration.
+      security:
+        - sessionCookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AddRegistrationOptionsRequest"
+            example:
+              label: YubiKey 5
+      responses:
+        "200":
+          description: Additional-passkey registration ceremony created.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RegistrationCeremony"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "408":
+          $ref: "#/components/responses/RequestTimeout"
+        "413":
+          $ref: "#/components/responses/PayloadTooLarge"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /v1/passkeys/registration/add/verify:
+    post:
+      tags: [Credentials]
+      operationId: verifyAdditionalRegistration
+      summary: Complete adding another passkey
+      description: |
+        Access: Recent passkey (the valid session was created by a passkey no
+        more than five minutes ago, plus the exact origin).
+
+        Uses the registration verification body. The ceremony must belong to the
+        authenticated account and the exact passkey session that started it.
+        Returns `204`; duplicate credentials return `409`.
+      security:
+        - sessionCookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RegistrationVerifyRequest"
+      responses:
+        "204":
+          description: Passkey added.
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "408":
+          $ref: "#/components/responses/RequestTimeout"
+        "409":
+          description: Duplicate credential.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "413":
+          $ref: "#/components/responses/PayloadTooLarge"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /v1/credentials/rename:
+    post:
+      tags: [Credentials]
+      operationId: renameCredential
+      summary: Rename a passkey
+      description: |
+        Access: Passkey session (a session created by WebAuthn, plus the exact
+        origin). Returns `204` or `400` when the credential is not linked to the
+        account.
+      security:
+        - sessionCookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RenameCredentialRequest"
+            example:
+              credentialId: base64url-credential-id
+              label: Office security key
+      responses:
+        "204":
+          description: Credential renamed.
+        "400":
+          description: Invalid input, or the credential is not linked to the account.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "408":
+          $ref: "#/components/responses/RequestTimeout"
+        "413":
+          $ref: "#/components/responses/PayloadTooLarge"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /v1/credentials/revoke:
+    post:
+      tags: [Credentials]
+      operationId: revokeCredential
+      summary: Revoke a passkey
+      description: |
+        Access: Recent passkey (the valid session was created by a passkey no
+        more than five minutes ago, plus the exact origin).
+
+        Returns `204`. RustyAuth rejects removal of the final passkey with `409`.
+        Version `0.1.0` measures recency from session creation; it does not run a
+        separate step-up ceremony.
+
+        Revoking a passkey also ends every session that passkey created. The next
+        request presenting such a session finds that its credential is no longer
+        attached to the account; the session record is deleted and the request is
+        rejected as unauthenticated. Sessions with no originating credential —
+        development agent handoffs — are unaffected.
+      security:
+        - sessionCookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RevokeCredentialRequest"
+            example:
+              credentialId: base64url-credential-id
+      responses:
+        "204":
+          description: Credential revoked; sessions it created are ended.
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "408":
+          $ref: "#/components/responses/RequestTimeout"
+        "409":
+          description: Removal of the final passkey is prohibited.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "413":
+          $ref: "#/components/responses/PayloadTooLarge"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /v1/events:
+    get:
+      tags: [Events]
+      operationId: listEvents
+      summary: Poll the durable auth event log
+      description: |
+        Access: Bootstrap (`x-bootstrap-token` exactly matches `BOOTSTRAP_TOKEN`).
+
+        Returns at most 500 events strictly after the supplied cursor. There is
+        no retention or server-side acknowledgement record; consumers persist
+        their own sequence after processing. The private event RPC provides
+        at-least-once replay/follow streaming.
+
+        Known event types include `identity.created`,
+        `email.verification.requested`, `phone.verification.requested`,
+        `email.sign_in.requested`, `identifier.added`, `identifier.removed`,
+        `identifier.primary_changed`, `identifier.verified`,
+        `identifier.unverified`, `profile.updated`, `credential.created`,
+        `credential.renamed`, `credential.revoked`, `session.created`,
+        `operator.created`, `operator.promoted` and `agent.handoff.created`.
+
+        `operator.promoted` records a role granted with
+        `rustyauth operator promote`. Because that command is the only
+        way to create the first Owner, treat an unexplained `operator.promoted`
+        as a privilege-escalation signal.
+      security:
+        - bootstrapToken: []
+      parameters:
+        - name: after
+          in: query
+          required: false
+          description: >-
+            Sequence cursor. Only events with a strictly greater sequence are
+            returned. Omitting it starts from the beginning of the log.
+          schema:
+            type: integer
+            minimum: 0
+      responses:
+        "200":
+          description: Up to 500 events strictly after the cursor.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EventList"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "408":
+          $ref: "#/components/responses/RequestTimeout"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /v1/email-links:
+    post:
+      tags: [Events]
+      operationId: requestEmailLink
+      summary: Record an email sign-in request event
+      description: |
+        Access: Origin. The `Origin` header must exactly equal
+        `WEBAUTHN_RP_ORIGIN`.
+
+        Always returns `202` after appending `email.sign_in.requested`; the event
+        may have no subject for an unknown email. No token is created and no
+        email is delivered in version `0.1.0`.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/EmailLinkRequest"
+            example:
+              email: person@example.com
+      responses:
+        "202":
+          description: Email request event accepted; delivery not promised.
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "408":
+          $ref: "#/components/responses/RequestTimeout"
+        "413":
+          $ref: "#/components/responses/PayloadTooLarge"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /v1/local-agent-handoff:
+    get:
+      tags: [Development]
+      operationId: consumeLocalAgentHandoff
+      summary: "Development only: consume a local agent handoff code"
+      description: |
+        **Development only.** Exists only when `AUTH_ENV=development`; the
+        endpoint is disabled in production and is not a general login or
+        impersonation API.
+
+        Codes are created by the local CLI for an existing account, expire after
+        60 seconds, are atomically consumed and redirect only to a hash route on
+        the configured `localhost` application origin. The resulting agent
+        session lasts one hour.
+      security: []
+      parameters:
+        - name: code
+          in: query
+          required: true
+          description: Single-use handoff code created by the local CLI. Expires after 60 seconds.
+          schema:
+            type: string
+      responses:
+        "303":
+          description: >-
+            Development handoff consumed and redirected. Sets a one-hour agent
+            session cookie and redirects to a hash route on the configured
+            localhost application origin.
+          headers:
+            Set-Cookie:
+              $ref: "#/components/headers/SessionCookie"
+            Location:
+              description: Hash route on the configured localhost application origin.
+              schema:
+                type: string
+        "401":
+          description: >-
+            Handoff disabled, or the code is invalid, expired, already consumed,
+            or its account no longer exists.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "408":
+          $ref: "#/components/responses/RequestTimeout"
+        "500":
+          $ref: "#/components/responses/InternalError"
+components:
+  securitySchemes:
+    sessionCookie:
+      type: apiKey
+      in: cookie
+      name: passkey_auth_session
+      description: |
+        HttpOnly, SameSite=Strict session cookie (Secure in production) set by a
+        successful WebAuthn ceremony or the development agent handoff. Session
+        access additionally requires the exact `Origin` header, which OpenAPI
+        cannot express as a security scheme; see each operation's description.
+    bootstrapToken:
+      type: apiKey
+      in: header
+      name: x-bootstrap-token
+      description: |
+        Administrative service secret matched exactly against `BOOTSTRAP_TOKEN`,
+        compared in constant time over SHA-256 digests. Not an end-user browser
+        credential. Registration endpoints additionally require the exact
+        `Origin` header.
+  headers:
+    SessionCookie:
+      description: >-
+        Sets the `passkey_auth_session` HttpOnly session cookie
+        (SameSite=Strict; Secure in production).
+      schema:
+        type: string
+  responses:
+    BadRequest:
+      description: Invalid caller input or account/credential relationship.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    Unauthorized:
+      description: >-
+        Missing/invalid origin, bootstrap, session, ceremony or WebAuthn
+        verification.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    RequestTimeout:
+      description: Request exceeded the 30-second ceiling.
+    PayloadTooLarge:
+      description: Request body exceeded 256 KiB.
+    InternalError:
+      description: >-
+        Internal dependency/state failure, reported generically as
+        `authentication service failed closed`.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error: authentication service failed closed
+  schemas:
+    Error:
+      type: object
+      description: Uniform error body. Internal failures intentionally return the generic message `authentication service failed closed`.
+      required: [error]
+      properties:
+        error:
+          type: string
+          description: Human-readable error message.
+      example:
+        error: authentication required
+    HealthStatus:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+          description: "`ok` for liveness, `ready` or `not_ready` for readiness."
+          enum: [ok, ready, not_ready]
+    PasskeyAuthMetadata:
+      type: object
+      description: >-
+        Runtime capability metadata. Backup fields are `false`, `false`, `null`
+        and `null` when backup configuration is absent. Timestamps are Unix
+        seconds.
+      properties:
+        issuer:
+          type: string
+          description: Token issuer URL.
+        passkeys:
+          type: boolean
+        event_protocols:
+          type: array
+          items:
+            type: string
+          description: Supported event delivery protocols.
+        identity_protocols:
+          type: array
+          items:
+            type: string
+          description: Supported identity RPC protocols.
+      example:
+        issuer: https://auth.example.com
+        passkeys: true
+        event_protocols: [http-poll, connect, grpc-web, grpc]
+        identity_protocols: [connect, grpc-web, grpc]
+    OpenIdConfiguration:
+      type: object
+      description: >-
+        Issuer, JWKS URL, token URL, `ES256` and public subject metadata. This
+        resembles OpenID discovery but RustyAuth is not claiming full OpenID
+        Provider conformance.
+      properties:
+        issuer:
+          type: string
+        jwks_uri:
+          type: string
+        token_endpoint:
+          type: string
+        id_token_signing_alg_values_supported:
+          type: array
+          items:
+            type: string
+          description: Contains `ES256`.
+        subject_types_supported:
+          type: array
+          items:
+            type: string
+          description: Contains `public`.
+    Jwks:
+      type: object
+      description: >-
+        Public P-256 signing keyset containing the active key, any prepublished
+        staged key and unexpired retired keys needed to verify existing access
+        tokens.
+      required: [keys]
+      properties:
+        keys:
+          type: array
+          items:
+            type: object
+            description: A JSON Web Key for ES256 verification.
+            properties:
+              kty:
+                type: string
+              crv:
+                type: string
+              alg:
+                type: string
+              use:
+                type: string
+              kid:
+                type: string
+      example:
+        keys:
+          - kty: EC
+            crv: P-256
+            alg: ES256
+            use: sig
+            kid: "example-kid"
+    IdentifierRef:
+      type: object
+      description: Reference to a contact identifier by type and value.
+      required: [type, value]
+      properties:
+        type:
+          type: string
+          enum: [email, phone]
+        value:
+          type: string
+          description: >-
+            Email addresses are trimmed, lowercased and must use the supported
+            ASCII dot-atom address form. Phone numbers are normalized to
+            international E.164 form and must contain 8–15 digits.
+    RegistrationOptionsRequest:
+      type: object
+      description: >-
+        Exactly one identifier is required, supplied either as an explicit
+        `identifier` or via the `email` / `phone` shorthand. The three profile
+        names are optional.
+      properties:
+        identifier:
+          $ref: "#/components/schemas/IdentifierRef"
+        email:
+          type: string
+          description: Shorthand for an email identifier.
+        phone:
+          type: string
+          description: Shorthand for a phone identifier.
+        givenName:
+          type: string
+          description: >-
+            At most 100 characters. Trimmed; control and invisible
+            directional-formatting characters are rejected.
+        familyName:
+          type: string
+          description: >-
+            At most 100 characters. Trimmed; control and invisible
+            directional-formatting characters are rejected.
+        displayName:
+          type: string
+          description: >-
+            At most 200 characters. The display name, or the joined given and
+            family names, becomes the WebAuthn display label.
+    AuthenticationOptionsRequest:
+      type: object
+      description: >-
+        Accepts the same explicit identifier and email/phone shorthand shapes as
+        registration. Identifiers are account discovery keys, not passkey
+        credentials.
+      properties:
+        identifier:
+          $ref: "#/components/schemas/IdentifierRef"
+        email:
+          type: string
+          description: Shorthand for an email identifier.
+        phone:
+          type: string
+          description: Shorthand for a phone identifier.
+    RegistrationCeremony:
+      type: object
+      description: A pending registration ceremony.
+      required: [ceremonyId, options]
+      properties:
+        ceremonyId:
+          type: string
+          format: uuid
+        options:
+          type: object
+          description: >-
+            The `webauthn-rs` `CreationChallengeResponse` consumed by a WebAuthn
+            browser adapter. Shape not specified by this contract.
+    AuthenticationCeremony:
+      type: object
+      description: A pending authentication ceremony. The `ceremonyId` is valid for five minutes.
+      required: [ceremonyId, options]
+      properties:
+        ceremonyId:
+          type: string
+          format: uuid
+        options:
+          type: object
+          description: >-
+            WebAuthn request options consumed by a WebAuthn browser adapter.
+            Shape not specified by this contract.
+    RegistrationVerifyRequest:
+      type: object
+      required: [ceremonyId, response]
+      properties:
+        ceremonyId:
+          type: string
+          format: uuid
+        response:
+          type: object
+          description: >-
+            A browser `RegisterPublicKeyCredential`. Shape not specified by this
+            contract.
+    AuthenticationVerifyRequest:
+      type: object
+      required: [ceremonyId, response]
+      properties:
+        ceremonyId:
+          type: string
+          format: uuid
+        response:
+          type: object
+          description: A browser `PublicKeyCredential`. Shape not specified by this contract.
+    AddRegistrationOptionsRequest:
+      type: object
+      required: [label]
+      properties:
+        label:
+          type: string
+          minLength: 1
+          maxLength: 80
+          description: >-
+            Trimmed; 1–80 characters; may not contain control or invisible
+            directional-formatting characters.
+    RenameCredentialRequest:
+      type: object
+      required: [credentialId, label]
+      properties:
+        credentialId:
+          type: string
+          description: Base64url credential ID.
+        label:
+          type: string
+          minLength: 1
+          maxLength: 80
+          description: >-
+            Trimmed; 1–80 characters; may not contain control or invisible
+            directional-formatting characters.
+    RevokeCredentialRequest:
+      type: object
+      required: [credentialId]
+      properties:
+        credentialId:
+          type: string
+          description: Base64url credential ID.
+    ProfileUpdateRequest:
+      type: object
+      description: Omitted or blank fields clear their current values.
+      properties:
+        givenName:
+          type: ["string", "null"]
+          description: At most 100 characters.
+        familyName:
+          type: ["string", "null"]
+          description: At most 100 characters.
+        displayName:
+          type: ["string", "null"]
+          description: At most 200 characters.
+    Profile:
+      type: object
+      description: The account's small profile. Fields are null when unset.
+      properties:
+        givenName:
+          type: ["string", "null"]
+        familyName:
+          type: ["string", "null"]
+        displayName:
+          type: ["string", "null"]
+    Identifier:
+      type: object
+      description: A contact identifier linked to the account.
+      required: [type, value, verified, primary, createdAt]
+      properties:
+        type:
+          type: string
+          enum: [email, phone]
+        value:
+          type: string
+        verified:
+          type: boolean
+        verifiedAt:
+          type: ["string", "null"]
+          format: date-time
+          description: >-
+            May be null for a verified email migrated from the original
+            single-email record, because that format stored verification state
+            without its timestamp.
+        primary:
+          type: boolean
+        createdAt:
+          type: string
+          format: date-time
+    Account:
+      type: object
+      description: >-
+        The account response. Passkeys, identifiers and the basic profile belong
+        to the stable account UUID.
+      required: [id, profile, identifiers, createdAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: Stable RustyAuth user UUID (also the WebAuthn user handle).
+        profile:
+          $ref: "#/components/schemas/Profile"
+        identifiers:
+          type: array
+          items:
+            $ref: "#/components/schemas/Identifier"
+        createdAt:
+          type: string
+          format: date-time
+      example:
+        id: 3e706d6b-091d-4dc5-a885-5de9ccbf89e8
+        profile:
+          givenName: Ada
+          familyName: Lovelace
+          displayName: Ada Lovelace
+        identifiers:
+          - type: email
+            value: person@example.com
+            verified: true
+            verifiedAt: "2026-08-07T10:00:00Z"
+            primary: true
+            createdAt: "2026-08-07T10:00:00Z"
+        createdAt: "2026-08-07T10:00:00Z"
+    TokenResponse:
+      type: object
+      description: >-
+        Sign-in/token response. `email` and `phoneNumber` are nullable when an
+        account does not have that identifier type. In development, present
+        identifiers report as verified so local use does not require delivery
+        providers; production preserves stored verification state. Contact
+        details and profile fields are not embedded in the JWT.
+      required:
+        [emailVerified, phoneNumberVerified, profile, token, expiresIn]
+      properties:
+        email:
+          type: ["string", "null"]
+        emailVerified:
+          type: boolean
+        phoneNumber:
+          type: ["string", "null"]
+        phoneNumberVerified:
+          type: boolean
+        profile:
+          $ref: "#/components/schemas/Profile"
+        token:
+          type: string
+          description: Short-lived ES256 JWT verifiable against `/.well-known/jwks.json`.
+        expiresIn:
+          type: integer
+          description: Token lifetime in seconds.
+      example:
+        email: person@example.com
+        emailVerified: true
+        phoneNumber: "+447700900123"
+        phoneNumberVerified: false
+        profile:
+          givenName: Ada
+          familyName: Lovelace
+          displayName: Ada Lovelace
+        token: eyJ…
+        expiresIn: 300
+    Credential:
+      type: object
+      description: A passkey credential attached to the account.
+      required: [id, label, createdAt, lastUsedAt, authenticator, current]
+      properties:
+        id:
+          type: string
+          description: Base64url credential ID.
+        label:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        lastUsedAt:
+          type: string
+          description: RFC 3339 timestamp; an empty string before first use.
+        authenticator:
+          type: string
+        current:
+          type: boolean
+          description: >-
+            Identifies the credential used to create the current passkey
+            session.
+      example:
+        id: base64url-credential-id
+        label: Primary passkey
+        createdAt: "2026-08-07T10:00:00Z"
+        lastUsedAt: "2026-08-07T10:05:00Z"
+        authenticator: Passkey
+        current: true
+    CredentialList:
+      type: object
+      required: [credentials]
+      properties:
+        credentials:
+          type: array
+          items:
+            $ref: "#/components/schemas/Credential"
+    EmailLinkRequest:
+      type: object
+      required: [email]
+      properties:
+        email:
+          type: string
+    Event:
+      type: object
+      description: One record from the durable auth event log.
+      required: [sequence, id, tenantId, type, occurredAt, data]
+      properties:
+        sequence:
+          type: integer
+          description: Monotonic log sequence used as the polling cursor.
+        id:
+          type: string
+          format: uuid
+        tenantId:
+          type: string
+        type:
+          type: string
+          description: >-
+            Event type, e.g. `session.created`. See the `/v1/events` operation
+            description for the known types.
+        subject:
+          type: ["string", "null"]
+          format: uuid
+          description: Subject user UUID; may be absent, e.g. an email sign-in request for an unknown email.
+        occurredAt:
+          type: integer
+          description: Unix seconds.
+        data:
+          type: object
+          description: Event-type-specific payload. Shape not specified by this contract.
+      example:
+        sequence: 42
+        id: 7e47c38e-a471-4d44-9508-c12853afe64c
+        tenantId: vtr
+        type: session.created
+        subject: 3e706d6b-091d-4dc5-a885-5de9ccbf89e8
+        occurredAt: 1786096800
+        data: {}
+    EventList:
+      type: object
+      required: [events]
+      properties:
+        events:
+          type: array
+          maxItems: 500
+          items:
+            $ref: "#/components/schemas/Event"
