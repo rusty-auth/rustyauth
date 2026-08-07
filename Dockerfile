@@ -6,9 +6,7 @@ RUN apt-get update \
 WORKDIR /src
 COPY Cargo.toml Cargo.lock ./
 COPY src ./src
-RUN --mount=type=cache,id=rustyauth-cargo-registry,target=/usr/local/cargo/registry,sharing=locked \
-    --mount=type=cache,id=rustyauth-target,target=/src/target,sharing=locked \
-    find src -type f -exec touch {} + \
+RUN find src -type f -exec touch {} + \
     && cargo build --locked --release \
     && cp /src/target/release/passkey-auth-service /usr/local/bin/passkey-auth-service
 
