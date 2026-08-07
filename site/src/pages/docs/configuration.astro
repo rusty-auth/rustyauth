@@ -1,0 +1,10 @@
+---
+import DocsLayout from "../../layouts/DocsLayout.astro";
+const variables = [["APP_ORIGIN", "Exact public relying-party origin"], ["SABLEDB_URL", "Private Valkey-protocol URL"], ["AUTH_TENANT_ID", "Stable tenant namespace"], ["JWT_ISSUER", "Expected access-token issuer"], ["JWT_AUDIENCE", "Expected downstream audience"], ["SESSION_IDLE_TTL", "Idle session lifetime"], ["SESSION_ABSOLUTE_TTL", "Maximum session lifetime"]];
+---
+<DocsLayout title="Configuration" eyebrow="Fail-closed startup" intro="Security-critical settings are validated before RustyAuth accepts traffic.">
+  <h2>Core variables</h2><div class="variable-list">{variables.map(([name, purpose]) => <div><code>{name}</code><p>{purpose}</p></div>)}</div>
+  <h2>Origin policy</h2><p>RustyAuth compares exact origins. Production wildcard origins are rejected because WebAuthn relying-party identity and browser cookies both depend on a stable boundary.</p>
+  <h2>SableDB boundary</h2><p>The production SableDB hostname must resolve on the private network. The process refuses configurations that imply a public production database endpoint.</p>
+  <div class="doc-callout warning"><strong>Protect secrets</strong><p>Signing keys, bootstrap values and production credentials belong in your deployment platform's encrypted secret store, never in committed environment files.</p></div>
+</DocsLayout>

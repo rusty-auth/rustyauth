@@ -1,0 +1,23 @@
+{
+  "workspace": ["./site"],
+  "nodeModulesDir": "auto",
+  "tasks": {
+    "site:dev": "deno task --cwd site dev",
+    "site:build": "deno task --cwd site build",
+    "site:check": "deno task --cwd site check",
+    "site:test": "deno task --cwd site test",
+    "infra:preview": "pulumi -C infra/cloudflare preview --stack livermoreledger/rustyauth-cloudflare/production",
+    "infra:up": "pulumi -C infra/cloudflare up --yes --stack livermoreledger/rustyauth-cloudflare/production",
+    "site:publish": "deno run -A npm:wrangler@4.119.0 pages deploy site/dist --project-name rustyauth-dev --branch main --commit-dirty=true",
+    "js:fmt": "deno fmt site/src site/astro.config.mjs site/deno.json",
+    "js:check": "deno task site:check && deno fmt --check site/src site/astro.config.mjs site/deno.json",
+    "check": "deno task js:check && cargo check --all-targets",
+    "test": "deno task site:test && cargo test"
+  },
+  "fmt": {
+    "lineWidth": 110,
+    "indentWidth": 2,
+    "semiColons": true,
+    "singleQuote": false
+  }
+}

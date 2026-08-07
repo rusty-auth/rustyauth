@@ -1,0 +1,5 @@
+config:
+  rustyauth-cloudflare:zoneName: rustyauth.dev
+  rustyauth-cloudflare:domainName: rustyauth.dev
+  rustyauth-cloudflare:projectName: rustyauth-dev
+

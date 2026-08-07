@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 320" role="img" aria-labelledby="title description">
+  <title id="title">RustyAuth logo</title>
+  <desc id="description">A copper letter R with a cream passkey keyhole and graphite detail.</desc>
+  <path fill="#CC5A19" d="M54 40h118c65 0 108 38 108 96 0 42-24 73-62 87l68 57h-75l-72-63h-25v63H54V40Zm60 54v70h53c33 0 51-11 51-35 0-23-18-35-51-35h-53Z"/>
+  <path fill="#2F2F2F" d="M54 181v99h60v-45l-60-54Z"/>
+  <path fill="#FFF8E8" d="M164 103a36 36 0 0 0-17 68l-9 45h52l-9-45a36 36 0 0 0-17-68Zm0 22a14 14 0 1 1 0 28 14 14 0 0 1 0-28Z"/>
+</svg>

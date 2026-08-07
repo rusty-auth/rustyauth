@@ -1,0 +1,35 @@
+{
+  "name": "rustyauth-site",
+  "version": "0.1.0",
+  "private": true,
+  "engines": {
+    "node": ">=22.13.0"
+  },
+  "scripts": {
+    "dev": "astro dev",
+    "build": "astro build",
+    "preview": "astro preview",
+    "check": "astro check",
+    "test": "deno task test"
+  },
+  "dependencies": {
+    "@oslojs/encoding": "latest",
+    "@astrojs/solid-js": "latest",
+    "astro": "latest",
+    "clsx": "latest",
+    "devalue": "latest",
+    "es-module-lexer": "latest",
+    "html-escaper": "latest",
+    "piccolore": "latest",
+    "solid-js": "latest",
+    "three": "latest",
+    "zod": "latest"
+  },
+  "devDependencies": {
+    "@astrojs/check": "latest",
+    "@types/node": "22.19.19",
+    "typescript": "5.9.3",
+    "@types/three": "latest"
+  },
+  "type": "module"
+}

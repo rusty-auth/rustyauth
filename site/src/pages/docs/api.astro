@@ -1,0 +1,15 @@
+---
+import DocsLayout from "../../layouts/DocsLayout.astro";
+const endpoints = [
+  ["GET", "/healthz", "Public", "Process liveness"], ["GET", "/readyz", "Public", "SableDB-backed readiness"],
+  ["GET", "/.well-known/jwks.json", "Public", "ES256 verification keys"], ["POST", "/v1/passkeys/register/start", "Session", "Start registration"],
+  ["POST", "/v1/passkeys/register/finish", "Session", "Finish registration"], ["POST", "/v1/passkeys/authenticate/start", "Public", "Start sign-in"],
+  ["POST", "/v1/passkeys/authenticate/finish", "Public", "Finish sign-in"], ["POST", "/v1/sessions/logout", "Session", "Revoke current session"],
+];
+---
+<DocsLayout title="HTTP API" eyebrow="Version 0.1" intro="The browser-facing JSON endpoints currently shipped by RustyAuth.">
+  <div class="doc-callout"><strong>Protocol status</strong><p>The 0.1 service ships HTTP/JSON. Protobuf and gRPC are a planned service boundary and are intentionally not represented as available endpoints.</p></div>
+  <h2>Endpoints</h2><div class="endpoint-table">{endpoints.map(([method, path, access, purpose]) => <div class="endpoint-row"><b class={method === "POST" ? "post" : ""}>{method}</b><code>{path}</code><span>{access}</span><p>{purpose}</p></div>)}</div>
+  <h2>Error behaviour</h2><p>Security-sensitive failures are explicit. Invalid origins, missing ceremonies, expired sessions, unknown credentials and an unavailable durable store do not degrade into successful empty responses.</p>
+  <h2>Future gRPC boundary</h2><p>The planned Protobuf contracts will target trusted application-to-RustyAuth calls. Browser WebAuthn ceremonies will remain HTTP-oriented.</p>
+</DocsLayout>

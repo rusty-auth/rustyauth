@@ -1,0 +1,25 @@
+---
+import BaseLayout from "./BaseLayout.astro";
+
+interface Props { title: string; eyebrow: string; intro: string; }
+const { title, eyebrow, intro } = Astro.props;
+const current = Astro.url.pathname.replace(/\/$/, "") || "/";
+const links = [
+  ["Overview", "/docs"], ["Getting started", "/docs/getting-started"], ["Architecture", "/docs/architecture"],
+  ["HTTP API", "/docs/api"], ["Configuration", "/docs/configuration"], ["Deployment", "/docs/deployment"],
+];
+---
+
+<BaseLayout title={`${title} · RustyAuth`} description={intro}>
+  <main class="shell docs-frame">
+    <aside class="docs-sidebar">
+      <p>Documentation</p>
+      <nav aria-label="Documentation">{links.map(([label, href]) => <a class={current === href ? "active" : ""} href={href}>{label}</a>)}</nav>
+      <div class="docs-version"><span>Version</span><strong>0.1.0</strong><small>Pre-release</small></div>
+    </aside>
+    <article class="docs-content">
+      <header class="doc-header"><p>{eyebrow}</p><h1>{title}</h1><span>{intro}</span></header>
+      <slot />
+    </article>
+  </main>
+</BaseLayout>

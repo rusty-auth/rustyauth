@@ -1,0 +1,69 @@
+---
+import GitHubStars from "../components/GitHubStars";
+import "../styles/global.css";
+
+interface Props {
+  title?: string;
+  description?: string;
+}
+
+const {
+  title = "RustyAuth — Passkey-first authentication",
+  description = "Passkey-first authentication built in Rust on SableDB. Secure, lightweight identity infrastructure that scales.",
+} = Astro.props;
+const canonical = new URL(Astro.url.pathname, Astro.site);
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width" />
+    <meta name="description" content={description} />
+    <meta name="theme-color" content="#f5f1e9" />
+    <link rel="icon" href="/favicon.svg" />
+    <link rel="canonical" href={canonical} />
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content={title} />
+    <meta property="og:description" content={description} />
+    <meta property="og:image" content={new URL("/og.png", Astro.site)} />
+    <meta property="og:url" content={canonical} />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content={title} />
+    <meta name="twitter:description" content={description} />
+    <meta name="twitter:image" content={new URL("/og.png", Astro.site)} />
+    <title>{title}</title>
+  </head>
+  <body>
+    <header class="site-header">
+      <div class="shell header-inner">
+        <a class="brand" href="/" aria-label="RustyAuth home">
+          <img src="/brand/rustyauth-mark.png" width="36" height="36" alt="" />
+          <span>Rusty<strong>Auth</strong></span>
+        </a>
+        <nav aria-label="Primary navigation">
+          <a href="/#why-rustyauth">Why RustyAuth</a>
+          <a href="/docs">Docs</a>
+          <a href="https://github.com/rusty-auth/rustyauth">GitHub</a>
+        </nav>
+        <GitHubStars client:load />
+        <a class="header-cta" href="/docs/getting-started">Get started <span>→</span></a>
+      </div>
+    </header>
+    <slot />
+    <footer class="site-footer">
+      <div class="shell footer-grid">
+        <div>
+          <a class="brand footer-brand" href="/"><img src="/brand/rustyauth-mark.png" width="42" height="42" alt="" /><span>Rusty<strong>Auth</strong></span></a>
+          <p>Built in Rust. Built on SableDB. Built for passkeys.</p>
+        </div>
+        <div class="footer-links">
+          <div><strong>Project</strong><a href="/docs">Documentation</a><a href="https://github.com/rusty-auth/rustyauth">Source</a><a href="https://github.com/rusty-auth/rustyauth/releases">Releases</a></div>
+          <div><strong>Community</strong><a href="https://github.com/rusty-auth/rustyauth/issues">Issues</a><a href="https://github.com/rusty-auth/rustyauth/discussions">Discussions</a><a href="https://github.com/rusty-auth/rustyauth/blob/main/CONTRIBUTING.md">Contributing</a></div>
+          <div><strong>Trust</strong><a href="https://github.com/rusty-auth/rustyauth/blob/main/SECURITY.md">Security</a><a href="https://github.com/rusty-auth/rustyauth/blob/main/LICENSE">Apache-2.0</a><a href="https://github.com/rusty-auth/rustyauth/blob/main/THIRD_PARTY_NOTICES.md">Notices</a></div>
+        </div>
+      </div>
+      <div class="shell footer-bottom"><span>© 2026 Livermore Ledger Ltd</span><span>Independent of the Rust Project and SableDB.</span></div>
+    </footer>
+  </body>
+</html>

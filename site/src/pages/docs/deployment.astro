@@ -1,0 +1,9 @@
+---
+import DocsLayout from "../../layouts/DocsLayout.astro";
+---
+<DocsLayout title="Deployment" eyebrow="Operational topology" intro="One public RustyAuth service and one private, persistent SableDB service.">
+  <div class="deployment-grid"><div><small>Public edge</small><strong>RustyAuth</strong><p>TLS terminated · health checks · one writer in 0.1</p></div><div><small>Private network</small><strong>SableDB</strong><p>No public endpoint · persistent volume · internal port 6379</p></div><div><small>Downstream</small><strong>Your app</strong><p>Verify issuer · audience · tenant · expiry</p></div></div>
+  <h2>Container deployment</h2><p>The supplied container builds the Rust service as a non-root user. Deploy the SableDB container separately on the same private network and attach a durable volume at its documented data path.</p>
+  <h2>Scaling</h2><p>The authentication service is lightweight and can scale vertically with predictable resource use. Version 0.1 intentionally supports one writer replica while multi-process coordination and operational recovery are completed.</p>
+  <h2>Backup before scale</h2><p>Do not treat replication as backup. Capture the SableDB volume, restore into a clean environment, and verify credentials, counters, sessions and signing state before calling the system production-ready.</p>
+</DocsLayout>

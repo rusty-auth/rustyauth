@@ -1,0 +1,9 @@
+{
+  "tasks": {
+    "dev": "astro dev",
+    "build": "astro build",
+    "preview": "astro preview",
+    "check": "astro check",
+    "test": "deno task build && deno test -A tests"
+  }
+}

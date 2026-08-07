@@ -10,6 +10,8 @@
   [![Rust: 1.94.1+](https://img.shields.io/badge/rust-1.94.1%2B-303030.svg)](Cargo.toml)
   [![Status: pre-release](https://img.shields.io/badge/status-pre--release-e2a84a.svg)](#project-status)
   [![Storage: SableDB](https://img.shields.io/badge/storage-SableDB-303030.svg)](https://github.com/sabledb-io/sabledb)
+
+  [Website](https://rustyauth.dev) · [Documentation](https://rustyauth.dev/docs) · [Source](https://github.com/rusty-auth/rustyauth)
 </div>
 
 > [!WARNING]
@@ -207,6 +209,19 @@ must expand before production readiness.
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for the development workflow and security-sensitive change
 requirements.
+
+The website is an Astro and SolidJS workspace managed with Deno:
+
+```sh
+deno install
+deno task site:dev
+deno task site:test
+```
+
+Cloudflare Pages and `rustyauth.dev` are managed in
+[`infra/cloudflare`](infra/cloudflare/README.md) with Pulumi. Production credentials are injected
+from the maintainers' self-hosted Infisical environment and are never committed or stored in plain
+Pulumi configuration.
 
 ## Documentation
 
