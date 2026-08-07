@@ -49,6 +49,11 @@ permissions, entitlements and resource ownership.
 - OpenID-style discovery and a public JWKS endpoint;
 - ordered, cursor-based authentication-event polling and gRPC streaming;
 - private Connect/gRPC identity reads, exact search and controlled mutations;
+- a same-origin SolidJS operator dashboard with passkey-only sessions, user search and account
+  inspection;
+- durable single-organization settings and role-gated operator access;
+- scoped service accounts with independently revocable, one-time credentials and short-lived ES256
+  token exchange;
 - exact-origin CORS and request-origin enforcement;
 - liveness, dependency readiness, request IDs and structured JSON logging;
 - development-only, one-use agent browser handoffs for an existing account;
@@ -86,8 +91,9 @@ cp .env.example .env
 docker compose up --build
 ```
 
-The default development deployment binds RustyAuth to loopback at `http://localhost:8081` and does
-not publish SableDB.
+The default development deployment binds RustyAuth and its bundled operator dashboard to loopback at
+`http://localhost:8081` and does not publish SableDB. Open that URL with the `admin@rustyauth.local`
+passkey account, or use `?preview=1` to inspect the populated dashboard without mutating SableDB.
 
 ```sh
 curl --fail http://127.0.0.1:8081/healthz
@@ -191,8 +197,10 @@ are stored only as SHA-256-derived SableDB keys; the raw bearer value lives in t
 
 The complete HTTP and private RPC contracts are documented in [API](docs/API.md). The private
 `rustyauth.identity.v1` service reads/searches profile, identifier and passkey metadata and applies
-controlled identity mutations. `rustyauth.events.v1` provides resumable server streaming. Both use
-separately scoped bearer credentials and support Connect, gRPC-Web and gRPC.
+controlled identity mutations. `rustyauth.organization.v1` and `rustyauth.service_accounts.v1` are
+authorized by passkey operator sessions; service-account credential exchange returns scoped,
+short-lived JWTs. `rustyauth.events.v1` provides resumable server streaming. All services support
+Connect, gRPC-Web and gRPC.
 The API may change before `1.0`; pin a release or commit.
 
 ## Configuration and deployment
@@ -221,12 +229,15 @@ RustyAuth is currently `0.1.0` pre-release software.
 | ES256 JWT, JWKS and automatic rotation | Implemented with prepublication and retired-key overlap |
 | Ordered HTTP event polling and gRPC event streaming | Implemented |
 | Private identity gRPC reads, exact search and mutations | Implemented |
+| Passkey-authenticated operator dashboard | Implemented; allowlisted first owner bootstrap |
+| Organization and operator control plane | Implemented for one organization per instance |
+| Service accounts and credential exchange | Implemented with scoped, one-time credentials |
 | Email sign-in and verification delivery | Event recording only |
 | Account recovery | Not implemented |
 | Scheduled encrypted logical backups | Implemented with manifests and read-after-write verification |
 | Snapshot restore | Implemented for an empty target; sessions invalidated by default |
 | Webhook event delivery | Not implemented |
-| Dashboard organization, service-account, webhook and metrics APIs | Protobuf contracts generated; Rust handlers and operator UI not implemented |
+| Webhook and metrics control plane | Dashboard preview and protobuf contracts only; durable handlers not implemented |
 | Multi-tenant runtime isolation | Claims/events are tenant-tagged; one configured tenant per instance |
 | Independent security review | Not completed |
 
@@ -260,6 +271,8 @@ The website is an Astro and SolidJS workspace managed with Deno:
 deno install
 deno task site:dev
 deno task site:test
+deno task dashboard:check
+deno task dashboard:build
 ```
 
 ConnectRPC contracts and the Solid Query adapter live in `packages/protocol` and

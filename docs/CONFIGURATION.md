@@ -17,6 +17,7 @@ listener. Missing or invalid required values stop startup.
 | `BOOTSTRAP_TOKEN` | high-entropy secret | Administrative initial-enrolment and HTTP event-polling credential; at least 32 characters in production |
 | `AUTH_EVENT_RPC_TOKEN` | high-entropy secret | Bearer credential for `rustyauth.events.v1`; always at least 32 characters |
 | `AUTH_IDENTITY_RPC_TOKEN` | high-entropy secret | Bearer credential for `rustyauth.identity.v1`; always at least 32 characters |
+| `AUTH_OPERATOR_EMAILS` | `admin@example.com` | Comma-separated canonical emails allowed to bootstrap the first owner operator; an empty value disables dashboard access |
 | `SPACETIME_AUDIENCE` | `example-dashboard` | Exact `aud` written into access tokens |
 
 `AUTH_ENV` is logically required even though omission selects development. Set it explicitly in
@@ -33,6 +34,7 @@ every deployed environment.
 | `BIND_ADDRESS` | `0.0.0.0` | Listener IP address |
 | `PORT` | `8080` | Listener port |
 | `RUST_LOG` | `passkey_auth_service=info,tower_http=info` | `tracing-subscriber` filter |
+| `AUTH_DASHBOARD_DIR` | `/usr/share/rustyauth/dashboard` | Directory containing the built same-origin SolidJS dashboard |
 | `AUTH_MASTER_PREVIOUS_KEYS_HEX` | empty | Comma-separated previous 32-byte master keys, each encoded as 64 hex characters |
 | `AUTH_SIGNING_KEY_ROTATION_SECONDS` | `2592000` | Automatic signing-key lifetime; 3,600–31,536,000 seconds |
 | `AUTH_SIGNING_KEY_PREPUBLISH_SECONDS` | `600` | Publish the next public key before activation; 300–86,400 seconds and shorter than the rotation period |
@@ -132,6 +134,8 @@ AUTH_MASTER_PREVIOUS_KEYS_HEX=
 BOOTSTRAP_TOKEN=<high-entropy-secret>
 AUTH_EVENT_RPC_TOKEN=<distinct-high-entropy-secret>
 AUTH_IDENTITY_RPC_TOKEN=<distinct-high-entropy-secret>
+AUTH_OPERATOR_EMAILS=admin@example.com
+AUTH_DASHBOARD_DIR=/usr/share/rustyauth/dashboard
 SPACETIME_AUDIENCE=example-dashboard
 AUTH_TENANT_ID=example
 AUTH_ACCESS_TOKEN_SECONDS=300

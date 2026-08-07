@@ -1,3 +1,13 @@
+FROM denoland/deno:2.9.3 AS dashboard-build
+
+WORKDIR /src
+COPY deno.json deno.lock ./
+COPY dashboard ./dashboard
+COPY packages ./packages
+COPY site ./site
+RUN deno install --frozen \
+    && deno task dashboard:build
+
 FROM rust:1.94.1-slim-bookworm AS build
 
 RUN apt-get update \
@@ -22,6 +32,7 @@ RUN apt-get update \
   && rm -rf /var/lib/apt/lists/* \
   && useradd --system --uid 10001 --home /nonexistent --shell /usr/sbin/nologin passkey-auth
 COPY --from=build /usr/local/bin/passkey-auth-service /usr/local/bin/passkey-auth-service
+COPY --from=dashboard-build /src/dashboard/dist /usr/share/rustyauth/dashboard
 COPY LICENSE NOTICE THIRD_PARTY_NOTICES.md THIRD_PARTY_LICENSES.html /usr/share/doc/rustyauth/
 USER 10001:10001
 EXPOSE 8080

@@ -20,9 +20,16 @@ The endpoint tables use these terms:
 - **Recent passkey** — the valid session was created by a passkey no more than five minutes ago.
 - **Event RPC** — `Authorization: Bearer <AUTH_EVENT_RPC_TOKEN>` on an event-service method.
 - **Identity RPC** — `Authorization: Bearer <AUTH_IDENTITY_RPC_TOKEN>` on an identity-service method.
+- **Operator read** — an exact-origin passkey session belonging to any stored operator role.
+- **Operator support** — an owner, administrator or support operator passkey session.
+- **Operator administer** — an owner or administrator passkey session.
 
 The bootstrap and RPC tokens are administrative service secrets, not end-user browser credentials.
 They are independently scoped and configuration rejects reuse between them.
+
+The first passkey-authenticated user whose canonical primary email appears in
+`AUTH_OPERATOR_EMAILS` creates the durable owner operator. Local-agent sessions are deliberately
+rejected by every operator RPC.
 
 For the authoritative field-by-field persistence contract—including internal fields deliberately
 excluded from these APIs—see [Identity data model](IDENTITY_DATA_MODEL.md).
@@ -63,6 +70,36 @@ only be registered through a WebAuthn ceremony, not written through gRPC.
 supports exact event-type and tenant filters plus periodic checkpoints. Delivery is at least once:
 consumers must persist their cursor only after their own work commits. A missing or malformed
 sequence terminates the stream with `DATA_LOSS` instead of silently skipping the event.
+
+### `rustyauth.organization.v1.OrganizationService`
+
+| RPC | Access | Purpose |
+| --- | --- | --- |
+| `GetOrganization` | Operator read | Read the deployment's durable organization |
+| `GetCurrentOperator` | Operator read | Resolve the current passkey session to an operator |
+| `UpdateOrganization` | Operator administer | Replace the organization display name |
+| `ListOperators` | Operator administer | Page through durable operator records |
+
+Version `0.1.0` supports one organization per SableDB namespace. The explicit resource and stable
+UUID allow a future migration without claiming multi-tenant isolation today.
+
+### `rustyauth.service_accounts.v1.ServiceAccountService`
+
+| RPC | Access | Purpose |
+| --- | --- | --- |
+| `ListServiceAccounts` | Operator read | Search and page through non-human principals |
+| `GetServiceAccount` | Operator read | Read one principal and redacted credential metadata |
+| `CreateServiceAccount` | Operator administer | Create an active principal with allowed scopes |
+| `UpdateServiceAccount` | Operator administer | Change metadata, status and granted scopes |
+| `CreateCredential` | Operator administer | Issue a high-entropy credential shown exactly once |
+| `RevokeCredential` | Operator administer | Permanently revoke one credential |
+| `ExchangeCredential` | Service credential | Exchange the credential for a short-lived ES256 bearer token |
+
+Allowed scopes are `events.read`, `identity.read`, `identity.write`, `metrics.read` and
+`webhooks.manage`. An exchange may request only a subset of the stored grant; omitting requested
+scopes returns the full grant. Raw credentials use a random `rsa_` value, are indexed by SHA-256 and
+never appear in list or get responses. Disabled accounts, expired credentials, revoked credentials
+and scope escalation fail closed.
 
 ## Health and discovery
 

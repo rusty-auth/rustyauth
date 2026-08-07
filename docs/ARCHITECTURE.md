@@ -1,7 +1,7 @@
 # RustyAuth architecture
 
-This document describes the standalone RustyAuth implementation at version `0.1.0`. Statements
-about future functionality are marked explicitly.
+This document describes the standalone RustyAuth implementation at version `0.1.0`. Statements about future
+functionality are marked explicitly.
 
 ## Design goals
 
@@ -21,6 +21,7 @@ It intentionally does not decide application roles, subscriptions, entitlements 
 flowchart TB
     subgraph Public["Public boundary"]
       Browser["Relying-party browser"]
+      Dashboard["RustyAuth operator dashboard"]
       Consumer["Token-consuming API"]
       Auth["RustyAuth HTTP service"]
     end
@@ -28,22 +29,23 @@ flowchart TB
     subgraph Private["Private deployment network"]
       Sable["SableDB + persistent volume"]
       Bucket["S3-compatible backup bucket"]
-      Operator["Trusted RPC consumer"]
+      Operator["Trusted service consumer"]
     end
 
     Browser -->|"exact origin, WebAuthn, cookie"| Auth
+    Dashboard -->|"passkey session + ConnectRPC"| Auth
     Auth -->|"ES256 access token"| Browser
     Consumer -->|"JWKS discovery"| Auth
-    Operator -->|"scoped bearer + Connect/gRPC"| Auth
+    Operator -->|"service credential or transitional scoped bearer"| Auth
     Auth -->|"Valkey protocol"| Sable
     Auth -.->|"scheduled authenticated snapshots"| Bucket
 ```
 
 ### Browser
 
-The browser performs WebAuthn operations and sends the resulting credential objects to RustyAuth.
-It receives an opaque HttpOnly session cookie and a short-lived access JWT in a JSON response. The
-intended client stores the JWT only in memory.
+The browser performs WebAuthn operations and sends the resulting credential objects to RustyAuth. It receives
+an opaque HttpOnly session cookie and a short-lived access JWT in a JSON response. The intended client stores
+the JWT only in memory.
 
 ### RustyAuth service
 
@@ -57,53 +59,56 @@ One Axum process owns:
 - signing-key lifecycle maintenance;
 - logical backup scheduling and recovery commands;
 - exact identity discovery and mutations for trusted RPC consumers;
+- passkey-session operator policy, organization settings and service-account issuance;
 - ordered event creation, polling and streaming; and
 - health/readiness reporting.
 
 ### SableDB
 
-SableDB is the only online durable store. RustyAuth connects through SableDB's Valkey-compatible
-protocol using `redis-rs`. SableDB must have no public endpoint; network reachability is part of the
-security boundary.
+SableDB is the only online durable store. RustyAuth connects through SableDB's Valkey-compatible protocol
+using `redis-rs`. SableDB must have no public endpoint; network reachability is part of the security boundary.
 
 ### Downstream consumer
 
-The consumer validates the token signature and policy-relevant claims. Receiving a valid RustyAuth
-token proves authentication under the configured relying party; it does not independently grant
-access to an application resource.
+The consumer validates the token signature and policy-relevant claims. Receiving a valid RustyAuth token
+proves authentication under the configured relying party; it does not independently grant access to an
+application resource.
 
 ### Backup bucket
 
-RustyAuth exports a consistent logical snapshot under a mutation gate, compresses it and protects it
-with a versioned AES-256-GCM envelope. The envelope header, derived encryption-key ID and payload are
-authenticated together. S3 uploads use a transport checksum and succeed only after read-after-write
-decryption and manifest verification.
+RustyAuth exports a consistent logical snapshot under a mutation gate, compresses it and protects it with a
+versioned AES-256-GCM envelope. The envelope header, derived encryption-key ID and payload are authenticated
+together. S3 uploads use a transport checksum and succeed only after read-after-write decryption and manifest
+verification.
 
 ## Stored state
 
 RustyAuth stores JSON values and indexes under these logical key families:
 
 The complete account, identifier, profile, passkey, session and exposure schema is documented in
-[Identity data model](IDENTITY_DATA_MODEL.md). This section describes where those records live and
-how they participate in the system lifecycle.
+[Identity data model](IDENTITY_DATA_MODEL.md). This section describes where those records live and how they
+participate in the system lifecycle.
 
-| Key family | Contents | Lifetime |
-| --- | --- | --- |
-| `auth:user:<uuid>` | Profile, email/phone identifiers, session version and passkeys | Durable |
-| `auth:identifier:<type>:<value>` | Canonical email/phone-to-user index | Durable |
-| `auth:email:<email>` | Compatibility email-to-user index | Durable |
-| `auth:credential:<id>` | Credential-to-user uniqueness index | Durable |
-| `auth:registration:<uuid>` | Server-side WebAuthn registration state | Five minutes, single use |
-| `auth:authentication:<uuid>` | Server-side WebAuthn authentication state | Five minutes, single use |
-| `auth:session:<sha256>` | Session metadata keyed by a digest of the bearer token | Bounded absolute lifetime |
-| `auth:jwt:keyset:v1` | Active/staged signing keys, retired public keys and encrypted private material | Durable |
-| `auth:event-sequence` | Monotonic event cursor | Durable |
-| `auth:event:<sequence>` | Redacted event type, subject and tenant | Durable |
-| `auth:agent-handoff:<sha256>` | Development-only one-use handoff | 60 seconds by default |
+| Key family                         | Contents                                                                       | Lifetime                                      |
+| ---------------------------------- | ------------------------------------------------------------------------------ | --------------------------------------------- |
+| `auth:user:<uuid>`                 | Profile, email/phone identifiers, session version and passkeys                 | Durable                                       |
+| `auth:identifier:<type>:<value>`   | Canonical email/phone-to-user index                                            | Durable                                       |
+| `auth:email:<email>`               | Compatibility email-to-user index                                              | Durable                                       |
+| `auth:credential:<id>`             | Credential-to-user uniqueness index                                            | Durable                                       |
+| `auth:registration:<uuid>`         | Server-side WebAuthn registration state                                        | Five minutes, single use                      |
+| `auth:authentication:<uuid>`       | Server-side WebAuthn authentication state                                      | Five minutes, single use                      |
+| `auth:session:<sha256>`            | Session metadata keyed by a digest of the bearer token                         | Bounded absolute lifetime                     |
+| `auth:jwt:keyset:v1`               | Active/staged signing keys, retired public keys and encrypted private material | Durable                                       |
+| `auth:event-sequence`              | Monotonic event cursor                                                         | Durable                                       |
+| `auth:event:<sequence>`            | Redacted event type, subject and tenant                                        | Durable                                       |
+| `auth:organization`                | Single deployment organization with stable UUID and slug                       | Durable                                       |
+| `auth:operator:<uuid>`             | Passkey user-to-operator role and authentication metadata                      | Durable                                       |
+| `auth:service-account:<uuid>`      | Non-human principal, scopes and redacted credential metadata                   | Durable                                       |
+| `auth:service-credential:<sha256>` | Credential-to-account locator keyed by a digest of the raw secret              | Durable until explicit retention policy lands |
+| `auth:agent-handoff:<sha256>`      | Development-only one-use handoff                                               | 60 seconds by default                         |
 
-Raw session and handoff bearer values are not used as database keys. Their SHA-256 digests are.
-Passkey credential material is serialized through `webauthn-rs`; passwords are not supported or
-stored.
+Raw session and handoff bearer values are not used as database keys. Their SHA-256 digests are. Passkey
+credential material is serialized through `webauthn-rs`; passwords are not supported or stored.
 
 ## Registration flow
 
@@ -129,20 +134,19 @@ sequenceDiagram
 ```
 
 Initial registration currently depends on a shared bootstrap token. It is appropriate for controlled
-development and provisioning, but it is not a complete public sign-up policy. A production adopter
-must place it behind a reviewed invitation or administrative boundary and must never embed it in
-public browser code.
+development and provisioning, but it is not a complete public sign-up policy. A production adopter must place
+it behind a reviewed invitation or administrative boundary and must never embed it in public browser code.
 
 ## Authentication flow
 
-Authentication is identifier-first. A canonical email or E.164 phone number resolves a stable
-account UUID; RustyAuth then loads that account's passkeys, creates a five-minute server-side
-ceremony and verifies the returned assertion. Identifiers are discovery and contact records, not
-WebAuthn credentials. Verification requires the authenticator to report user verification. A
-non-zero signature counter must advance; regression fails as a possible cloned credential.
+Authentication is identifier-first. A canonical email or E.164 phone number resolves a stable account UUID;
+RustyAuth then loads that account's passkeys, creates a five-minute server-side ceremony and verifies the
+returned assertion. Identifiers are discovery and contact records, not WebAuthn credentials. Verification
+requires the authenticator to report user verification. A non-zero signature counter must advance; regression
+fails as a possible cloned credential.
 
-After success, RustyAuth updates the stored passkey state and last-used time, creates a session and
-returns both the session cookie and an access token.
+After success, RustyAuth updates the stored passkey state and last-used time, creates a session and returns
+both the session cookie and an access token.
 
 ## Session model
 
@@ -163,32 +167,32 @@ Every authenticated request checks:
 5. referenced user existence; and
 6. equality between the user's and session's `session_version`.
 
-Successful validation advances `last_seen_at`. Sign-out deletes the current session. The data model
-supports invalidating sessions by advancing a user's session version, but a public revoke-all
-operation is not implemented.
+Successful validation advances `last_seen_at`. Sign-out deletes the current session. The data model supports
+invalidating sessions by advancing a user's session version, but a public revoke-all operation is not
+implemented.
 
 ## Credential-management policy
 
-An authenticated account can list passkeys. Adding a passkey requires a recent passkey session and
-the resulting ceremony is bound to that exact session. Renaming requires a passkey session;
-removing requires one created within the last five minutes and cannot remove the final passkey. The
-implementation does not yet provide a separate step-up ceremony; the recency check is based on
-session creation time. Agent handoff sessions do not satisfy any identity-mutation requirement.
+An authenticated account can list passkeys. Adding a passkey requires a recent passkey session and the
+resulting ceremony is bound to that exact session. Renaming requires a passkey session; removing requires one
+created within the last five minutes and cannot remove the final passkey. The implementation does not yet
+provide a separate step-up ceremony; the recency check is based on session creation time. Agent handoff
+sessions do not satisfy any identity-mutation requirement.
 
 ## Account identity model
 
-An account is anchored by a UUID and may contain up to 20 globally unique email and phone
-identifiers plus multiple passkeys. Exactly one identifier is primary. Existing single-email user
-records are hydrated into this model on read, and the legacy email index remains supported, so the
-change does not invalidate accounts or passkeys already stored by RustyAuth.
+An account is anchored by a UUID and may contain up to 20 globally unique email and phone identifiers plus
+multiple passkeys. Exactly one identifier is primary. Existing single-email user records are hydrated into
+this model on read, and the legacy email index remains supported, so the change does not invalidate accounts
+or passkeys already stored by RustyAuth.
 
-Basic profile data consists of optional given, family and display names. It labels WebAuthn
-registration but never replaces the UUID user handle. Adding, removing or changing the primary
-identifier requires a recent passkey session; updating profile presentation requires a passkey
-session. The final identifier cannot be removed.
+Basic profile data consists of optional given, family and display names. It labels WebAuthn registration but
+never replaces the UUID user handle. Adding, removing or changing the primary identifier requires a recent
+passkey session; updating profile presentation requires a passkey session. The final identifier cannot be
+removed.
 
-See [Identity data model](IDENTITY_DATA_MODEL.md) for every stored field, canonicalization rule,
-legacy compatibility field, metadata projection and deliberately excluded data class.
+See [Identity data model](IDENTITY_DATA_MODEL.md) for every stored field, canonicalization rule, legacy
+compatibility field, metadata projection and deliberately excluded data class.
 
 ## Token model
 
@@ -197,79 +201,87 @@ AES-256-GCM under `AUTH_MASTER_KEY_HEX` before storage. The public key is expose
 
 JWTs use `alg=ES256`, `typ=JWT` and a `kid`. Claims are:
 
-| Claim | Meaning |
-| --- | --- |
-| `iss` | Configured RustyAuth issuer |
-| `aud` | Configured downstream audience |
-| `sub` | RustyAuth user UUID |
-| `exp`, `iat` | Expiry and issue time |
-| `jti` | Unique token ID |
-| `sid` | Durable session UUID |
-| `token_type` | `spacetime-access` in the current integration |
-| `tenant_id` | Configured instance tenant |
-| `amr` | `hwk` for passkey or `agent` for a development handoff |
-| `auth_time` | Session creation time |
-| `session_version` | User/session invalidation generation |
+| Claim             | Meaning                                                |
+| ----------------- | ------------------------------------------------------ |
+| `iss`             | Configured RustyAuth issuer                            |
+| `aud`             | Configured downstream audience                         |
+| `sub`             | RustyAuth user UUID                                    |
+| `exp`, `iat`      | Expiry and issue time                                  |
+| `jti`             | Unique token ID                                        |
+| `sid`             | Durable session UUID                                   |
+| `token_type`      | `spacetime-access` in the current integration          |
+| `tenant_id`       | Configured instance tenant                             |
+| `amr`             | `hwk` for passkey or `agent` for a development handoff |
+| `auth_time`       | Session creation time                                  |
+| `session_version` | User/session invalidation generation                   |
 
-Email, phone, profile and verification state are returned beside the token but are not JWT claims.
-Consumers must not infer authorization from an unverified response field.
+Email, phone, profile and verification state are returned beside the token but are not JWT claims. Consumers
+must not infer authorization from an unverified response field.
 
-Signing keys have a staged, active and retired lifecycle. A replacement public key is published for
-at least `AUTH_SIGNING_KEY_PREPUBLISH_SECONDS` before activation. The previous public key remains in
-JWKS for `AUTH_SIGNING_KEY_OVERLAP_SECONDS`, which cannot be configured below the maximum access
-token lifetime plus the five-minute JWKS cache allowance. Retired private material is discarded.
+Signing keys have a staged, active and retired lifecycle. A replacement public key is published for at least
+`AUTH_SIGNING_KEY_PREPUBLISH_SECONDS` before activation. The previous public key remains in JWKS for
+`AUTH_SIGNING_KEY_OVERLAP_SECONDS`, which cannot be configured below the maximum access token lifetime plus
+the five-minute JWKS cache allowance. Retired private material is discarded.
 
-The maintenance loop rotates automatically and uses a short SableDB lease to avoid duplicate work
-across processes. `keys rotate` triggers the same safe staged lifecycle. Master-key rotation is
-independent: supplying the new active master key plus the old key in the previous-key list causes
-private signing material to be rewrapped without changing its `kid`.
+The maintenance loop rotates automatically and uses a short SableDB lease to avoid duplicate work across
+processes. `keys rotate` triggers the same safe staged lifecycle. Master-key rotation is independent:
+supplying the new active master key plus the old key in the previous-key list causes private signing material
+to be rewrapped without changing its `kid`.
 
 ## Backup and restore model
 
-The backup manifest covers sorted durable records, record-family counts, a canonical content digest
-and the ordered-event sequence. Validation rejects duplicate or unsupported keys, tenant mismatch,
-orphaned user indexes and credentials, malformed expiry policy, missing signing state and event
-gaps. Ceremony, agent-handoff, maintenance-lock and restore-marker records are not exported.
+The backup manifest covers sorted durable records, record-family counts, a canonical content digest and the
+ordered-event sequence. Validation rejects duplicate or unsupported keys, tenant mismatch, orphaned user
+indexes and credentials, malformed expiry policy, missing signing state and event gaps. Ceremony,
+agent-handoff, maintenance-lock and restore-marker records are not exported.
 
-Backups run immediately on startup and then on a configurable interval. An in-process operation
-lock plus a SableDB lease prevents overlapping snapshots. Restore is an offline command that accepts
-only an empty `auth:*` namespace. Sessions are skipped and each user's `session_version` is advanced
-unless the operator explicitly supplies `--preserve-sessions`. A durable in-progress marker blocks
-normal startup until signing-key rotation and the recovery event both complete.
+Backups run immediately on startup and then on a configurable interval. An in-process operation lock plus a
+SableDB lease prevents overlapping snapshots. Restore is an offline command that accepts only an empty
+`auth:*` namespace. Sessions are skipped and each user's `session_version` is advanced unless the operator
+explicitly supplies `--preserve-sessions`. A durable in-progress marker blocks normal startup until
+signing-key rotation and the recovery event both complete.
 
 ## Events
 
-Events contain only a sequence, UUID, configured tenant ID, event type, optional user UUID,
-timestamp and redacted JSON object. They deliberately exclude passkey assertions, cookies, JWTs,
-handoff codes and email-link tokens.
+Events contain only a sequence, UUID, configured tenant ID, event type, optional user UUID, timestamp and
+redacted JSON object. They deliberately exclude passkey assertions, cookies, JWTs, handoff codes and
+email-link tokens.
 
-`GET /v1/events?after=N` returns at most 500 subsequent records. It is authenticated by the bootstrap
-token. `rustyauth.events.v1.AuthEventService/Subscribe` provides cursor-based replay and follow over
-Connect, gRPC-Web and gRPC using the separately scoped event RPC token. Consumers own durable
-acknowledgement by committing their sequence after processing. Retention and webhook delivery are
-not implemented.
+`GET /v1/events?after=N` returns at most 500 subsequent records. It is authenticated by the bootstrap token.
+`rustyauth.events.v1.AuthEventService/Subscribe` provides cursor-based replay and follow over Connect,
+gRPC-Web and gRPC using the separately scoped event RPC token. Consumers own durable acknowledgement by
+committing their sequence after processing. Retention and webhook delivery are not implemented.
 
-## Private identity RPC
+## Operator and service RPC
 
-`rustyauth.identity.v1.IdentityService` is the trusted control-plane boundary. It exposes exact
-identity search, complete safe account reads, profile replacement, email/phone lifecycle operations,
-and passkey rename/revoke operations. It runs on the shared listener but requires its own bearer
-credential. Passkey responses are projected through a metadata-only type before protobuf encoding;
-stored WebAuthn credentials, public keys and counters never cross the boundary. New credential
-material still requires a WebAuthn registration ceremony.
+`rustyauth.identity.v1.IdentityService` is the trusted control-plane boundary. It exposes exact identity
+search, complete safe account reads, profile replacement, email/phone lifecycle operations, and passkey
+rename/revoke operations. It accepts the transitional identity bearer or an appropriately privileged passkey
+operator session. Passkey responses are projected through a metadata-only type before protobuf encoding;
+stored WebAuthn credentials, public keys and counters never cross the boundary. New credential material still
+requires a WebAuthn registration ceremony.
+
+`rustyauth.organization.v1.OrganizationService` and administrative
+`rustyauth.service_accounts.v1.ServiceAccountService` methods require an exact-origin session whose
+`auth_method` is `passkey`. The allowlisted first owner bootstrap is explicit; local-agent handoffs cannot
+become operators. Owner and administrator roles manage organization and service-account state, support may
+manage identity records, and auditor remains read-only.
+
+Service-account secrets are high-entropy random `rsa_` values shown once. SableDB stores only their SHA-256
+locator and a six-character display hint. A live, unexpired credential can be exchanged for a short-lived
+ES256 JWT containing only the service-account subject and an allowed subset of stored scopes.
 
 ## Tenancy
 
-Version `0.1.0` is one configured tenant per RustyAuth instance. Tokens and events carry
-`AUTH_TENANT_ID`, but user/session/database keys are not tenant-prefixed. Do not point multiple
-independently trusted tenants at one SableDB namespace.
+Version `0.1.0` is one configured tenant per RustyAuth instance. Tokens and events carry `AUTH_TENANT_ID`, but
+user/session/database keys are not tenant-prefixed. Do not point multiple independently trusted tenants at one
+SableDB namespace.
 
 ## Concurrency and scaling
 
-Multi-key user and credential writes use atomic SableDB pipelines. A process-local async mutex
-serializes compound mutations within one RustyAuth process. That mutex does not coordinate multiple
-replicas. Run one writer instance until cross-instance transaction/locking behavior has dedicated
-tests and an explicit design.
+Multi-key user and credential writes use atomic SableDB pipelines. A process-local async mutex serializes
+compound mutations within one RustyAuth process. That mutex does not coordinate multiple replicas. Run one
+writer instance until cross-instance transaction/locking behavior has dedicated tests and an explicit design.
 
 ## Failure behavior
 
@@ -290,6 +302,6 @@ Internal errors are logged server-side and returned to callers as a generic fail
 
 ## Known architectural gaps
 
-See [SECURITY.md](../SECURITY.md) and the README status matrix. The largest gaps are account
-recovery policy for lost authenticators, verified email/SMS delivery, revoke-all, cross-instance
-writer qualification, event retention/webhook delivery and independent review.
+See [SECURITY.md](../SECURITY.md) and the README status matrix. The largest gaps are account recovery policy
+for lost authenticators, verified email/SMS delivery, revoke-all, cross-instance writer qualification, event
+retention/webhook delivery and independent review.

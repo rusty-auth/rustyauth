@@ -47,6 +47,7 @@ use tower_http::{
     cors::CorsLayer,
     request_id::{MakeRequestUuid, PropagateRequestIdLayer, SetRequestIdLayer},
     sensitive_headers::SetSensitiveRequestHeadersLayer,
+    services::{ServeDir, ServeFile},
     set_header::SetResponseHeaderLayer,
     trace::TraceLayer,
 };
@@ -264,10 +265,19 @@ async fn serve(
     let backup_worker = state.backup.clone();
 
     let request_id = HeaderName::from_static("x-request-id");
+    let dashboard_index = config.dashboard_dir.join("index.html");
+    let dashboard_assets = config.dashboard_dir.join("assets");
+    let dashboard_brand = config.dashboard_dir.join("brand");
+    let dashboard_favicon = config.dashboard_dir.join("favicon.svg");
     let app = Router::new()
         .route("/healthz", get(live))
         .route("/readyz", get(ready))
         .route("/.well-known/passkey-auth", get(metadata))
+        .route_service("/", ServeFile::new(dashboard_index.clone()))
+        .route_service("/dashboard", ServeFile::new(dashboard_index))
+        .nest_service("/assets", ServeDir::new(dashboard_assets))
+        .nest_service("/brand", ServeDir::new(dashboard_brand))
+        .route_service("/favicon.svg", ServeFile::new(dashboard_favicon))
         .merge(auth::routes())
         .with_state(state)
         .fallback_service(rpc_service)

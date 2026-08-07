@@ -1,6 +1,7 @@
 {
   "workspace": [
     "./site",
+    "./dashboard",
     "./packages/connect-solid",
     "./packages/protocol"
   ],
@@ -10,17 +11,20 @@
     "site:build": "deno task --cwd site build",
     "site:check": "deno task --cwd site check",
     "site:test": "deno task --cwd site test",
+    "dashboard:dev": "deno task --cwd dashboard dev",
+    "dashboard:build": "deno task --cwd dashboard build",
+    "dashboard:check": "deno task --cwd dashboard check",
     "gen": "buf lint && buf generate",
     "connect:check": "deno task --cwd packages/connect-solid check && deno task --cwd packages/protocol check",
     "connect:test": "deno task --cwd packages/connect-solid test",
     "infra:preview": "pulumi -C infra/cloudflare preview --stack livermoreledger/rustyauth-cloudflare/production",
     "infra:up": "pulumi -C infra/cloudflare up --yes --stack livermoreledger/rustyauth-cloudflare/production",
     "site:publish": "deno run -A npm:wrangler@4.119.0 pages deploy site/dist --project-name rustyauth-dev --branch main --commit-dirty=true",
-    "fmt": "cargo fmt && deno fmt deno.json buf.yaml buf.gen.yaml packages/connect-solid packages/protocol/deno.json packages/protocol/index.ts site/src site/tests site/astro.config.mjs site/deno.json site/package.json",
-    "fmt:check": "cargo fmt --check && deno fmt --check deno.json buf.yaml buf.gen.yaml packages/connect-solid packages/protocol/deno.json packages/protocol/index.ts site/src site/tests site/astro.config.mjs site/deno.json site/package.json && cd infra/cloudflare && test -z \"$(gofmt -l .)\"",
-    "lint": "cargo clippy --locked --all-targets --all-features -- -D warnings && deno lint packages/connect-solid/src packages/protocol/index.ts site/src site/tests site/astro.config.mjs && cd infra/cloudflare && go vet ./...",
-    "check": "deno task fmt:check && deno task lint && deno task connect:check && deno task site:check",
-    "test": "deno task connect:test && deno task site:test && cargo test --locked && cd infra/cloudflare && go test ./..."
+    "fmt": "cargo fmt && deno fmt deno.json buf.yaml buf.gen.yaml packages/connect-solid packages/protocol/deno.json packages/protocol/index.ts site/src site/tests site/astro.config.mjs site/deno.json site/package.json dashboard",
+    "fmt:check": "cargo fmt --check && deno fmt --check deno.json buf.yaml buf.gen.yaml packages/connect-solid packages/protocol/deno.json packages/protocol/index.ts site/src site/tests site/astro.config.mjs site/deno.json site/package.json dashboard && cd infra/cloudflare && test -z \"$(gofmt -l .)\"",
+    "lint": "cargo clippy --locked --all-targets --all-features -- -D warnings && deno lint packages/connect-solid/src packages/protocol/index.ts site/src site/tests site/astro.config.mjs dashboard/src dashboard/vite.config.ts && cd infra/cloudflare && go vet ./...",
+    "check": "deno task fmt:check && deno task lint && deno task connect:check && deno task site:check && deno task dashboard:check",
+    "test": "deno task connect:test && deno task site:test && deno task dashboard:build && cargo test --locked && cd infra/cloudflare && go test ./..."
   },
   "fmt": {
     "lineWidth": 110,

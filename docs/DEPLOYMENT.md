@@ -16,8 +16,9 @@ cp .env.example .env
 docker compose up --build
 ```
 
-The Compose topology publishes only `127.0.0.1:8081` for RustyAuth. SableDB joins an internal Docker
-network and has no host port. Its named volume is `sabledb_data`.
+The Compose topology publishes only `127.0.0.1:8081` for RustyAuth. SableDB joins an internal Docker network
+and has no host port. Its named volume is `sabledb_data`. The same Rust container serves the built operator
+dashboard at `http://localhost:8081`; `?preview=1` opens realistic local preview data.
 
 Check both probes:
 
@@ -26,8 +27,8 @@ curl --fail http://127.0.0.1:8081/healthz
 curl --fail http://127.0.0.1:8081/readyz
 ```
 
-`/healthz` proves that the process can answer HTTP. `/readyz` additionally requires a SableDB
-`PONG`. Route traffic based on readiness; use liveness for process restart decisions.
+`/healthz` proves that the process can answer HTTP. `/readyz` additionally requires a SableDB `PONG`. Route
+traffic based on readiness; use liveness for process restart decisions.
 
 ### Lifecycle commands
 
@@ -37,21 +38,21 @@ docker compose down
 docker compose up --build -d
 ```
 
-`docker compose down --volumes` permanently deletes local identity state. Do not include `--volumes`
-in routine restart or upgrade automation.
+`docker compose down --volumes` permanently deletes local identity state. Do not include `--volumes` in
+routine restart or upgrade automation.
 
 ## Railway topology
 
 Create three resources in one project and preferred region:
 
-| Resource | Exposure | Persistent resource |
-| --- | --- | --- |
-| RustyAuth | Public HTTPS, container port `8080` | None |
-| SableDB | Railway private network only, port `6379` | Volume at `/var/lib/sabledb` |
-| AuthBackups | Private credentials only | S3-compatible bucket |
+| Resource    | Exposure                                  | Persistent resource          |
+| ----------- | ----------------------------------------- | ---------------------------- |
+| RustyAuth   | Public HTTPS, container port `8080`       | None                         |
+| SableDB     | Railway private network only, port `6379` | Volume at `/var/lib/sabledb` |
+| AuthBackups | Private credentials only                  | S3-compatible bucket         |
 
-The bucket remains optional, but any deployment claiming recovery must configure it and complete a
-restore drill.
+The bucket remains optional, but any deployment claiming recovery must configure it and complete a restore
+drill.
 
 ### RustyAuth service
 
@@ -62,14 +63,17 @@ Use the repository root as the source root and `Dockerfile` as the builder. Set:
 - all production variables in [Configuration](CONFIGURATION.md); and
 - `SABLEDB_URL` through a Railway private-domain resource reference.
 
-Readiness should also be monitored separately at `/readyz`. A liveness-only deploy can be running
-while unable to authenticate users.
+The container serves the dashboard and RPC APIs from the same public origin. Configure `WEBAUTHN_RP_ORIGIN` to
+that Railway HTTPS origin, set `WEBAUTHN_RP_ID` to its exact hostname and set `AUTH_OPERATOR_EMAILS` before
+the first operator signs in.
+
+Readiness should also be monitored separately at `/readyz`. A liveness-only deploy can be running while unable
+to authenticate users.
 
 ### SableDB service
 
-Use `sabledb` as its source root. The Docker build checks out the immutable
-SableDB revision declared by `SABLEDB_REVISION`, currently
-`8bebc4a60dee404e95608b40ec5c58799e7fa820`.
+Use `sabledb` as its source root. The Docker build checks out the immutable SableDB revision declared by
+`SABLEDB_REVISION`, currently `8bebc4a60dee404e95608b40ec5c58799e7fa820`.
 
 Requirements:
 
@@ -79,19 +83,19 @@ Requirements:
 - persistent volume at `/var/lib/sabledb`; and
 - health check before RustyAuth receives traffic.
 
-Railway private networking and RustyAuth's exclusive reachability are the access-control boundary;
-SableDB itself is not being presented as the public authentication layer.
+Railway private networking and RustyAuth's exclusive reachability are the access-control boundary; SableDB
+itself is not being presented as the public authentication layer.
 
 ### Backup bucket
 
-Inject bucket credentials into RustyAuth through Railway resource references. Do not expose them to
-the relying-party browser. Use a backup encryption key generated and escrowed outside Railway and
-outside the bucket provider account.
+Inject bucket credentials into RustyAuth through Railway resource references. Do not expose them to the
+relying-party browser. Use a backup encryption key generated and escrowed outside Railway and outside the
+bucket provider account.
 
-RustyAuth creates a backup immediately after startup and at `AUTH_BACKUP_INTERVAL_SECONDS`. Each
-object contains durable users, identifiers, passkeys, sessions, signing state and ordered events;
-short-lived WebAuthn ceremonies and agent handoffs are deliberately excluded. Upload succeeds only
-after a read-after-write decrypt and manifest check.
+RustyAuth creates a backup immediately after startup and at `AUTH_BACKUP_INTERVAL_SECONDS`. Each object
+contains durable users, identifiers, passkeys, sessions, signing state, organization, operators, service
+accounts, credential locators and ordered events; short-lived WebAuthn ceremonies and agent handoffs are
+deliberately excluded. Upload succeeds only after a read-after-write decrypt and manifest check.
 
 Use the binary inside the deployed container for operator checks:
 
@@ -107,6 +111,7 @@ passkey-auth-service backup verify <object-key>
 The RustyAuth runtime image:
 
 - contains the release binary and CA certificates only;
+- contains the compiled SolidJS dashboard under `/usr/share/rustyauth/dashboard`;
 - runs as non-root UID/GID `10001`;
 - has no shell-owned writable application directory;
 - exposes port `8080`; and
@@ -116,9 +121,9 @@ The SableDB image runs as non-root UID/GID `10002` and stores data under `/var/l
 
 ## TLS and proxying
 
-RustyAuth expects the deployment platform to terminate TLS. `AUTH_ISSUER` and
-`WEBAUTHN_RP_ORIGIN` must describe the public HTTPS origins, not internal container URLs. Do not
-rewrite browser `Origin` headers to bypass exact-origin enforcement.
+RustyAuth expects the deployment platform to terminate TLS. `AUTH_ISSUER` and `WEBAUTHN_RP_ORIGIN` must
+describe the public HTTPS origins, not internal container URLs. Do not rewrite browser `Origin` headers to
+bypass exact-origin enforcement.
 
 Preserve `Set-Cookie`, `Origin`, `Content-Type` and request IDs through any proxy. Do not cache token,
 credential or session responses.
@@ -138,9 +143,9 @@ Never delete or recreate the SableDB volume as an upgrade shortcut.
 
 ## Scaling
 
-Run one RustyAuth writer replica in version `0.1.0`. Multi-key operations use SableDB atomic
-pipelines, but compound mutations are additionally protected only by a process-local mutex.
-Cross-replica registration and credential mutation have not been qualified.
+Run one RustyAuth writer replica in version `0.1.0`. Multi-key operations use SableDB atomic pipelines, but
+compound mutations are additionally protected only by a process-local mutex. Cross-replica registration and
+credential mutation have not been qualified.
 
 ## Observability
 
@@ -150,9 +155,9 @@ RustyAuth writes structured JSON logs and propagates or creates `x-request-id`. 
 passkey_auth_service=info,tower_http=info
 ```
 
-Never enable body logging for WebAuthn credentials, cookies, JWTs, bootstrap tokens or backup
-secrets. The application marks the RPC `Authorization` request header as sensitive; operational tooling
-must also redact `Cookie`, `Set-Cookie` and `x-bootstrap-token`.
+Never enable body logging for WebAuthn credentials, cookies, JWTs, bootstrap tokens or backup secrets. The
+application marks the RPC `Authorization` request header as sensitive; operational tooling must also redact
+`Cookie`, `Set-Cookie` and `x-bootstrap-token`.
 
 Monitor at least:
 
@@ -167,9 +172,9 @@ Monitor at least:
 
 ## Clean-room recovery
 
-Restore never overwrites a live namespace. Provision a new, empty SableDB volume and run the same
-RustyAuth release with the original tenant ID, active master key plus any required previous master
-keys, and active backup key plus any required previous backup keys:
+Restore never overwrites a live namespace. Provision a new, empty SableDB volume and run the same RustyAuth
+release with the original tenant ID, active master key plus any required previous master keys, and active
+backup key plus any required previous backup keys:
 
 ```sh
 passkey-auth-service backup list
@@ -178,23 +183,23 @@ passkey-auth-service backup restore <object-key>
 passkey-auth-service doctor
 ```
 
-The restore command validates the authenticated envelope, tenant, manifest, signing keyset, index
-references and event continuity before writing. It invalidates all snapshotted sessions by default,
-activates a new signing key, appends `recovery.restored`, and clears its in-progress marker only when
-the full operation succeeds. If interrupted, normal service startup fails closed until the empty
-target is recreated and the restore is retried.
+The restore command validates the authenticated envelope, tenant, manifest, signing keyset, index references
+and event continuity before writing. It invalidates all snapshotted sessions by default, activates a new
+signing key, appends `recovery.restored`, and clears its in-progress marker only when the full operation
+succeeds. If interrupted, normal service startup fails closed until the empty target is recreated and the
+restore is retried.
 
-`--preserve-sessions` exists for an explicitly reviewed incident response. Omitting it is the safe
-default and the recommended procedure. After recovery, validate discovery/JWKS, enrol a synthetic
-account, sign in with a real authenticator and preserve the command receipts with the incident log.
+`--preserve-sessions` exists for an explicitly reviewed incident response. Omitting it is the safe default and
+the recommended procedure. After recovery, validate discovery/JWKS, enrol a synthetic account, sign in with a
+real authenticator and preserve the command receipts with the incident log.
 
 ## One-click template status
 
 The public
 [RustyAuth Railway template](https://railway.com/new/template/rustyauth?utm_medium=integration&utm_source=button&utm_campaign=rustyauth)
-is available for evaluation and integration work. Its clean-room deployment and storage-survival
-checks pass: both services become healthy, generated secrets are applied, the private SableDB
-reference resolves, and signing state survives SableDB container replacement.
+is available for evaluation and integration work. Its clean-room deployment and storage-survival checks pass:
+both services become healthy, generated secrets are applied, the private SableDB reference resolves, and
+signing state survives SableDB container replacement.
 
-Do not treat template availability or backup configuration alone as production readiness. Schedule
-and retain evidence from clean-room drills appropriate to the deployment's recovery objective.
+Do not treat template availability or backup configuration alone as production readiness. Schedule and retain
+evidence from clean-room drills appropriate to the deployment's recovery objective.

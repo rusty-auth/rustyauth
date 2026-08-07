@@ -40,10 +40,13 @@ The control-plane contract is divided by policy boundary:
 - `MetricsService` returns bounded aggregates and time series without user, identifier, IP address,
   credential, or webhook URL dimensions.
 
-Service account, webhook, organization, and metrics protobuf services are contract foundations.
-They must not be mounted until their Rust storage and policy implementations have operator/session
-authorization and rejection-path tests. The existing private event and identity RPC bearer tokens
-remain transitional service credentials; they are not dashboard credentials and must never be
+Organization and service-account services are mounted only behind the Rust passkey-operator policy.
+The first passkey-authenticated user whose canonical primary email appears in
+`AUTH_OPERATOR_EMAILS` bootstraps the owner record. Service credentials are generated once, indexed
+by SHA-256, independently revocable and exchangeable only for an allowed subset of their account's
+scopes. Webhook and metrics services remain contract foundations and are not mounted until their
+durable storage, policy and rejection-path tests land. The private event and identity RPC bearer
+tokens remain transitional credentials; they are not dashboard credentials and must never be
 embedded in browser code.
 
 ## Security and operational properties
@@ -65,6 +68,6 @@ duplicating request types. Browser code stays idiomatic Solid/TypeScript while a
 stay in Rust. A later split into a separate dashboard service remains possible, but would require an
 explicit cross-origin session and CSRF design.
 
-This decision does not claim that the dashboard UI, service-account persistence, webhook delivery,
-or metric rollups are implemented. Those capabilities become shipped only when their Rust handlers,
-storage migrations, operator authorization, tests, and Railway deployment checks land.
+The SolidJS dashboard, passkey operator authorization, organization persistence, service-account
+persistence and token exchange are implemented. Webhook delivery and metric rollups remain preview
+surfaces only; they become shipped when their Rust handlers, storage, tests and Railway checks land.
