@@ -80,11 +80,17 @@ impl<S: EventSource> AuthEventService for EventRpc<S> {
             .await
             .map_err(source_error)?;
         if after_sequence > initial_latest {
+            // The latest sequence is the count of every authentication event this
+            // instance has recorded. Echoing it back turns a malformed cursor into
+            // a free estimate of the deployment's size and activity.
+            tracing::debug!(
+                after_sequence,
+                initial_latest,
+                "subscription cursor is ahead of the log"
+            );
             return Err(ConnectError::new(
                 ErrorCode::InvalidArgument,
-                format!(
-                    "after_sequence {after_sequence} is ahead of latest sequence {initial_latest}"
-                ),
+                "after_sequence is ahead of the latest recorded event",
             ));
         }
 

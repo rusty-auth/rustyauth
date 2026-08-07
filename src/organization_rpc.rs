@@ -19,6 +19,8 @@ use crate::{
 
 const DEFAULT_PAGE_SIZE: usize = 25;
 const MAX_PAGE_SIZE: usize = 100;
+/// Length of the canonical unpadded base64 encoding of a 16-byte identifier.
+const PAGE_TOKEN_LENGTH: usize = 22;
 
 pub(crate) struct OrganizationRpc {
     store: Store,
@@ -195,17 +197,33 @@ fn encode_page_token(value: Uuid) -> String {
     URL_SAFE_NO_PAD.encode(value.as_bytes())
 }
 
+/// The cursor carries no signature, so a caller-supplied token cannot be proven
+/// to be one this server issued. Pinning it to the single canonical encoding of
+/// a non-nil 16-byte identifier is everything that is checkable without a key,
+/// and keeps a rewritten token from being decoded into some other cursor shape.
 fn decode_page_token(value: &str) -> Result<Option<Uuid>, ConnectError> {
     if value.is_empty() {
         return Ok(None);
     }
+    if value.len() != PAGE_TOKEN_LENGTH {
+        return Err(invalid_page_token());
+    }
     let bytes = URL_SAFE_NO_PAD
         .decode(value)
-        .map_err(|_| ConnectError::new(ErrorCode::InvalidArgument, "invalid page_token"))?;
-    let bytes: [u8; 16] = bytes
-        .try_into()
-        .map_err(|_| ConnectError::new(ErrorCode::InvalidArgument, "invalid page_token"))?;
-    Ok(Some(Uuid::from_bytes(bytes)))
+        .map_err(|_| invalid_page_token())?;
+    let bytes: [u8; 16] = bytes.try_into().map_err(|_| invalid_page_token())?;
+    if URL_SAFE_NO_PAD.encode(bytes) != value {
+        return Err(invalid_page_token());
+    }
+    let id = Uuid::from_bytes(bytes);
+    if id.is_nil() {
+        return Err(invalid_page_token());
+    }
+    Ok(Some(id))
+}
+
+fn invalid_page_token() -> ConnectError {
+    ConnectError::new(ErrorCode::InvalidArgument, "invalid page_token")
 }
 
 fn source_error(error: anyhow::Error) -> ConnectError {
@@ -227,5 +245,24 @@ mod tests {
         let id = Uuid::new_v4();
         assert_eq!(decode_page_token(&encode_page_token(id)).unwrap(), Some(id));
         assert!(page_size(101).is_err());
+    }
+
+    /// A cursor the server never minted must not be honoured just because it
+    /// happens to decode. Without a signing key this is the widest rejection
+    /// available, so it has to hold for every shape a caller can send.
+    #[test]
+    fn page_tokens_reject_everything_the_server_did_not_mint() {
+        let id = Uuid::new_v4();
+        let token = encode_page_token(id);
+        assert_eq!(decode_page_token(&token).unwrap(), Some(id));
+        assert_eq!(decode_page_token("").unwrap(), None);
+
+        assert!(decode_page_token(&URL_SAFE_NO_PAD.encode(Uuid::nil().as_bytes())).is_err());
+        assert!(decode_page_token("not-a-page-token").is_err());
+        assert!(decode_page_token(&token[..PAGE_TOKEN_LENGTH - 1]).is_err());
+        assert!(decode_page_token(&format!("{token}A")).is_err());
+        assert!(decode_page_token(&URL_SAFE_NO_PAD.encode([7u8; 8])).is_err());
+        assert!(decode_page_token(&URL_SAFE_NO_PAD.encode([7u8; 24])).is_err());
+        assert!(decode_page_token(&format!("{}=", &token[..PAGE_TOKEN_LENGTH - 1])).is_err());
     }
 }
