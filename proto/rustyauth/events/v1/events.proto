@@ -1,0 +1,45 @@
+syntax = "proto3";
+
+package rustyauth.events.v1;
+
+// AuthEventService exposes RustyAuth's durable event log to trusted consumers.
+service AuthEventService {
+  // Subscribe replays events after the supplied cursor, then follows new events.
+  // Delivery is at least once: consumers persist a sequence only after their work commits.
+  rpc Subscribe(SubscribeRequest) returns (stream SubscribeResponse);
+}
+
+message SubscribeRequest {
+  // Last sequence durably processed by the consumer. Zero starts at the beginning.
+  uint64 after_sequence = 1;
+  // Exact event types to return. Empty subscribes to every event type.
+  repeated string event_types = 2;
+  // Idle checkpoint interval. Zero selects 15 seconds; otherwise 5-60 seconds.
+  uint32 checkpoint_interval_seconds = 3;
+  // Exact tenant ids to return. Empty subscribes to every tenant in this instance.
+  repeated string tenant_ids = 4;
+}
+
+message SubscribeResponse {
+  oneof payload {
+    AuthEvent event = 1;
+    AuthEventCheckpoint checkpoint = 2;
+  }
+}
+
+message AuthEvent {
+  uint64 sequence = 1;
+  string id = 2;
+  string type = 3;
+  string subject = 4;
+  string occurred_at = 5;
+  // Redacted event data. Existing events without data return an empty object.
+  bytes data_json = 6;
+  string tenant_id = 7;
+}
+
+message AuthEventCheckpoint {
+  // Highest sequence in the log, including events excluded by filters.
+  uint64 latest_sequence = 1;
+  string occurred_at = 2;
+}

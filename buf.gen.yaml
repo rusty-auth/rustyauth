@@ -1,0 +1,8 @@
+version: v2
+clean: true
+plugins:
+  - remote: buf.build/bufbuild/es
+    out: packages/protocol/gen
+    opt:
+      - target=ts
+      - import_extension=.ts

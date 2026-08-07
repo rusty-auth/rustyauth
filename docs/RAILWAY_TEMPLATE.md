@@ -6,9 +6,10 @@ persistent SableDB service in one Railway project. The services communicate over
 only RustyAuth receives a public HTTPS domain. Railway places both services in the template group named
 `RustyAuth`.
 
-RustyAuth is pre-release software. Recovery, scheduled backup and restore, signing-key rotation, and an
-independent security assessment are not complete. Use this template for evaluation and integration work, and
-do not make this release the sole identity system for a production service.
+RustyAuth is pre-release software. Account recovery, abuse controls, multi-writer qualification and an
+independent security assessment are not complete. Automatic signing-key rotation and encrypted backup and
+restore tooling are implemented. Use this template for evaluation and integration work, and do not make this
+release the sole identity system for a production service.
 
 ## About Hosting RustyAuth
 
@@ -16,7 +17,8 @@ The template creates RustyAuth and SableDB services from versioned public contai
 [`rusty-auth/rustyauth`](https://github.com/rusty-auth/rustyauth) repository. SableDB has no public domain or
 TCP proxy and stores identity state on a Railway volume mounted at `/var/lib/sabledb`.
 
-Railway generates `AUTH_MASTER_KEY_HEX` and `BOOTSTRAP_TOKEN` independently for every template deployment.
+The Railway template must generate `AUTH_MASTER_KEY_HEX`, `BOOTSTRAP_TOKEN`,
+`AUTH_EVENT_RPC_TOKEN` and `AUTH_IDENTITY_RPC_TOKEN` independently for every deployment.
 `SABLEDB_URL` is assembled from the SableDB service's Railway private-domain reference, so no database
 hostname or credential needs to be copied between services.
 
@@ -35,6 +37,12 @@ defaults but remain editable during the environment step.
 | `SABLEDB_URL`         | Automatically references SableDB on Railway's private network          |
 | `AUTH_MASTER_KEY_HEX` | Automatically generated 256-bit hexadecimal secret                     |
 | `BOOTSTRAP_TOKEN`     | Automatically generated 64-character secret                            |
+| `AUTH_EVENT_RPC_TOKEN` | Required generated private event-stream credential                     |
+| `AUTH_IDENTITY_RPC_TOKEN` | Required generated private identity-control credential              |
+
+Signing-key maintenance runs automatically with prepublication and retired-key overlap. Encrypted scheduled
+backups are optional and require the complete S3-compatible `AUTH_BACKUP_*` environment; the base two-service
+template does not provision a bucket. Partial backup configuration is rejected at startup.
 
 ## Why Deploy RustyAuth on Railway
 
@@ -42,6 +50,7 @@ defaults but remain editable during the environment step.
 - Keep SableDB private while exposing RustyAuth through Railway-managed HTTPS.
 - Generate high-entropy application secrets automatically for each installation.
 - Preserve identity state across SableDB container replacement with a persistent volume.
+- Operate automatic signing-key rotation and optional verified backups through one small CLI.
 - Use checked-in Docker and health-check configuration from the upstream repository.
 
 ## Common Use Cases
@@ -66,5 +75,7 @@ application-specific authorization policy.
 - A relying-party HTTPS origin whose hostname exactly matches `WEBAUTHN_RP_ID`.
 
 After deployment, check `/healthz` for process liveness and `/readyz` for SableDB-backed readiness. Keep the
-generated bootstrap token out of browser bundles: it is an administrative enrollment and event-polling
-credential.
+generated bootstrap and RPC tokens out of browser bundles. They are independently scoped administrative
+credentials; RPC consumers send only the token for their service. Run `passkey-auth-service doctor` after
+configuration changes and follow the repository deployment guide for backup verification and clean-room
+restore drills.

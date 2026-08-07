@@ -18,6 +18,8 @@ jobs:
         with:
           deno-version: 2.9.3
       - run: deno install --frozen
+      - run: deno task connect:check
+      - run: deno task connect:test
       - run: deno task site:check
       - run: deno task site:test
 
@@ -51,6 +53,39 @@ jobs:
       - run: cargo clippy --locked --all-targets --all-features -- -D warnings
       - run: cargo test --locked
       - run: cargo build --locked --release
+
+  recovery-integration:
+    name: Backup and recovery integration
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: dtolnay/rust-toolchain@75be91dd2711b583df57c31d0873b4145c89f1d9 # 1.94.1
+        with:
+          toolchain: 1.94.1
+      - uses: Swatinem/rust-cache@49a0bdc70d2e1b713ca9e2869b211fcce03d3c1c # v2
+      - name: Start real SableDB and S3-compatible services
+        run: >-
+          docker compose -f compose.integration.yaml up -d --build --wait
+          source-sabledb destination-sabledb minio
+      - name: Create the private integration bucket
+        run: docker compose -f compose.integration.yaml run --rm minio-init
+      - name: Run clean-room recovery drill
+        env:
+          RUSTYAUTH_TEST_SOURCE_SABLEDB_URL: redis://127.0.0.1:16379
+          RUSTYAUTH_TEST_DESTINATION_SABLEDB_URL: redis://127.0.0.1:16380
+          RUSTYAUTH_TEST_S3_ENDPOINT: http://127.0.0.1:19000
+          RUSTYAUTH_TEST_S3_BUCKET: rustyauth-integration
+          RUSTYAUTH_TEST_S3_ACCESS_KEY: rustyauth-test
+          RUSTYAUTH_TEST_S3_SECRET_KEY: rustyauth-test-secret
+        run: >-
+          cargo test --locked integration_tests::clean_room_backup_restore_and_rotation
+          -- --ignored --exact --nocapture
+      - name: Show service logs after failure
+        if: failure()
+        run: docker compose -f compose.integration.yaml logs
+      - name: Stop integration services
+        if: always()
+        run: docker compose -f compose.integration.yaml down --volumes
 
   container:
     name: Container build

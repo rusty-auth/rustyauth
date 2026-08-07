@@ -8,13 +8,38 @@ versioning after its public contract stabilises.
 
 ### Added
 
+- A canonical identity data-model reference in the repository and developer site covering every
+  persisted field, index, lifecycle record, API projection and deliberately excluded data class.
+- Multiple email and E.164 phone identifiers per stable passkey account, with primary selection,
+  guarded removal and backwards-compatible email request bodies.
+- Optional given, family and display names for account and WebAuthn presentation.
+- Automatic staged ES256 signing-key rotation with JWKS prepublication, retired-key overlap and
+  transparent master-key rewrapping.
+- Scheduled, authenticated logical backups to S3-compatible storage, plus `create`, `list`, `verify`
+  and empty-target `restore` operator commands.
+- A clean-room recovery integration test against two real SableDB instances and MinIO.
+- Versioned Connect/gRPC/gRPC-Web services for resumable auth-event streaming and trusted identity
+  reads, exact search, profile/contact updates, and passkey metadata operations.
+- A generated TypeScript protocol package and Solid-friendly Connect transport helpers.
 - RustyAuth public identity, logo lockup and brand guidance.
 - Architecture, API, configuration, deployment, security and contribution documentation.
 - Apache-2.0 project licence and explicit SableDB attribution.
 
 ### Security
 
-- Documented the pre-release threat model, current controls and production blockers.
+- Identity and credential mutations reject agent sessions; high-impact identifier and passkey
+  enrolment changes require a passkey session created within five minutes, and add-passkey
+  ceremonies are bound to the initiating session.
+- Account records, canonical identity inputs and backup reverse indexes are validated fail-closed;
+  invisible directional-formatting characters are rejected from profile names.
+- Backup manifests validate tenant, digest, indexes, expiry policy, signing state and ordered-event
+  continuity before restore writes anything.
+- Restore invalidates sessions by default, rotates signing material and fails startup closed when an
+  interrupted recovery marker remains.
+- Signing and backup keyrings derive non-secret key IDs, redact key material and retain explicitly
+  configured previous keys during rotation.
+- Event and identity RPCs fail closed behind distinct bearer credentials, and passkey responses are
+  projected through a metadata-only type that cannot expose stored WebAuthn credential material.
 
 ## 0.1.0 - 2026-08-07
 
@@ -33,5 +58,5 @@ versioning after its public contract stabilises.
 
 ### Known limitations
 
-- No complete email delivery, recovery, scheduled export/restore, key rotation, stable event stream
-  or independent security assessment.
+- No complete email delivery, lost-authenticator recovery, webhook delivery, multi-writer
+  qualification or independent security assessment.

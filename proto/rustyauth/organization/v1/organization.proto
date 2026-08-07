@@ -1,0 +1,55 @@
+syntax = "proto3";
+
+package rustyauth.organization.v1;
+
+// Manages the single organization owned by a RustyAuth deployment. The
+// explicit resource leaves room for future multi-organization hosting without
+// pretending the current storage namespace is multi-tenant.
+service OrganizationService {
+  rpc GetOrganization(GetOrganizationRequest) returns (Organization);
+  rpc GetCurrentOperator(GetCurrentOperatorRequest) returns (Operator);
+  rpc UpdateOrganization(UpdateOrganizationRequest) returns (Organization);
+  rpc ListOperators(ListOperatorsRequest) returns (ListOperatorsResponse);
+}
+
+enum OperatorRole {
+  OPERATOR_ROLE_UNSPECIFIED = 0;
+  OPERATOR_ROLE_OWNER = 1;
+  OPERATOR_ROLE_ADMINISTRATOR = 2;
+  OPERATOR_ROLE_SUPPORT = 3;
+  OPERATOR_ROLE_AUDITOR = 4;
+}
+
+message Organization {
+  string id = 1;
+  string slug = 2;
+  string name = 3;
+  string created_at = 4;
+}
+
+message Operator {
+  string id = 1;
+  string email = 2;
+  string display_name = 3;
+  OperatorRole role = 4;
+  string created_at = 5;
+  string last_authenticated_at = 6;
+}
+
+message GetOrganizationRequest {}
+
+message GetCurrentOperatorRequest {}
+
+message UpdateOrganizationRequest {
+  string name = 1;
+}
+
+message ListOperatorsRequest {
+  uint32 page_size = 1;
+  string page_token = 2;
+}
+
+message ListOperatorsResponse {
+  repeated Operator operators = 1;
+  string next_page_token = 2;
+}

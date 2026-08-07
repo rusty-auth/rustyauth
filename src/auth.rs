@@ -22,14 +22,19 @@ use uuid::Uuid;
 
 use crate::{
     app_state::AppState,
-    store::{AuthenticationCeremony, RegistrationCeremony, StorePolicyError, now},
+    store::{
+        AccountProfile, AuthenticationCeremony, IdentifierKind, IdentifierValue,
+        RegistrationCeremony, RegistrationPurpose, Session, StorePolicyError, User,
+        forbidden_display_character, now,
+    },
 };
 
 use self::{
     dto::{
-        AddRegistrationOptionsInput, AuthenticationVerifyInput, CredentialOutput, EmailInput,
-        EventsQuery, LocalAgentHandoffQuery, RegistrationVerifyInput, RenameCredentialInput,
-        RevokeCredentialInput,
+        AddRegistrationOptionsInput, AuthenticationVerifyInput, ChangeIdentifierInput,
+        CredentialOutput, EmailInput, EventsQuery, IdentifierLookupInput, IdentifierOutput,
+        IdentifierRequest, LocalAgentHandoffQuery, RegistrationOptionsInput,
+        RegistrationVerifyInput, RenameCredentialInput, RevokeCredentialInput, UpdateProfileInput,
     },
     error::ApiError,
 };
@@ -60,6 +65,14 @@ pub fn routes() -> Router<AppState> {
         .route("/v1/token", post(token))
         .route("/v1/sign-out", post(sign_out))
         .route("/v1/email-links", post(email_link))
+        .route("/v1/account", get(account))
+        .route("/v1/account/profile", post(update_profile))
+        .route("/v1/account/identifiers", post(add_identifier))
+        .route("/v1/account/identifiers/remove", post(remove_identifier))
+        .route(
+            "/v1/account/identifiers/primary",
+            post(set_primary_identifier),
+        )
         .route("/v1/local-agent-handoff", get(local_agent_handoff))
         .route("/v1/credentials", get(credentials))
         .route(
@@ -85,38 +98,54 @@ async fn discovery(State(state): State<AppState>) -> Json<Value> {
     }))
 }
 
-async fn jwks(State(state): State<AppState>) -> Json<Value> {
-    Json(state.jwt.jwks())
+async fn jwks(State(state): State<AppState>) -> impl IntoResponse {
+    (
+        [(
+            header::CACHE_CONTROL,
+            "public, max-age=300, must-revalidate",
+        )],
+        Json(state.jwt.jwks()),
+    )
 }
 
 async fn registration_options(
     State(state): State<AppState>,
     headers: HeaderMap,
-    Json(input): Json<EmailInput>,
+    Json(input): Json<RegistrationOptionsInput>,
 ) -> Result<Json<Value>, ApiError> {
     require_origin(&state, &headers)?;
     require_bootstrap(&state, &headers)?;
-    let email = canonical_email(&input.email)?;
+    let identifier = registration_identifier(&input)?;
+    let profile = account_profile(input.given_name, input.family_name, input.display_name)?;
     if state
         .store
-        .user_by_email(&email)
+        .user_by_identifier(&identifier)
         .await
         .map_err(ApiError::internal)?
         .is_some()
     {
-        return Err(ApiError::conflict("email already has an account"));
+        return Err(ApiError::conflict("identifier already has an account"));
     }
     let user_id = Uuid::new_v4();
+    let display_name = profile_display_name(&profile).unwrap_or_else(|| identifier.value.clone());
     let (options, ceremony_state) = state
         .webauthn
-        .start_passkey_registration(user_id, &email, &email, None)
+        .start_passkey_registration(user_id, &identifier.value, &display_name, None)
         .map_err(|error| ApiError::internal(format!("start passkey registration: {error}")))?;
     let ceremony = RegistrationCeremony {
         id: Uuid::new_v4(),
         user_id,
-        email,
+        email: if identifier.kind == IdentifierKind::Email {
+            identifier.value.clone()
+        } else {
+            String::new()
+        },
+        identifier: Some(identifier),
+        profile,
+        purpose: RegistrationPurpose::Initial,
+        initiating_session_id: None,
         label: None,
-        expires_at: now() + CEREMONY_SECONDS,
+        expires_at: now().saturating_add(CEREMONY_SECONDS),
         state: ceremony_state,
     };
     state
@@ -141,23 +170,34 @@ async fn registration_verify(
         .take_registration(input.ceremony_id)
         .await
         .map_err(|_| ApiError::unauthorized("registration ceremony is invalid or expired"))?;
+    if ceremony.purpose != RegistrationPurpose::Initial || ceremony.initiating_session_id.is_some()
+    {
+        return Err(ApiError::unauthorized(
+            "registration ceremony is invalid or expired",
+        ));
+    }
     let passkey = state
         .webauthn
         .finish_passkey_registration(&input.response, &ceremony.state)
         .map_err(|_| ApiError::unauthorized("passkey verification failed"))?;
     let current_credential_id = URL_SAFE_NO_PAD.encode(passkey.cred_id().as_ref());
+    let identifier = ceremony
+        .account_identifier()
+        .ok_or_else(|| ApiError::internal("registration identifier is missing"))?;
     let user = state
         .store
         .create_user_with_passkey(
             ceremony.user_id,
-            ceremony.email,
+            identifier,
+            ceremony.profile,
             passkey,
-            !state.email_verification_required,
+            !state.identity_verification_required,
         )
         .await
         .map_err(|error| match error.downcast_ref::<StorePolicyError>() {
             Some(
-                StorePolicyError::EmailAlreadyExists | StorePolicyError::CredentialAlreadyExists,
+                StorePolicyError::IdentifierAlreadyExists
+                | StorePolicyError::CredentialAlreadyExists,
             ) => ApiError::conflict(error.to_string()),
             _ => ApiError::internal(error),
         })?;
@@ -177,13 +217,13 @@ async fn registration_verify(
 async fn authentication_options(
     State(state): State<AppState>,
     headers: HeaderMap,
-    Json(input): Json<EmailInput>,
+    Json(input): Json<IdentifierLookupInput>,
 ) -> Result<Json<Value>, ApiError> {
     require_origin(&state, &headers)?;
-    let email = canonical_email(&input.email)?;
+    let identifier = lookup_identifier(input.identifier, input.email, input.phone)?;
     let user = state
         .store
-        .user_by_email(&email)
+        .user_by_identifier(&identifier)
         .await
         .map_err(ApiError::internal)?
         .ok_or_else(|| ApiError::unauthorized("passkey authentication is unavailable"))?;
@@ -199,7 +239,7 @@ async fn authentication_options(
     let ceremony = AuthenticationCeremony {
         id: Uuid::new_v4(),
         user_id: user.id,
-        expires_at: now() + CEREMONY_SECONDS,
+        expires_at: now().saturating_add(CEREMONY_SECONDS),
         state: ceremony_state,
     };
     state
@@ -274,6 +314,99 @@ async fn credentials(
     Ok(Json(json!({ "credentials": credentials })))
 }
 
+async fn account(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<Json<Value>, ApiError> {
+    let (_, _, user) = authenticated(&state, &headers).await?;
+    Ok(Json(account_body(&user)))
+}
+
+async fn update_profile(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(input): Json<UpdateProfileInput>,
+) -> Result<Json<Value>, ApiError> {
+    let (_, session, user) = authenticated(&state, &headers).await?;
+    require_passkey_session(&session)?;
+    let profile = account_profile(input.given_name, input.family_name, input.display_name)?;
+    let user = state
+        .store
+        .update_profile(user.id, profile)
+        .await
+        .map_err(ApiError::internal)?;
+    Ok(Json(account_body(&user)))
+}
+
+async fn add_identifier(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(input): Json<ChangeIdentifierInput>,
+) -> Result<(StatusCode, Json<Value>), ApiError> {
+    let (_, session, user) = authenticated(&state, &headers).await?;
+    require_recent_passkey(&session)?;
+    let identifier = canonical_identifier(input.kind, &input.value)?;
+    let user = state
+        .store
+        .add_identifier(user.id, identifier, !state.identity_verification_required)
+        .await
+        .map_err(|error| match error.downcast_ref::<StorePolicyError>() {
+            Some(StorePolicyError::IdentifierAlreadyExists) => {
+                ApiError::conflict("identifier already has an account")
+            }
+            Some(StorePolicyError::IdentifierLimit) => {
+                ApiError::conflict("account has reached the identifier limit")
+            }
+            _ => ApiError::internal(error),
+        })?;
+    Ok((StatusCode::CREATED, Json(account_body(&user))))
+}
+
+async fn remove_identifier(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(input): Json<ChangeIdentifierInput>,
+) -> Result<Json<Value>, ApiError> {
+    let (_, session, user) = authenticated(&state, &headers).await?;
+    require_recent_passkey(&session)?;
+    let identifier = canonical_identifier(input.kind, &input.value)?;
+    let user = state
+        .store
+        .remove_identifier(user.id, &identifier)
+        .await
+        .map_err(|error| match error.downcast_ref::<StorePolicyError>() {
+            Some(StorePolicyError::FinalIdentifier) => {
+                ApiError::conflict("the final account identifier cannot be removed")
+            }
+            Some(StorePolicyError::IdentifierNotLinked) => {
+                ApiError::bad_request("identifier is not linked to this account")
+            }
+            _ => ApiError::internal(error),
+        })?;
+    Ok(Json(account_body(&user)))
+}
+
+async fn set_primary_identifier(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(input): Json<ChangeIdentifierInput>,
+) -> Result<Json<Value>, ApiError> {
+    let (_, session, user) = authenticated(&state, &headers).await?;
+    require_recent_passkey(&session)?;
+    let identifier = canonical_identifier(input.kind, &input.value)?;
+    let user = state
+        .store
+        .set_primary_identifier(user.id, &identifier)
+        .await
+        .map_err(|error| match error.downcast_ref::<StorePolicyError>() {
+            Some(StorePolicyError::IdentifierNotLinked) => {
+                ApiError::bad_request("identifier is not linked to this account")
+            }
+            _ => ApiError::internal(error),
+        })?;
+    Ok(Json(account_body(&user)))
+}
+
 async fn local_agent_handoff(
     State(state): State<AppState>,
     Query(query): Query<LocalAgentHandoffQuery>,
@@ -317,18 +450,25 @@ async fn add_registration_options(
     headers: HeaderMap,
     Json(input): Json<AddRegistrationOptionsInput>,
 ) -> Result<Json<Value>, ApiError> {
-    let (_, _, user) = authenticated(&state, &headers).await?;
+    let (_, session, user) = authenticated(&state, &headers).await?;
+    require_recent_passkey(&session)?;
     let label = credential_label(&input.label)?;
+    let passkey_name = user.passkey_name();
+    let passkey_display_name = user.passkey_display_name();
     let (options, ceremony_state) = state
         .webauthn
-        .start_passkey_registration(user.id, &user.email, &user.email, None)
+        .start_passkey_registration(user.id, &passkey_name, &passkey_display_name, None)
         .map_err(|error| ApiError::internal(format!("start passkey registration: {error}")))?;
     let ceremony = RegistrationCeremony {
         id: Uuid::new_v4(),
         user_id: user.id,
         email: user.email,
+        identifier: None,
+        profile: AccountProfile::default(),
+        purpose: RegistrationPurpose::AddCredential,
+        initiating_session_id: Some(session.id),
         label: Some(label),
-        expires_at: now() + CEREMONY_SECONDS,
+        expires_at: now().saturating_add(CEREMONY_SECONDS),
         state: ceremony_state,
     };
     state
@@ -346,15 +486,19 @@ async fn add_registration_verify(
     headers: HeaderMap,
     Json(input): Json<RegistrationVerifyInput>,
 ) -> Result<StatusCode, ApiError> {
-    let (_, _, user) = authenticated(&state, &headers).await?;
+    let (_, session, user) = authenticated(&state, &headers).await?;
+    require_recent_passkey(&session)?;
     let ceremony = state
         .store
         .take_registration(input.ceremony_id)
         .await
         .map_err(|_| ApiError::unauthorized("registration ceremony is invalid or expired"))?;
-    if ceremony.user_id != user.id {
+    if ceremony.purpose != RegistrationPurpose::AddCredential
+        || ceremony.initiating_session_id != Some(session.id)
+        || ceremony.user_id != user.id
+    {
         return Err(ApiError::unauthorized(
-            "registration ceremony belongs to another account",
+            "registration ceremony is invalid or expired",
         ));
     }
     let passkey = state
@@ -383,7 +527,8 @@ async fn rename_credential(
     headers: HeaderMap,
     Json(input): Json<RenameCredentialInput>,
 ) -> Result<StatusCode, ApiError> {
-    let (_, _, user) = authenticated(&state, &headers).await?;
+    let (_, session, user) = authenticated(&state, &headers).await?;
+    require_passkey_session(&session)?;
     let credential_id = credential_id(&input.credential_id)?;
     let label = credential_label(&input.label)?;
     state
@@ -405,11 +550,7 @@ async fn revoke_credential(
     Json(input): Json<RevokeCredentialInput>,
 ) -> Result<StatusCode, ApiError> {
     let (_, session, user) = authenticated(&state, &headers).await?;
-    if now().saturating_sub(session.created_at) > CEREMONY_SECONDS {
-        return Err(ApiError::unauthorized(
-            "confirm with a passkey before removing a credential",
-        ));
-    }
+    require_recent_passkey(&session)?;
     let credential_id = credential_id(&input.credential_id)?;
     state
         .store
@@ -483,11 +624,12 @@ fn token_response(
     status: StatusCode,
 ) -> Result<Response, ApiError> {
     let mut body = state.jwt.issue(user, session).map_err(ApiError::internal)?;
-    // Local development must not depend on an external mail provider. Existing
+    // Local development must not depend on an external email/SMS provider. Existing
     // local users created before this policy changed are treated as verified
     // in responses without mutating production data or weakening production.
-    if !state.email_verification_required {
-        body.email_verified = true;
+    if !state.identity_verification_required {
+        body.email_verified = body.email.is_some();
+        body.phone_number_verified = body.phone_number.is_some();
     }
     let cookie = set_cookie(state, session_token);
     Ok((status, [(header::SET_COOKIE, cookie)], Json(body)).into_response())
@@ -514,19 +656,135 @@ fn require_bootstrap(state: &AppState, headers: &HeaderMap) -> Result<(), ApiErr
     Ok(())
 }
 
-fn canonical_email(value: &str) -> Result<String, ApiError> {
-    let email = value.trim().to_ascii_lowercase();
-    if email.len() > 320 || !email.contains('@') || email.starts_with('@') || email.ends_with('@') {
-        return Err(ApiError::bad_request("valid email required"));
+fn registration_identifier(input: &RegistrationOptionsInput) -> Result<IdentifierValue, ApiError> {
+    lookup_identifier_ref(
+        input.identifier.as_ref(),
+        input.email.as_deref(),
+        input.phone.as_deref(),
+    )
+}
+
+fn lookup_identifier(
+    identifier: Option<IdentifierRequest>,
+    email: Option<String>,
+    phone: Option<String>,
+) -> Result<IdentifierValue, ApiError> {
+    lookup_identifier_ref(identifier.as_ref(), email.as_deref(), phone.as_deref())
+}
+
+fn lookup_identifier_ref(
+    identifier: Option<&IdentifierRequest>,
+    email: Option<&str>,
+    phone: Option<&str>,
+) -> Result<IdentifierValue, ApiError> {
+    let supplied = usize::from(identifier.is_some())
+        + usize::from(email.is_some())
+        + usize::from(phone.is_some());
+    if supplied != 1 {
+        return Err(ApiError::bad_request(
+            "provide exactly one email or phone identifier",
+        ));
     }
-    Ok(email)
+    if let Some(identifier) = identifier {
+        return canonical_identifier(identifier.kind, &identifier.value);
+    }
+    if let Some(email) = email {
+        return canonical_identifier(IdentifierKind::Email, email);
+    }
+    canonical_identifier(
+        IdentifierKind::Phone,
+        phone.expect("one identifier was validated above"),
+    )
+}
+
+fn canonical_identifier(kind: IdentifierKind, value: &str) -> Result<IdentifierValue, ApiError> {
+    IdentifierValue::canonical(kind, value)
+        .map_err(|error| ApiError::bad_request(error.to_string()))
+}
+
+fn canonical_email(value: &str) -> Result<String, ApiError> {
+    Ok(canonical_identifier(IdentifierKind::Email, value)?.value)
+}
+
+#[cfg(test)]
+#[cfg(test)]
+fn canonical_phone(value: &str) -> Result<String, ApiError> {
+    Ok(canonical_identifier(IdentifierKind::Phone, value)?.value)
+}
+
+fn account_profile(
+    given_name: Option<String>,
+    family_name: Option<String>,
+    display_name: Option<String>,
+) -> Result<AccountProfile, ApiError> {
+    AccountProfile::canonical(given_name, family_name, display_name)
+        .map_err(|error| ApiError::bad_request(error.to_string()))
+}
+
+fn profile_display_name(profile: &AccountProfile) -> Option<String> {
+    profile.display_name.clone().or_else(|| {
+        let name = [
+            profile.given_name.as_deref(),
+            profile.family_name.as_deref(),
+        ]
+        .into_iter()
+        .flatten()
+        .collect::<Vec<_>>()
+        .join(" ");
+        (!name.is_empty()).then_some(name)
+    })
+}
+
+fn require_recent_passkey(session: &Session) -> Result<(), ApiError> {
+    require_passkey_session(session)?;
+    let current = now();
+    if session.created_at > current || current.saturating_sub(session.created_at) > CEREMONY_SECONDS
+    {
+        return Err(ApiError::unauthorized(
+            "confirm with a recent passkey before changing account security",
+        ));
+    }
+    Ok(())
+}
+
+fn require_passkey_session(session: &Session) -> Result<(), ApiError> {
+    if session.auth_method != "passkey" {
+        return Err(ApiError::unauthorized(
+            "confirm with a passkey before changing account identity",
+        ));
+    }
+    Ok(())
+}
+
+fn account_body(user: &User) -> Value {
+    let identifiers = user
+        .identifiers
+        .iter()
+        .map(|identifier| IdentifierOutput {
+            kind: identifier.kind,
+            value: identifier.value.clone(),
+            verified: identifier.verified,
+            verified_at: identifier.verified_at.map(timestamp),
+            primary: identifier.primary,
+            created_at: timestamp(identifier.created_at),
+        })
+        .collect::<Vec<_>>();
+    json!({
+        "id": user.id,
+        "profile": user.profile,
+        "identifiers": identifiers,
+        "createdAt": timestamp(user.created_at),
+    })
 }
 
 fn credential_label(value: &str) -> Result<String, ApiError> {
     let label = value.trim();
-    if label.is_empty() || label.len() > 80 || label.chars().any(char::is_control) {
+    if label.is_empty()
+        || label.chars().count() > 80
+        || label.chars().any(forbidden_display_character)
+    {
         return Err(ApiError::bad_request(
-            "passkey label must be between 1 and 80 characters",
+            "passkey label must contain 1–80 characters and no control or formatting characters",
         ));
     }
     Ok(label.to_string())
@@ -601,7 +859,17 @@ fn clear_cookie(state: &AppState) -> HeaderValue {
 
 #[cfg(test)]
 mod tests {
-    use super::{credential_id, credential_label, timestamp};
+    use uuid::Uuid;
+
+    use super::{
+        CEREMONY_SECONDS, account_profile, canonical_email, canonical_phone, credential_id,
+        credential_label, lookup_identifier_ref, require_passkey_session, require_recent_passkey,
+        timestamp,
+    };
+    use crate::{
+        auth::dto::IdentifierRequest,
+        store::{IdentifierKind, Session, now},
+    };
 
     #[test]
     fn credential_labels_are_trimmed_and_bounded() {
@@ -609,6 +877,8 @@ mod tests {
         assert!(credential_label("").is_err());
         assert!(credential_label(&"x".repeat(81)).is_err());
         assert!(credential_label("bad\nlabel").is_err());
+        assert!(credential_label("safe\u{202e}spoof").is_err());
+        assert!(credential_label(&"🔑".repeat(80)).is_ok());
     }
 
     #[test]
@@ -622,5 +892,103 @@ mod tests {
     #[test]
     fn credential_dates_are_rfc3339() {
         assert_eq!(timestamp(0), "1970-01-01T00:00:00Z");
+    }
+
+    #[test]
+    fn phone_numbers_are_normalized_to_e164() {
+        assert_eq!(
+            canonical_phone(" +44 (7700) 900-123 ").unwrap(),
+            "+447700900123"
+        );
+        assert!(canonical_phone("07700 900123").is_err());
+        assert!(canonical_phone("+0123456789").is_err());
+        assert!(canonical_phone("+1234567").is_err());
+        assert!(canonical_phone("+1234567890123456").is_err());
+    }
+
+    #[test]
+    fn emails_use_a_strict_ascii_dot_atom_profile() {
+        assert_eq!(
+            canonical_email(" Ada.Lovelace+alerts@Example.COM ").unwrap(),
+            "ada.lovelace+alerts@example.com"
+        );
+        for invalid in [
+            "a@@example.com",
+            "a b@example.com",
+            "é@example.com",
+            ".a@example.com",
+            "a..b@example.com",
+            "a@-example.com",
+            "a@example-.com",
+            "a@example..com",
+        ] {
+            assert!(canonical_email(invalid).is_err(), "accepted {invalid}");
+        }
+        assert!(canonical_email(&format!("a@{}.test", "x".repeat(64))).is_err());
+    }
+
+    #[test]
+    fn identifier_input_is_unambiguous_and_backwards_compatible() {
+        let email = lookup_identifier_ref(None, Some(" Person@Example.com "), None).unwrap();
+        assert_eq!(email.kind, IdentifierKind::Email);
+        assert_eq!(email.value, "person@example.com");
+
+        let phone = IdentifierRequest {
+            kind: IdentifierKind::Phone,
+            value: "+44 7700 900123".into(),
+        };
+        assert_eq!(
+            lookup_identifier_ref(Some(&phone), None, None)
+                .unwrap()
+                .value,
+            "+447700900123"
+        );
+        assert!(lookup_identifier_ref(None, None, None).is_err());
+        assert!(lookup_identifier_ref(Some(&phone), Some("a@b.test"), None).is_err());
+    }
+
+    #[test]
+    fn basic_profile_names_are_trimmed_and_bounded() {
+        let profile = account_profile(
+            Some(" Ada ".into()),
+            Some(" Lovelace ".into()),
+            Some(" ".into()),
+        )
+        .unwrap();
+        assert_eq!(profile.given_name.as_deref(), Some("Ada"));
+        assert_eq!(profile.family_name.as_deref(), Some("Lovelace"));
+        assert_eq!(profile.display_name, None);
+        assert!(account_profile(Some("bad\nname".into()), None, None).is_err());
+        assert!(account_profile(Some("bad\u{200b}name".into()), None, None).is_err());
+        assert!(account_profile(None, None, Some("bad\u{202e}name".into())).is_err());
+        assert!(account_profile(Some("x".repeat(101)), None, None).is_err());
+    }
+
+    #[test]
+    fn sensitive_account_changes_require_a_recent_passkey_session() {
+        let current = now();
+        let session = |auth_method: &str, created_at: u64| Session {
+            id: Uuid::new_v4(),
+            user_id: Uuid::new_v4(),
+            auth_method: auth_method.into(),
+            current_credential_id: None,
+            session_version: 1,
+            created_at,
+            last_seen_at: current,
+            absolute_expires_at: current + 3_600,
+        };
+        assert!(require_recent_passkey(&session("passkey", current)).is_ok());
+        assert!(require_passkey_session(&session("passkey", current)).is_ok());
+        assert!(require_recent_passkey(&session("agent", current)).is_err());
+        assert!(require_passkey_session(&session("agent", current)).is_err());
+        assert!(require_passkey_session(&session("passkey", current - 301)).is_ok());
+        assert!(require_recent_passkey(&session("passkey", current + 1)).is_err());
+        assert!(
+            require_recent_passkey(&session(
+                "passkey",
+                current.saturating_sub(CEREMONY_SECONDS + 1),
+            ))
+            .is_err()
+        );
     }
 }

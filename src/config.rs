@@ -1,10 +1,14 @@
 //! Fail-closed environment configuration and deployment-policy validation.
 
-use std::{env, net::IpAddr, str::FromStr};
+use std::{collections::HashSet, env, fmt, net::IpAddr, str::FromStr, sync::Arc};
 
 use anyhow::{Context, Result, bail};
 use secrecy::{ExposeSecret, SecretString};
+use sha2::{Digest, Sha256};
 use url::Url;
+use zeroize::Zeroize;
+
+use crate::store::{IdentifierKind, IdentifierValue};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Environment {
@@ -19,8 +23,99 @@ pub struct BackupConfig {
     pub bucket: String,
     pub access_key_id: SecretString,
     pub secret_access_key: SecretString,
-    pub encryption_key: [u8; 32],
+    pub encryption_keys: KeyRing,
     pub force_path_style: bool,
+    pub interval_seconds: u64,
+}
+
+#[derive(Clone, Debug)]
+pub struct SigningRotationConfig {
+    pub rotation_seconds: u64,
+    pub prepublish_seconds: u64,
+    pub overlap_seconds: u64,
+    pub maintenance_seconds: u64,
+}
+
+#[derive(Clone)]
+pub struct KeyRing(Arc<KeyRingInner>);
+
+struct KeyRingInner {
+    active: KeyEntry,
+    previous: Vec<KeyEntry>,
+}
+
+struct KeyEntry {
+    id: String,
+    key: [u8; 32],
+}
+
+impl Drop for KeyRingInner {
+    fn drop(&mut self) {
+        self.active.key.zeroize();
+        for entry in &mut self.previous {
+            entry.key.zeroize();
+        }
+    }
+}
+
+impl fmt::Debug for KeyRing {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("KeyRing")
+            .field("active_key_id", &self.0.active.id)
+            .field(
+                "previous_key_ids",
+                &self
+                    .0
+                    .previous
+                    .iter()
+                    .map(|entry| entry.id.as_str())
+                    .collect::<Vec<_>>(),
+            )
+            .finish_non_exhaustive()
+    }
+}
+
+impl KeyRing {
+    pub(crate) fn new(purpose: &str, active: [u8; 32], previous: Vec<[u8; 32]>) -> Result<Self> {
+        let active = KeyEntry {
+            id: derived_key_id(purpose, &active),
+            key: active,
+        };
+        let mut seen = HashSet::from([active.id.clone()]);
+        let mut entries = Vec::with_capacity(previous.len());
+        for key in previous {
+            let id = derived_key_id(purpose, &key);
+            if !seen.insert(id.clone()) {
+                bail!("{purpose} keyring contains the same key more than once");
+            }
+            entries.push(KeyEntry { id, key });
+        }
+        Ok(Self(Arc::new(KeyRingInner {
+            active,
+            previous: entries,
+        })))
+    }
+
+    pub fn active(&self) -> (&str, &[u8; 32]) {
+        (&self.0.active.id, &self.0.active.key)
+    }
+
+    pub fn get(&self, id: &str) -> Option<&[u8; 32]> {
+        if self.0.active.id == id {
+            return Some(&self.0.active.key);
+        }
+        self.0
+            .previous
+            .iter()
+            .find(|entry| entry.id == id)
+            .map(|entry| &entry.key)
+    }
+
+    pub fn key_ids(&self) -> impl Iterator<Item = &str> {
+        std::iter::once(self.0.active.id.as_str())
+            .chain(self.0.previous.iter().map(|entry| entry.id.as_str()))
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -33,13 +128,17 @@ pub struct Config {
     pub rp_origin: Url,
     pub rp_name: String,
     pub sabledb_url: SecretString,
-    pub master_key: [u8; 32],
+    pub master_keys: KeyRing,
     pub bootstrap_token: SecretString,
+    pub event_rpc_token: SecretString,
+    pub identity_rpc_token: SecretString,
+    pub operator_emails: Vec<String>,
     pub audience: String,
     pub tenant_id: String,
     pub access_token_seconds: u64,
     pub session_idle_seconds: u64,
     pub session_absolute_seconds: u64,
+    pub signing_rotation: SigningRotationConfig,
     pub backup: Option<BackupConfig>,
 }
 
@@ -63,22 +162,49 @@ impl Config {
         let rp_id = required("WEBAUTHN_RP_ID")?;
         let rp_name = required("WEBAUTHN_RP_NAME")?;
         let sabledb_url = SecretString::from(required("SABLEDB_URL")?);
-        let master_key = decode_key("AUTH_MASTER_KEY_HEX")?;
+        let master_keys = decode_keyring(
+            "AUTH_MASTER_KEY_HEX",
+            "AUTH_MASTER_PREVIOUS_KEYS_HEX",
+            "master",
+        )?;
         let bootstrap_token = SecretString::from(required("BOOTSTRAP_TOKEN")?);
+        let event_rpc_token = SecretString::from(required("AUTH_EVENT_RPC_TOKEN")?);
+        let identity_rpc_token = SecretString::from(required("AUTH_IDENTITY_RPC_TOKEN")?);
+        let operator_emails = parse_operator_emails(optional("AUTH_OPERATOR_EMAILS"))?;
         let audience = required("SPACETIME_AUDIENCE")?;
         let tenant_id = optional("AUTH_TENANT_ID").unwrap_or_else(|| "vtr".into());
         let access_token_seconds = integer("AUTH_ACCESS_TOKEN_SECONDS", 300, 60, 900)?;
         let session_idle_seconds = integer("AUTH_SESSION_IDLE_SECONDS", 1_800, 300, 86_400)?;
         let session_absolute_seconds =
             integer("AUTH_SESSION_ABSOLUTE_SECONDS", 604_800, 3_600, 2_592_000)?;
+        let rotation_seconds = integer(
+            "AUTH_SIGNING_KEY_ROTATION_SECONDS",
+            2_592_000,
+            3_600,
+            31_536_000,
+        )?;
+        let prepublish_seconds = integer("AUTH_SIGNING_KEY_PREPUBLISH_SECONDS", 600, 300, 86_400)?;
+        let minimum_overlap = access_token_seconds.saturating_add(300);
+        let overlap_seconds = integer(
+            "AUTH_SIGNING_KEY_OVERLAP_SECONDS",
+            minimum_overlap,
+            minimum_overlap,
+            86_400,
+        )?;
+        let maintenance_seconds = integer("AUTH_KEY_MAINTENANCE_SECONDS", 30, 5, 3_600)?;
 
         validate_origin(&environment, "AUTH_ISSUER", &issuer)?;
         validate_origin(&environment, "WEBAUTHN_RP_ORIGIN", &rp_origin)?;
         validate_rp(&rp_id, &rp_origin)?;
         validate_sable_url(&environment, &sabledb_url)?;
+        validate_tenant_id(&tenant_id)?;
+        if prepublish_seconds >= rotation_seconds {
+            bail!("AUTH_SIGNING_KEY_PREPUBLISH_SECONDS must be shorter than the rotation period");
+        }
         if environment == Environment::Production && bootstrap_token.expose_secret().len() < 32 {
             bail!("BOOTSTRAP_TOKEN must contain at least 32 characters in production");
         }
+        validate_rpc_tokens(&bootstrap_token, &event_rpc_token, &identity_rpc_token)?;
 
         Ok(Self {
             environment,
@@ -89,16 +215,44 @@ impl Config {
             rp_origin,
             rp_name,
             sabledb_url,
-            master_key,
+            master_keys,
             bootstrap_token,
+            event_rpc_token,
+            identity_rpc_token,
+            operator_emails,
             audience,
             tenant_id,
             access_token_seconds,
             session_idle_seconds,
             session_absolute_seconds,
+            signing_rotation: SigningRotationConfig {
+                rotation_seconds,
+                prepublish_seconds,
+                overlap_seconds,
+                maintenance_seconds,
+            },
             backup: BackupConfig::from_env()?,
         })
     }
+}
+
+fn parse_operator_emails(value: Option<String>) -> Result<Vec<String>> {
+    let mut emails = Vec::new();
+    let mut seen = HashSet::new();
+    for value in value.unwrap_or_default().split(',') {
+        let value = value.trim();
+        if value.is_empty() {
+            continue;
+        }
+        let email = IdentifierValue::canonical(IdentifierKind::Email, value)
+            .context("AUTH_OPERATOR_EMAILS contains an invalid email")?
+            .value;
+        if !seen.insert(email.clone()) {
+            bail!("AUTH_OPERATOR_EMAILS contains a duplicate email");
+        }
+        emails.push(email);
+    }
+    Ok(emails)
 }
 
 impl BackupConfig {
@@ -112,7 +266,20 @@ impl BackupConfig {
             "AUTH_BACKUP_ENCRYPTION_KEY_HEX",
         ];
         let present = names.iter().filter(|name| optional(name).is_some()).count();
+        let optional_backup_names = [
+            "AUTH_BACKUP_PREVIOUS_KEYS_HEX",
+            "AUTH_BACKUP_INTERVAL_SECONDS",
+            "AUTH_BACKUP_URL_STYLE",
+        ];
         if present == 0 {
+            if optional_backup_names
+                .iter()
+                .any(|name| optional(name).is_some())
+            {
+                bail!(
+                    "backup options were provided without the complete required AUTH_BACKUP_* configuration"
+                );
+            }
             return Ok(None);
         }
         if present != names.len() {
@@ -132,8 +299,13 @@ impl BackupConfig {
             bucket: required("AUTH_BACKUP_BUCKET")?,
             access_key_id: SecretString::from(required("AUTH_BACKUP_ACCESS_KEY_ID")?),
             secret_access_key: SecretString::from(required("AUTH_BACKUP_SECRET_ACCESS_KEY")?),
-            encryption_key: decode_key("AUTH_BACKUP_ENCRYPTION_KEY_HEX")?,
+            encryption_keys: decode_keyring(
+                "AUTH_BACKUP_ENCRYPTION_KEY_HEX",
+                "AUTH_BACKUP_PREVIOUS_KEYS_HEX",
+                "backup",
+            )?,
             force_path_style,
+            interval_seconds: integer("AUTH_BACKUP_INTERVAL_SECONDS", 21_600, 300, 604_800)?,
         }))
     }
 }
@@ -154,10 +326,36 @@ fn parse_url(name: &str) -> Result<Url> {
 }
 
 fn decode_key(name: &str) -> Result<[u8; 32]> {
-    let bytes = hex::decode(required(name)?).with_context(|| format!("{name} must be hex"))?;
+    decode_key_value(name, &required(name)?)
+}
+
+fn decode_key_value(name: &str, value: &str) -> Result<[u8; 32]> {
+    let bytes = hex::decode(value).with_context(|| format!("{name} must be hex"))?;
     bytes
         .try_into()
         .map_err(|_| anyhow::anyhow!("{name} must contain exactly 32 bytes (64 hex characters)"))
+}
+
+fn decode_keyring(active_name: &str, previous_name: &str, purpose: &str) -> Result<KeyRing> {
+    let active = decode_key(active_name)?;
+    let previous = optional(previous_name)
+        .map(|values| {
+            values
+                .split(',')
+                .enumerate()
+                .map(|(index, value)| {
+                    decode_key_value(&format!("{previous_name} item {}", index + 1), value.trim())
+                })
+                .collect::<Result<Vec<_>>>()
+        })
+        .transpose()?
+        .unwrap_or_default();
+    KeyRing::new(purpose, active, previous)
+}
+
+fn derived_key_id(purpose: &str, key: &[u8; 32]) -> String {
+    let digest = Sha256::digest(key);
+    format!("{purpose}-{}", hex::encode(&digest[..12]))
 }
 
 fn integer(name: &str, fallback: u64, minimum: u64, maximum: u64) -> Result<u64> {
@@ -209,6 +407,41 @@ fn validate_sable_url(environment: &Environment, value: &SecretString) -> Result
     Ok(())
 }
 
+fn validate_tenant_id(value: &str) -> Result<()> {
+    if value.is_empty()
+        || value.len() > 64
+        || !value
+            .chars()
+            .all(|character| character.is_ascii_alphanumeric() || matches!(character, '-' | '_'))
+    {
+        bail!("AUTH_TENANT_ID must contain 1-64 ASCII letters, digits, hyphens or underscores");
+    }
+    Ok(())
+}
+
+fn validate_rpc_tokens(
+    bootstrap: &SecretString,
+    event: &SecretString,
+    identity: &SecretString,
+) -> Result<()> {
+    if event.expose_secret().len() < 32 {
+        bail!("AUTH_EVENT_RPC_TOKEN must contain at least 32 characters");
+    }
+    if identity.expose_secret().len() < 32 {
+        bail!("AUTH_IDENTITY_RPC_TOKEN must contain at least 32 characters");
+    }
+    if event.expose_secret() == bootstrap.expose_secret() {
+        bail!("AUTH_EVENT_RPC_TOKEN must not reuse BOOTSTRAP_TOKEN");
+    }
+    if identity.expose_secret() == bootstrap.expose_secret() {
+        bail!("AUTH_IDENTITY_RPC_TOKEN must not reuse BOOTSTRAP_TOKEN");
+    }
+    if identity.expose_secret() == event.expose_secret() {
+        bail!("AUTH_IDENTITY_RPC_TOKEN must not reuse AUTH_EVENT_RPC_TOKEN");
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -224,5 +457,37 @@ mod tests {
     fn production_requires_https() {
         let origin = Url::parse("http://auth.example.com").unwrap();
         assert!(validate_origin(&Environment::Production, "origin", &origin).is_err());
+    }
+
+    #[test]
+    fn key_ids_are_stable_and_key_material_is_not_debugged() {
+        let ring = KeyRing::new("backup", [7; 32], vec![[8; 32]]).unwrap();
+        let active_id = ring.active().0.to_owned();
+        assert_eq!(ring.get(&active_id), Some(&[7; 32]));
+        let debug = format!("{ring:?}");
+        assert!(debug.contains(&active_id));
+        assert!(!debug.contains("07070707"));
+    }
+
+    #[test]
+    fn keyrings_reject_duplicate_material() {
+        assert!(KeyRing::new("master", [1; 32], vec![[1; 32]]).is_err());
+    }
+
+    #[test]
+    fn tenant_ids_are_safe_for_object_prefixes() {
+        assert!(validate_tenant_id("tenant_01-prod").is_ok());
+        assert!(validate_tenant_id("../another-tenant").is_err());
+        assert!(validate_tenant_id("").is_err());
+    }
+
+    #[test]
+    fn rpc_tokens_are_long_and_separately_scoped() {
+        let bootstrap = SecretString::from("bootstrap-token-longer-than-32-characters");
+        let event = SecretString::from("event-token-longer-than-32-characters");
+        let identity = SecretString::from("identity-token-longer-than-32-characters");
+        assert!(validate_rpc_tokens(&bootstrap, &event, &identity).is_ok());
+        assert!(validate_rpc_tokens(&bootstrap, &event, &event).is_err());
+        assert!(validate_rpc_tokens(&bootstrap, &SecretString::from("short"), &identity).is_err());
     }
 }

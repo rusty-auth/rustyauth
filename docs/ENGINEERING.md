@@ -11,15 +11,30 @@ failure behavior and a small operational surface—not framework novelty or spec
 | `src/app_state.rs` | Initialized capabilities shared by handlers | Request-scoped or mutable global data |
 | `src/auth.rs` | HTTP contract, origin policy and response mapping | Direct SableDB commands or key custody |
 | `src/store.rs` | Durable records, key layout and atomic mutations | HTTP status codes or browser policy |
+| `src/identity_rpc.rs` | Safe identity projection and private control-plane RPC | WebAuthn material exposure or storage keys |
+| `src/event_rpc.rs` | Ordered replay/follow event projection | Event mutation or consumer checkpoints |
+| `src/rpc.rs` | RPC composition, limits and scoped service authentication | Identity persistence policy |
 | `src/jwt.rs` | Signing-key custody and token issuance | Session validation or application authorization |
 | `src/config.rs` | Typed configuration and deployment validation | Runtime defaults that weaken production |
-| `src/backup.rs` | Encrypted S3-compatible transport primitive | Claims of complete backup or recovery |
+| `src/backup.rs` | Logical snapshot validation, authenticated envelopes and S3 backup operations | HTTP policy or storage mutations outside the snapshot boundary |
 | `site/src` | Static public site and documentation UI | Product secrets or service-side auth logic |
 | `infra/cloudflare` | Cloudflare Pages and DNS control plane | Application deployment or secret values |
 
 The current service is intentionally a single binary. New modules should represent a real security,
 protocol, persistence or operational boundary. Do not create layers whose only purpose is to rename a
 function call.
+
+## Identity persistence changes
+
+[Identity data model](IDENTITY_DATA_MODEL.md) is the canonical persisted-identity contract. A change
+to `User`, `AccountIdentifier`, `AccountProfile`, `StoredPasskey`, `Session`, identity indexes or
+identity events must update that reference in the same pull request.
+
+Review the complete data path: stored record and indexes → backup validation and restore behavior →
+safe HTTP/RPC projection → event metadata → documentation. New durable fields require backwards-
+compatible deserialization or an explicit migration, bounded validation, backup coverage and a
+decision about whether they belong in JWTs, API responses and administrative search. Do not expose
+opaque WebAuthn credential state merely because it exists inside the aggregate.
 
 ## Rust rules
 
@@ -73,6 +88,11 @@ For release candidates, also run:
 cargo build --locked --release
 docker build --tag rustyauth:local .
 ```
+
+Changes to persistence, signing or recovery must also pass the real-service clean-room drill in
+`compose.integration.yaml`. It proves encrypted upload, previous-key decryption, empty-target
+restore, default session invalidation, signing-key replacement and ordered-event continuity against
+two SableDB instances and MinIO.
 
 ## Change design
 

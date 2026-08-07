@@ -5,6 +5,8 @@ RUN apt-get update \
   && rm -rf /var/lib/apt/lists/*
 WORKDIR /src
 COPY Cargo.toml Cargo.lock ./
+COPY build.rs ./
+COPY proto ./proto
 COPY src ./src
 RUN find src -type f -exec touch {} + \
     && cargo build --locked --release \

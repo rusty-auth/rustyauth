@@ -23,6 +23,13 @@ deno task site:test
 
 The build output is `site/dist/` and is suitable for Cloudflare's static asset hosting.
 
+## Documentation content
+
+Public documentation routes live under `site/src/pages/docs`. The recovery runbook is
+`/docs/recovery`; keep its command examples and the landing-page status table aligned with the root
+configuration and deployment references whenever operator behavior changes. Add every new route to
+`site/tests/rendered-html.test.ts` so the static build proves it is present.
+
 ## Deployment
 
 Cloudflare Pages, apex DNS and the `rustyauth.dev` domain binding are managed by the production

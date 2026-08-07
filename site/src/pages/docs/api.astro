@@ -2,14 +2,18 @@
 import DocsLayout from "../../layouts/DocsLayout.astro";
 const endpoints = [
   ["GET", "/healthz", "Public", "Process liveness"], ["GET", "/readyz", "Public", "SableDB-backed readiness"],
-  ["GET", "/.well-known/jwks.json", "Public", "ES256 verification keys"], ["POST", "/v1/passkeys/register/start", "Session", "Start registration"],
-  ["POST", "/v1/passkeys/register/finish", "Session", "Finish registration"], ["POST", "/v1/passkeys/authenticate/start", "Public", "Start sign-in"],
-  ["POST", "/v1/passkeys/authenticate/finish", "Public", "Finish sign-in"], ["POST", "/v1/sessions/logout", "Session", "Revoke current session"],
+  ["GET", "/.well-known/jwks.json", "Public", "ES256 verification keys"], ["POST", "/v1/passkeys/registration/options", "Origin + bootstrap", "Start registration"],
+  ["POST", "/v1/passkeys/registration/verify", "Origin + bootstrap", "Finish registration"], ["POST", "/v1/passkeys/authentication/options", "Origin", "Start sign-in"],
+  ["POST", "/v1/passkeys/authentication/verify", "Origin", "Finish sign-in"], ["GET", "/v1/account", "Session", "Read profile and identifiers"],
+  ["POST", "/v1/account/profile", "Passkey session", "Update basic profile"], ["POST", "/v1/account/identifiers", "Recent passkey", "Add an email or phone"],
+  ["GET", "/v1/credentials", "Session", "List account passkeys"], ["POST", "/v1/sign-out", "Origin", "Revoke current session"],
 ];
 ---
-<DocsLayout title="HTTP API" eyebrow="Version 0.1" intro="The browser-facing JSON endpoints currently shipped by RustyAuth.">
-  <div class="doc-callout"><strong>Protocol status</strong><p>The 0.1 service ships HTTP/JSON. Protobuf and gRPC are a planned service boundary and are intentionally not represented as available endpoints.</p></div>
+<DocsLayout title="HTTP and RPC API" eyebrow="Version 0.1" intro="Browser-facing JSON plus a private, versioned service boundary.">
+  <div class="doc-callout"><strong>Protocol status</strong><p>Browser WebAuthn ceremonies use HTTP/JSON. Trusted consumers can use Connect, gRPC-Web or gRPC for identity management and durable event streaming with separately scoped bearer credentials.</p></div>
   <h2>Endpoints</h2><div class="endpoint-table">{endpoints.map(([method, path, access, purpose]) => <div class="endpoint-row"><b class={method === "POST" ? "post" : ""}>{method}</b><code>{path}</code><span>{access}</span><p>{purpose}</p></div>)}</div>
+  <h2>Account identity</h2><p>Passkeys, canonical email or E.164 phone identifiers, and optional given, family and display names attach to a stable account UUID. Existing email-only request bodies remain valid. The <a href="/docs/identity-data">identity data model</a> documents every stored field and the data deliberately excluded from each response.</p>
+  <h2>Discovery and operations</h2><p>The JWKS endpoint publishes active, staged and overlapping retired verification keys. Runtime capability metadata reports whether scheduled backups are configured, the last successful backup time and current backup health. Backup and key-rotation commands are operator CLI surfaces, not public HTTP endpoints.</p>
   <h2>Error behaviour</h2><p>Security-sensitive failures are explicit. Invalid origins, missing ceremonies, expired sessions, unknown credentials and an unavailable durable store do not degrade into successful empty responses.</p>
-  <h2>Future gRPC boundary</h2><p>The planned Protobuf contracts will target trusted application-to-RustyAuth calls. Browser WebAuthn ceremonies will remain HTTP-oriented.</p>
+  <h2>Private gRPC boundary</h2><p><code>rustyauth.identity.v1.IdentityService</code> supports safe user reads, exact search, profile and email/phone updates, and passkey rename/revoke operations. <code>rustyauth.events.v1.AuthEventService</code> provides resumable server streaming. Passkey credential material never appears in RPC responses.</p>
 </DocsLayout>

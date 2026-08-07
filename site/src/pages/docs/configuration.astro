@@ -1,10 +1,12 @@
 ---
 import DocsLayout from "../../layouts/DocsLayout.astro";
-const variables = [["APP_ORIGIN", "Exact public relying-party origin"], ["SABLEDB_URL", "Private Valkey-protocol URL"], ["AUTH_TENANT_ID", "Stable tenant namespace"], ["JWT_ISSUER", "Expected access-token issuer"], ["JWT_AUDIENCE", "Expected downstream audience"], ["SESSION_IDLE_TTL", "Idle session lifetime"], ["SESSION_ABSOLUTE_TTL", "Maximum session lifetime"]];
+const variables = [["AUTH_ISSUER", "Public RustyAuth origin"], ["WEBAUTHN_RP_ORIGIN", "Exact browser application origin"], ["WEBAUTHN_RP_ID", "Exact host of the browser origin"], ["SABLEDB_URL", "Private Valkey-protocol URL"], ["AUTH_MASTER_KEY_HEX", "Active key wrapping signing material"], ["BOOTSTRAP_TOKEN", "Administrative enrolment credential"], ["AUTH_EVENT_RPC_TOKEN", "Private event-stream bearer credential"], ["AUTH_IDENTITY_RPC_TOKEN", "Private identity-control bearer credential"], ["SPACETIME_AUDIENCE", "Expected downstream audience"], ["AUTH_TENANT_ID", "Stable tenant identifier"]];
 ---
 <DocsLayout title="Configuration" eyebrow="Fail-closed startup" intro="Security-critical settings are validated before RustyAuth accepts traffic.">
   <h2>Core variables</h2><div class="variable-list">{variables.map(([name, purpose]) => <div><code>{name}</code><p>{purpose}</p></div>)}</div>
   <h2>Origin policy</h2><p>RustyAuth compares exact origins. Production wildcard origins are rejected because WebAuthn relying-party identity and browser cookies both depend on a stable boundary.</p>
   <h2>SableDB boundary</h2><p>The production SableDB hostname must resolve on the private network. The process refuses configurations that imply a public production database endpoint.</p>
+  <h2>Signing rotation</h2><p>Signing keys rotate automatically with safe JWKS prepublication and retired-key overlap. To rotate the master key, place the new value in <code>AUTH_MASTER_KEY_HEX</code> and keep the old value temporarily in <code>AUTH_MASTER_PREVIOUS_KEYS_HEX</code>. RustyAuth derives key IDs and rewraps private material automatically.</p>
+  <h2>Scheduled backups</h2><p>Provide the six required <code>AUTH_BACKUP_*</code> storage and encryption values to enable a verified backup at startup and every six hours by default. During backup-key rotation, retain old keys temporarily in <code>AUTH_BACKUP_PREVIOUS_KEYS_HEX</code>.</p>
   <div class="doc-callout warning"><strong>Protect secrets</strong><p>Signing keys, bootstrap values and production credentials belong in your deployment platform's encrypted secret store, never in committed environment files.</p></div>
 </DocsLayout>
