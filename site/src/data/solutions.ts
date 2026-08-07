@@ -1,3 +1,6 @@
+/** Which 3D station the boundary scene should draw for a step. */
+export type BoundaryIcon = "passkey" | "key" | "app" | "rustyauth" | "database" | "policy";
+
 export interface Solution {
   slug: string;
   sector: string;
@@ -10,7 +13,7 @@ export interface Solution {
   scenario: string;
   pressures: Array<[string, string]>;
   capabilities: Array<[string, string]>;
-  boundary: Array<[string, string, string]>;
+  boundary: Array<[string, string, string, BoundaryIcon]>;
   doesNotReplace: string[];
   productionNeeds: string[];
 }
@@ -52,10 +55,10 @@ export const solutions: Solution[] = [
       ["Narrow tokens", "Short-lived ES256 access tokens with explicit issuer, audience and tenant claims."],
     ],
     boundary: [
-      ["01", "Product browser", "Creates and uses a passkey"],
-      ["02", "RustyAuth", "Verifies ceremonies and owns sessions"],
-      ["03", "Private SableDB", "Keeps durable identity state"],
-      ["04", "Application API", "Validates claims and applies policy"],
+      ["01", "Product browser", "Creates and uses a passkey", "passkey"],
+      ["02", "RustyAuth", "Verifies ceremonies and owns sessions", "rustyauth"],
+      ["03", "Private SableDB", "Keeps durable identity state", "database"],
+      ["04", "Application API", "Validates claims and applies policy", "app"],
     ],
     doesNotReplace: [
       "Application roles and entitlements",
@@ -101,10 +104,10 @@ export const solutions: Solution[] = [
       ["Ordered events", "A resumable event stream for downstream operational integrations."],
     ],
     boundary: [
-      ["01", "Player or operator", "Uses an enrolled passkey"],
-      ["02", "Gaming product", "Owns the customer journey"],
-      ["03", "RustyAuth", "Authenticates and issues narrow claims"],
-      ["04", "Risk and payments", "Make fraud and transaction decisions"],
+      ["01", "Player or operator", "Uses an enrolled passkey", "passkey"],
+      ["02", "Gaming product", "Owns the customer journey", "app"],
+      ["03", "RustyAuth", "Authenticates and issues narrow claims", "rustyauth"],
+      ["04", "Risk and payments", "Make fraud and transaction decisions", "policy"],
     ],
     doesNotReplace: [
       "Age or identity verification",
@@ -152,10 +155,10 @@ export const solutions: Solution[] = [
       ["Key lifecycle", "Staged signing-key rotation with overlapping public-key publication."],
     ],
     boundary: [
-      ["01", "Customer or employee", "Authenticates with a passkey"],
-      ["02", "RustyAuth", "Maintains the authenticated session"],
-      ["03", "Banking application", "Consumes narrow identity claims"],
-      ["04", "Bank controls", "Apply policy, risk and transaction rules"],
+      ["01", "Customer or employee", "Authenticates with a passkey", "passkey"],
+      ["02", "RustyAuth", "Maintains the authenticated session", "rustyauth"],
+      ["03", "Banking application", "Consumes narrow identity claims", "app"],
+      ["04", "Bank controls", "Apply policy, risk and transaction rules", "policy"],
     ],
     doesNotReplace: [
       "Transaction signing or payment approval",
@@ -203,10 +206,10 @@ export const solutions: Solution[] = [
       ["Recovery operations", "Encrypted logical backups with verification and clean-room restore commands."],
     ],
     boundary: [
-      ["01", "User", "Proves control of a passkey"],
-      ["02", "RustyAuth", "Authenticates and records events"],
-      ["03", "Financial product", "Applies roles and entitlements"],
-      ["04", "Systems of record", "Remain authoritative for assets and actions"],
+      ["01", "User", "Proves control of a passkey", "passkey"],
+      ["02", "RustyAuth", "Authenticates and records events", "rustyauth"],
+      ["03", "Financial product", "Applies roles and entitlements", "app"],
+      ["04", "Systems of record", "Remain authoritative for assets and actions", "database"],
     ],
     doesNotReplace: [
       "Portfolio or trading permissions",
@@ -263,10 +266,10 @@ export const solutions: Solution[] = [
       ],
     ],
     boundary: [
-      ["01", "Clinician or engineer", "Uses an approved authenticator"],
-      ["02", "Healthcare product", "Owns the workflow and user experience"],
-      ["03", "Local RustyAuth", "Authenticates inside the installation"],
-      ["04", "Clinical systems", "Retain domain authority and records"],
+      ["01", "Clinician or engineer", "Uses an approved authenticator", "passkey"],
+      ["02", "Healthcare product", "Owns the workflow and user experience", "app"],
+      ["03", "Local RustyAuth", "Authenticates inside the installation", "rustyauth"],
+      ["04", "Clinical systems", "Retain domain authority and records", "database"],
     ],
     doesNotReplace: [
       "Patient identity matching",
@@ -320,10 +323,10 @@ export const solutions: Solution[] = [
       ],
     ],
     boundary: [
-      ["01", "Issued security key", "Holds a device-bound credential"],
-      ["02", "Local application", "Runs on the trusted internal origin"],
-      ["03", "RustyAuth enclave", "Verifies locally and issues tokens"],
-      ["04", "Private persistence", "Keeps identity and signing state inside"],
+      ["01", "Issued security key", "Holds a device-bound credential", "key"],
+      ["02", "Local application", "Runs on the trusted internal origin", "app"],
+      ["03", "RustyAuth enclave", "Verifies locally and issues tokens", "rustyauth"],
+      ["04", "Private persistence", "Keeps identity and signing state inside", "database"],
     ],
     doesNotReplace: [
       "Personnel vetting or identity proofing",
