@@ -24,7 +24,7 @@ connectrpc = "0.8.1"
 hex = "0.4"
 http = "1"
 jsonwebtoken = { version = "11", default-features = false, features = ["rust_crypto"] }
-p256 = { version = "0.13", features = ["ecdsa", "pem", "pkcs8"] }
+p256 = { version = "0.14", features = ["ecdsa", "pem", "pkcs8"] }
 rand = "0.9"
 redis = { version = "1.5", default-features = false, features = ["aio", "connection-manager", "tokio-rustls-comp"] }
 secrecy = { version = "0.10", features = ["serde"] }
