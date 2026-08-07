@@ -1,3 +1,5 @@
+//! Fail-closed environment configuration and deployment-policy validation.
+
 use std::{env, net::IpAddr, str::FromStr};
 
 use anyhow::{Context, Result, bail};

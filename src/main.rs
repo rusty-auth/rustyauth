@@ -1,3 +1,10 @@
+//! RustyAuth process entry point and dependency composition root.
+//!
+//! Protocol handlers live in `auth`; durable state belongs to `store`; key
+//! material and token issuance belong to `jwt`. This module only initializes
+//! those capabilities, applies transport middleware, and owns process lifetime.
+
+mod app_state;
 mod auth;
 mod backup;
 mod config;
@@ -21,7 +28,6 @@ use axum::{
 };
 use redis::AsyncCommands;
 use secrecy::ExposeSecret;
-use secrecy::SecretString;
 use serde::Serialize;
 use tokio::net::TcpListener;
 use tower_http::{
@@ -32,31 +38,16 @@ use tower_http::{
     trace::TraceLayer,
 };
 use tracing::{info, warn};
-use webauthn_rs::{Webauthn, WebauthnBuilder};
+use webauthn_rs::WebauthnBuilder;
 use zeroize::Zeroize;
 
 use crate::{
+    app_state::AppState,
     backup::BackupStore,
     config::{Config, Environment},
     jwt::JwtIssuer,
     store::Store,
 };
-
-#[derive(Clone)]
-pub(crate) struct AppState {
-    store: Store,
-    webauthn: Arc<Webauthn>,
-    jwt: JwtIssuer,
-    issuer: String,
-    rp_origin: String,
-    bootstrap_token: SecretString,
-    session_idle_seconds: u64,
-    session_absolute_seconds: u64,
-    secure_cookie: bool,
-    email_verification_required: bool,
-    local_agent_handoffs_enabled: bool,
-    backup: Option<BackupStore>,
-}
 
 #[derive(Serialize)]
 struct Health<'a> {

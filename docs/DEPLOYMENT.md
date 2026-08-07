@@ -162,5 +162,11 @@ signing metadata and ordered-event continuity without exposing bearer material.
 
 ## One-click template status
 
-The checked-in Railway files describe service builds and health checks. A public one-click template
-must not be advertised until a clean-room deployment, storage survival test and recovery drill pass.
+The public
+[RustyAuth Railway template](https://railway.com/new/template/rustyauth?utm_medium=integration&utm_source=button&utm_campaign=rustyauth)
+is available for evaluation and integration work. Its clean-room deployment and storage-survival
+checks pass: both services become healthy, generated secrets are applied, the private SableDB
+reference resolves, and signing state survives SableDB container replacement.
+
+A supported recovery drill is still unavailable. Do not treat template availability as production
+readiness or make this release the sole identity system for a production service.

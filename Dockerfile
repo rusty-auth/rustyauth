@@ -1,4 +1,4 @@
-FROM rust:1.97-slim-bookworm AS build
+FROM rust:1.94.1-slim-bookworm AS build
 
 RUN apt-get update \
   && apt-get install -y --no-install-recommends clang libssl-dev pkg-config \
@@ -6,9 +6,7 @@ RUN apt-get update \
 WORKDIR /src
 COPY Cargo.toml Cargo.lock ./
 COPY src ./src
-RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
-    --mount=type=cache,target=/src/target,sharing=locked \
-    find src -type f -exec touch {} + \
+RUN find src -type f -exec touch {} + \
     && cargo build --locked --release \
     && cp /src/target/release/passkey-auth-service /usr/local/bin/passkey-auth-service
 

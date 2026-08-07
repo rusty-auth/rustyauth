@@ -1,0 +1,70 @@
+---
+import BaseLayout from "../layouts/BaseLayout.astro";
+import AuthFlow3D from "../components/AuthFlow3D";
+
+const capabilities = [
+  ["WebAuthn", "Passkeys, end to end", "Registration, authentication and multi-credential management with five-minute, server-side, single-use ceremonies."],
+  ["Sessions", "Durable and revocable", "HttpOnly sessions with idle and absolute expiry. Raw bearer values never become durable database records."],
+  ["Tokens", "Narrow downstream trust", "Short-lived ES256 access tokens, public JWKS and explicit issuer, audience, tenant and authentication claims."],
+  ["Storage", "Built on SableDB", "One private, volume-backed persistence engine for users, credentials, ceremonies, sessions and ordered events."],
+  ["Operations", "Fails closed", "Exact-origin enforcement, dependency readiness, structured logs and startup validation for security-critical configuration."],
+  ["Ownership", "Your identity boundary", "Self-hosted infrastructure with no required identity SaaS. Your application keeps authorization and entitlement decisions."],
+];
+const status = [
+  ["Passkey registration and sign-in", "Available"],
+  ["Sessions and credential management", "Available"],
+  ["ES256 tokens and JWKS", "Available"],
+  ["Protobuf + gRPC service boundary", "Planned"],
+  ["Recovery and signing-key rotation", "Before 1.0"],
+];
+---
+
+<BaseLayout>
+  <main>
+    <section class="hero shell">
+      <div class="hero-copy">
+        <p class="kicker"><span></span> Open-source identity infrastructure</p>
+        <h1>Passkeys without<br /><em>giving up the keys.</em></h1>
+        <p class="hero-intro">RustyAuth is a small, self-hosted Rust service for WebAuthn ceremonies, durable browser sessions and short-lived access tokens.</p>
+        <div class="hero-actions">
+          <a class="button button-primary" href="/docs/getting-started">Get started <span>→</span></a>
+          <a class="button button-secondary" href="https://github.com/rusty-auth/rustyauth">View on GitHub <span>↗</span></a>
+          <a class="button button-railway" href="https://railway.com/new/template/rustyauth?utm_medium=integration&utm_source=button&utm_campaign=rustyauth">Deploy on Railway <span>↗</span></a>
+        </div>
+        <p class="hero-note">Pre-release · Apache-2.0 · Self-hosted</p>
+      </div>
+      <AuthFlow3D client:load />
+    </section>
+
+    <section class="manifesto"><div class="shell manifesto-grid"><p>Built in <strong>Rust.</strong></p><p>Built on <strong>SableDB.</strong></p><p>Built for <strong>passkeys.</strong></p></div></section>
+
+    <section class="section shell stack-section" id="why-rustyauth">
+      <div class="section-heading">
+        <p class="kicker"><span></span> Deliberate technology choices</p>
+        <h2>Secure and lightweight.<br />Ready to scale.</h2>
+        <p>Each layer has one job: Rust protects the public boundary, SableDB keeps identity state compact and private, and typed contracts will keep application integrations explicit.</p>
+      </div>
+      <div class="stack-grid">
+        <article><span class="stack-index">01</span><p>Why Rust</p><h3>Safety without a runtime tax.</h3><ul><li>Memory safety without garbage-collection pauses</li><li>Predictable latency at the authentication boundary</li><li>One small binary with a narrow operational surface</li><li>A mature cryptography and WebAuthn ecosystem</li></ul><strong>Shipped today</strong></article>
+        <article class="stack-featured"><span class="stack-index">02</span><p>Why SableDB</p><h3>Durable state, without database sprawl.</h3><ul><li>Rust-native, Valkey-compatible persistence</li><li>Private, volume-backed identity storage</li><li>Fast atomic pipelines for credentials and sessions</li><li>A compact topology that remains easy to own</li></ul><strong>Shipped today</strong></article>
+        <article><span class="stack-index">03</span><p>Why typed contracts</p><h3>Protocol clarity across services.</h3><ul><li>Protobuf schemas as an explicit interface</li><li>Efficient gRPC for trusted service communication</li><li>Generated clients instead of hand-written payloads</li><li>Versionable contracts as RustyAuth grows</li></ul><strong class="roadmap">Planned boundary</strong></article>
+      </div>
+    </section>
+
+    <section class="section shell">
+      <div class="section-heading"><p class="kicker"><span></span> A deliberately small boundary</p><h2>Authentication should be<br />boring in the best way.</h2><p>RustyAuth authenticates an identity and produces claims. Your application remains responsible for roles, permissions and ownership.</p></div>
+      <div class="capability-grid">{capabilities.map(([eyebrow, title, body], index) => <article class="capability-card"><div class="capability-number">0{index + 1}</div><p>{eyebrow}</p><h3>{title}</h3><span>{body}</span></article>)}</div>
+    </section>
+
+    <section class="quickstart-section">
+      <div class="shell quickstart-grid">
+        <div class="quickstart-copy"><p class="kicker light"><span></span> Running in minutes</p><h2>Three commands.<br />One identity boundary.</h2><p>Docker Compose starts RustyAuth on loopback and keeps SableDB private. The local volume survives container replacement.</p><a class="text-link" href="/docs/getting-started">Read the complete quickstart <span>→</span></a></div>
+        <div class="terminal" aria-label="RustyAuth Docker quickstart"><div class="terminal-bar"><span></span><span></span><span></span><small>terminal</small></div><pre><code><b>$</b> git clone https://github.com/<br />&nbsp;&nbsp;rusty-auth/rustyauth.git<br /><br /><b>$</b> cd rustyauth<br /><b>$</b> cp .env.example .env<br /><br /><b>$</b> docker compose up --build<br /><br /><i>✓ RustyAuth ready on :8081</i><br /><i>✓ SableDB private and healthy</i></code></pre></div>
+      </div>
+    </section>
+
+    <section class="section shell status-section"><div class="section-heading compact"><p class="kicker"><span></span> Honest by default</p><h2>Pre-release,<br />plainly stated.</h2></div><div class="status-panel">{status.map(([name, state]) => <div class="status-row"><span>{name}</span><strong class={state === "Available" ? "ready" : "planned"}>{state}</strong></div>)}<p>RustyAuth is not yet approved as the sole identity system for a production service. The road to 1.0 is documented in public.</p></div></section>
+
+    <section class="final-cta shell"><img src="/brand/rustyauth-mark.png" width="120" height="120" alt="" /><p class="kicker centered"><span></span> Own the boundary</p><h2>Build authentication<br />you can account for.</h2><div class="hero-actions centered-actions"><a class="button button-primary" href="/docs">Explore the docs <span>→</span></a><a class="button button-secondary" href="https://github.com/rusty-auth/rustyauth">Star on GitHub <span>↗</span></a></div></section>
+  </main>
+</BaseLayout>

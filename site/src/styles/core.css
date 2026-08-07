@@ -1,0 +1,133 @@
+:root {
+  --paper: #f5f1e9;
+  --paper-deep: #e9e1d5;
+  --ink: #252321;
+  --ink-soft: #67615b;
+  --graphite: #2f2f2f;
+  --copper: #cc5a19;
+  --copper-deep: #a94612;
+  --cream: #fff8e8;
+  --line: rgba(47, 47, 47, 0.16);
+  --sans: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --mono: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+}
+
+* {
+  box-sizing: border-box;
+}
+html {
+  scroll-behavior: smooth;
+}
+body {
+  margin: 0;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--sans);
+  -webkit-font-smoothing: antialiased;
+}
+a {
+  color: inherit;
+  text-decoration: none;
+}
+img {
+  max-width: 100%;
+}
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0,0,0,0);
+  white-space: nowrap;
+  border: 0;
+}
+.shell {
+  width: min(1180px, calc(100% - 48px));
+  margin: 0 auto;
+}
+
+.site-header {
+  position: relative;
+  z-index: 20;
+  border-bottom: 1px solid var(--line);
+  background: rgba(245, 241, 233, .92);
+  backdrop-filter: blur(14px);
+}
+.header-inner {
+  height: 76px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 28px;
+}
+.brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 20px;
+  font-weight: 650;
+  letter-spacing: -.04em;
+}
+.brand img {
+  border-radius: 8px;
+}
+.brand strong {
+  color: var(--copper);
+  font-weight: 680;
+}
+.site-header nav {
+  display: flex;
+  align-items: center;
+  gap: 32px;
+  margin-left: auto;
+}
+.site-header nav a {
+  color: var(--ink-soft);
+  font-size: 14px;
+  font-weight: 560;
+  transition: color .2s;
+}
+.site-header nav a:hover {
+  color: var(--copper);
+}
+.header-cta {
+  display: inline-flex;
+  align-items: center;
+  gap: 14px;
+  margin-left: 18px;
+  padding: 11px 15px;
+  background: var(--ink);
+  color: white;
+  font-size: 13px;
+  font-weight: 630;
+  border-radius: 4px;
+}
+.header-cta span {
+  color: #e8a071;
+}
+.github-proof {
+  display: inline-flex;
+  align-items: center;
+  height: 34px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  overflow: hidden;
+  font: 9px var(--mono);
+  text-transform: uppercase;
+  letter-spacing: .07em;
+}
+.github-proof span {
+  padding: 0 10px;
+  color: var(--ink-soft);
+}
+.github-proof b {
+  align-self: stretch;
+  display: flex;
+  align-items: center;
+  padding: 0 10px;
+  border-left: 1px solid var(--line);
+  color: var(--copper-deep);
+  background: rgba(255,255,255,.38);
+}

@@ -1,3 +1,8 @@
+//! Encrypted object-storage backup primitive.
+//!
+//! Scheduling and restore orchestration are intentionally not implemented yet;
+//! callers must not mistake this transport primitive for a recovery system.
+
 use aes_gcm::{Aes256Gcm, KeyInit, aead::Aead};
 use anyhow::{Context, Result};
 use aws_credential_types::Credentials;

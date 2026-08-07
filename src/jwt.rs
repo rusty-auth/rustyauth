@@ -1,3 +1,5 @@
+//! ES256 signing-key custody, JWKS publication, and access-token issuance.
+
 use std::sync::Arc;
 
 use aes_gcm::{Aes256Gcm, KeyInit, aead::Aead};

@@ -17,7 +17,9 @@ path.
 
 Requirements:
 
-- Rust `1.94.1` or newer;
+- Rust `1.94.1`;
+- Deno `2.9.3`;
+- Go `1.25` for the Cloudflare control plane;
 - Docker with Compose; and
 - `curl` for health checks.
 
@@ -36,6 +38,16 @@ cargo clippy --all-targets --all-features -- -D warnings
 cargo test
 cargo build --locked --release
 ```
+
+Run the complete repository gates before opening a pull request:
+
+```sh
+deno install --frozen
+deno task check
+deno task test
+```
+
+See [Engineering](docs/ENGINEERING.md) for module ownership and review rules.
 
 The VTR integration can be exercised from the repository root with `deno task dev:v2`. That path
 must remain independent of the legacy Go/PostgreSQL application.

@@ -1,0 +1,4 @@
+name: rustyauth-cloudflare
+runtime: go
+description: Cloudflare Pages and DNS for the RustyAuth open-source site
+
