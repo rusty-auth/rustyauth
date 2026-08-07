@@ -1,3 +1,9 @@
+//! SableDB persistence boundary.
+//!
+//! All durable key construction and serialization is centralized here. Public
+//! HTTP handlers do not issue database commands directly. Compound mutations
+//! use atomic pipelines and are serialized within the single supported writer.
+
 use std::{
     sync::Arc,
     time::{SystemTime, UNIX_EPOCH},
@@ -13,6 +19,20 @@ use uuid::Uuid;
 use webauthn_rs::prelude::{
     AuthenticationResult, Passkey, PasskeyAuthentication, PasskeyRegistration,
 };
+
+#[derive(Debug, thiserror::Error)]
+pub(crate) enum StorePolicyError {
+    #[error("email already has an account")]
+    EmailAlreadyExists,
+    #[error("passkey is already registered")]
+    CredentialAlreadyExists,
+    #[error("user is missing")]
+    UserMissing,
+    #[error("passkey is not linked to this user")]
+    CredentialNotLinked,
+    #[error("the final passkey cannot be removed")]
+    FinalCredential,
+}
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -173,7 +193,7 @@ impl Store {
     ) -> Result<User> {
         let _guard = self.mutation.lock().await;
         if self.user_by_email(&email).await?.is_some() {
-            bail!("email already has an account");
+            return Err(StorePolicyError::EmailAlreadyExists.into());
         }
         let id = credential_id(&passkey);
         if self
@@ -181,7 +201,7 @@ impl Store {
             .await?
             .is_some()
         {
-            bail!("passkey is already registered");
+            return Err(StorePolicyError::CredentialAlreadyExists.into());
         }
         let credential: webauthn_rs::prelude::Credential = passkey.clone().into();
         let user = User {
@@ -224,13 +244,16 @@ impl Store {
         result: &AuthenticationResult,
     ) -> Result<User> {
         let _guard = self.mutation.lock().await;
-        let mut user = self.user(user_id).await?.context("user is missing")?;
+        let mut user = self
+            .user(user_id)
+            .await?
+            .ok_or(StorePolicyError::UserMissing)?;
         let id = URL_SAFE_NO_PAD.encode(result.cred_id().as_ref());
         let stored = user
             .passkeys
             .iter_mut()
             .find(|passkey| passkey.id == id)
-            .context("passkey is not linked to this user")?;
+            .ok_or(StorePolicyError::CredentialNotLinked)?;
         let next = result.counter();
         if next > 0 && stored.counter > 0 && next <= stored.counter {
             bail!("passkey counter did not advance; possible cloned credential");
@@ -253,14 +276,17 @@ impl Store {
         passkey: Passkey,
     ) -> Result<User> {
         let _guard = self.mutation.lock().await;
-        let mut user = self.user(user_id).await?.context("user is missing")?;
+        let mut user = self
+            .user(user_id)
+            .await?
+            .ok_or(StorePolicyError::UserMissing)?;
         let id = credential_id(&passkey);
         if self
             .get::<String>(&format!("auth:credential:{id}"))
             .await?
             .is_some()
         {
-            bail!("passkey is already registered");
+            return Err(StorePolicyError::CredentialAlreadyExists.into());
         }
         let credential: webauthn_rs::prelude::Credential = passkey.clone().into();
         user.passkeys.push(StoredPasskey {
@@ -295,12 +321,15 @@ impl Store {
         label: String,
     ) -> Result<User> {
         let _guard = self.mutation.lock().await;
-        let mut user = self.user(user_id).await?.context("user is missing")?;
+        let mut user = self
+            .user(user_id)
+            .await?
+            .ok_or(StorePolicyError::UserMissing)?;
         let passkey = user
             .passkeys
             .iter_mut()
             .find(|passkey| passkey.id == credential_id)
-            .context("passkey is not linked to this user")?;
+            .ok_or(StorePolicyError::CredentialNotLinked)?;
         passkey.label = label;
         self.set_json(&format!("auth:user:{user_id}"), &user)
             .await?;
@@ -312,15 +341,18 @@ impl Store {
 
     pub async fn revoke_passkey(&self, user_id: Uuid, credential_id: &str) -> Result<User> {
         let _guard = self.mutation.lock().await;
-        let mut user = self.user(user_id).await?.context("user is missing")?;
+        let mut user = self
+            .user(user_id)
+            .await?
+            .ok_or(StorePolicyError::UserMissing)?;
         if user.passkeys.len() <= 1 {
-            bail!("the final passkey cannot be removed");
+            return Err(StorePolicyError::FinalCredential.into());
         }
         let position = user
             .passkeys
             .iter()
             .position(|passkey| passkey.id == credential_id)
-            .context("passkey is not linked to this user")?;
+            .ok_or(StorePolicyError::CredentialNotLinked)?;
         user.passkeys.remove(position);
         let mut connection = self.redis.clone();
         let _: () = redis::pipe()

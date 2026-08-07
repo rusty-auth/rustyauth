@@ -1,0 +1,197 @@
+@media (max-width: 900px) {
+  .site-header nav {
+    display: none;
+  }
+  .header-cta {
+    margin-left: 0;
+  }
+  .github-proof {
+    margin-left: auto;
+  }
+  .hero {
+    grid-template-columns: 1fr;
+    padding-top: 68px;
+    overflow: hidden;
+  }
+  .hero-copy {
+    position: relative;
+    z-index: 2;
+  }
+  .flow-stage {
+    position: absolute;
+    z-index: 0;
+    top: 3%;
+    right: -18%;
+    bottom: 3%;
+    width: 92%;
+    height: 94%;
+    aspect-ratio: auto;
+    min-height: 0;
+    margin-left: 0;
+    opacity: .16;
+    filter: grayscale(.2) contrast(.86);
+    pointer-events: none;
+  }
+  .auth-scene-label {
+    display: none;
+  }
+  .boundary-card {
+    min-height: 500px;
+  }
+  .stack-grid {
+    grid-template-columns: 1fr;
+  }
+  .stack-grid article {
+    min-height: 330px;
+  }
+  .manifesto-grid {
+    grid-template-columns: 1fr;
+    padding: 22px 0;
+  }
+  .manifesto p {
+    padding: 14px 0;
+    border-right: 0;
+    border-bottom: 1px solid rgba(255,255,255,.2);
+  }
+  .manifesto p:last-child {
+    border: 0;
+  }
+  .section-heading,
+  .quickstart-grid,
+  .status-section,
+  .footer-grid {
+    grid-template-columns: 1fr;
+    gap: 46px;
+  }
+  .capability-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+  .docs-frame {
+    grid-template-columns: 1fr;
+    gap: 36px;
+  }
+  .docs-sidebar {
+    position: static;
+  }
+  .docs-sidebar nav {
+    display: grid;
+    grid-template-columns: repeat(3,1fr);
+  }
+  .endpoint-row {
+    grid-template-columns: 56px 1fr;
+    padding: 14px 0;
+  }
+  .deployment-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 600px) {
+  .shell {
+    width: min(100% - 30px, 1180px);
+  }
+  .header-inner {
+    height: 66px;
+  }
+  .header-cta {
+    display: none;
+  }
+  .github-proof span {
+    display: none;
+  }
+  .github-proof b {
+    border-left: 0;
+  }
+  .hero {
+    min-height: 0;
+    padding-bottom: 65px;
+  }
+  .hero h1 {
+    font-size: 50px;
+  }
+  .hero-intro {
+    font-size: 16px;
+  }
+  .hero-actions {
+    flex-direction: column;
+  }
+  .button {
+    justify-content: space-between;
+  }
+  .flow-stage {
+    top: 8%;
+    right: -34%;
+    bottom: 5%;
+    width: 126%;
+    height: 87%;
+    opacity: .13;
+  }
+  .boundary-card {
+    min-height: 480px;
+    padding: 20px;
+  }
+  .boundary-node {
+    width: 94%;
+    grid-template-columns: 1fr;
+  }
+  .boundary-node span {
+    align-self: auto;
+  }
+  .section {
+    padding-top: 85px;
+    padding-bottom: 85px;
+  }
+  .capability-grid {
+    grid-template-columns: 1fr;
+  }
+  .capability-card {
+    min-height: 255px;
+  }
+  .quickstart-section {
+    padding: 85px 0;
+  }
+  .terminal pre {
+    padding: 22px;
+    font-size: 11px;
+  }
+  .footer-links {
+    grid-template-columns: 1fr 1fr;
+  }
+  .footer-bottom {
+    flex-direction: column;
+    gap: 10px;
+  }
+  .docs-frame {
+    padding-top: 44px;
+  }
+  .docs-sidebar nav {
+    grid-template-columns: 1fr 1fr;
+  }
+  .doc-header h1 {
+    font-size: 47px;
+  }
+  .docs-card-grid {
+    grid-template-columns: 1fr;
+  }
+  .doc-architecture {
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+  .doc-architecture > b {
+    transform: rotate(90deg);
+  }
+  .variable-list > div {
+    grid-template-columns: 1fr;
+    gap: 2px;
+    padding: 14px 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+  * {
+    transition: none !important;
+  }
+}

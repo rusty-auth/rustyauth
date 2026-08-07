@@ -1,9 +1,12 @@
 {
+  "imports": {
+    "@std/assert": "jsr:@std/assert@1.0.19"
+  },
   "tasks": {
     "dev": "astro dev",
     "build": "astro build",
     "preview": "astro preview",
-    "check": "astro check",
+    "check": "astro check && deno lint src tests && deno fmt --check src tests astro.config.mjs deno.json package.json",
     "test": "deno task build && deno test -A tests"
   }
 }

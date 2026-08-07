@@ -1,3 +1,12 @@
+//! Public HTTP authentication protocol.
+//!
+//! Handlers validate transport policy and translate domain failures into a
+//! deliberately small public error surface. Durable mutations remain in
+//! `store`; WebAuthn verification remains in the upstream library boundary.
+
+mod dto;
+mod error;
+
 use axum::{
     Json, Router,
     extract::{Query, State},
@@ -7,15 +16,22 @@ use axum::{
 };
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use secrecy::ExposeSecret;
-use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use time::{OffsetDateTime, format_description::well_known::Rfc3339};
 use uuid::Uuid;
-use webauthn_rs::prelude::{PublicKeyCredential, RegisterPublicKeyCredential};
 
 use crate::{
-    AppState,
-    store::{AuthenticationCeremony, RegistrationCeremony, now},
+    app_state::AppState,
+    store::{AuthenticationCeremony, RegistrationCeremony, StorePolicyError, now},
+};
+
+use self::{
+    dto::{
+        AddRegistrationOptionsInput, AuthenticationVerifyInput, CredentialOutput, EmailInput,
+        EventsQuery, LocalAgentHandoffQuery, RegistrationVerifyInput, RenameCredentialInput,
+        RevokeCredentialInput,
+    },
+    error::ApiError,
 };
 
 const CEREMONY_SECONDS: u64 = 300;
@@ -57,107 +73,6 @@ pub fn routes() -> Router<AppState> {
         .route("/v1/credentials/rename", post(rename_credential))
         .route("/v1/credentials/revoke", post(revoke_credential))
         .route("/v1/events", get(events))
-}
-
-#[derive(Debug)]
-pub struct ApiError {
-    status: StatusCode,
-    message: String,
-}
-
-impl ApiError {
-    fn bad_request(message: impl Into<String>) -> Self {
-        Self {
-            status: StatusCode::BAD_REQUEST,
-            message: message.into(),
-        }
-    }
-
-    fn unauthorized(message: impl Into<String>) -> Self {
-        Self {
-            status: StatusCode::UNAUTHORIZED,
-            message: message.into(),
-        }
-    }
-
-    fn conflict(message: impl Into<String>) -> Self {
-        Self {
-            status: StatusCode::CONFLICT,
-            message: message.into(),
-        }
-    }
-
-    fn internal(error: impl std::fmt::Display) -> Self {
-        tracing::error!(error = %error, "auth request failed");
-        Self {
-            status: StatusCode::INTERNAL_SERVER_ERROR,
-            message: "authentication service failed closed".into(),
-        }
-    }
-}
-
-impl IntoResponse for ApiError {
-    fn into_response(self) -> Response {
-        (self.status, Json(json!({ "error": self.message }))).into_response()
-    }
-}
-
-#[derive(Deserialize)]
-struct EmailInput {
-    email: String,
-}
-
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct RegistrationVerifyInput {
-    ceremony_id: Uuid,
-    response: RegisterPublicKeyCredential,
-}
-
-#[derive(Deserialize)]
-struct AddRegistrationOptionsInput {
-    label: String,
-}
-
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct RenameCredentialInput {
-    credential_id: String,
-    label: String,
-}
-
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct RevokeCredentialInput {
-    credential_id: String,
-}
-
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-struct CredentialOutput {
-    id: String,
-    label: String,
-    created_at: String,
-    last_used_at: String,
-    authenticator: &'static str,
-    current: bool,
-}
-
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct AuthenticationVerifyInput {
-    ceremony_id: Uuid,
-    response: PublicKeyCredential,
-}
-
-#[derive(Deserialize)]
-struct EventsQuery {
-    after: Option<u64>,
-}
-
-#[derive(Deserialize)]
-struct LocalAgentHandoffQuery {
-    code: String,
 }
 
 async fn discovery(State(state): State<AppState>) -> Json<Value> {
@@ -240,12 +155,11 @@ async fn registration_verify(
             !state.email_verification_required,
         )
         .await
-        .map_err(|error| {
-            if error.to_string().contains("already") {
-                ApiError::conflict(error.to_string())
-            } else {
-                ApiError::internal(error)
-            }
+        .map_err(|error| match error.downcast_ref::<StorePolicyError>() {
+            Some(
+                StorePolicyError::EmailAlreadyExists | StorePolicyError::CredentialAlreadyExists,
+            ) => ApiError::conflict(error.to_string()),
+            _ => ApiError::internal(error),
         })?;
     let (session_token, session) = state
         .store
@@ -455,12 +369,11 @@ async fn add_registration_verify(
             passkey,
         )
         .await
-        .map_err(|error| {
-            if error.to_string().contains("already registered") {
+        .map_err(|error| match error.downcast_ref::<StorePolicyError>() {
+            Some(StorePolicyError::CredentialAlreadyExists) => {
                 ApiError::conflict("passkey is already registered")
-            } else {
-                ApiError::internal(error)
             }
+            _ => ApiError::internal(error),
         })?;
     Ok(StatusCode::NO_CONTENT)
 }
@@ -477,12 +390,11 @@ async fn rename_credential(
         .store
         .rename_passkey(user.id, credential_id, label)
         .await
-        .map_err(|error| {
-            if error.to_string().contains("not linked") {
+        .map_err(|error| match error.downcast_ref::<StorePolicyError>() {
+            Some(StorePolicyError::CredentialNotLinked) => {
                 ApiError::bad_request("passkey is not linked to this account")
-            } else {
-                ApiError::internal(error)
             }
+            _ => ApiError::internal(error),
         })?;
     Ok(StatusCode::NO_CONTENT)
 }
@@ -503,14 +415,14 @@ async fn revoke_credential(
         .store
         .revoke_passkey(user.id, credential_id)
         .await
-        .map_err(|error| {
-            if error.to_string().contains("final passkey") {
+        .map_err(|error| match error.downcast_ref::<StorePolicyError>() {
+            Some(StorePolicyError::FinalCredential) => {
                 ApiError::conflict("the final passkey cannot be removed")
-            } else if error.to_string().contains("not linked") {
-                ApiError::bad_request("passkey is not linked to this account")
-            } else {
-                ApiError::internal(error)
             }
+            Some(StorePolicyError::CredentialNotLinked) => {
+                ApiError::bad_request("passkey is not linked to this account")
+            }
+            _ => ApiError::internal(error),
         })?;
     Ok(StatusCode::NO_CONTENT)
 }

@@ -228,6 +228,7 @@ Pulumi configuration.
 | Document | Contents |
 | --- | --- |
 | [Architecture](docs/ARCHITECTURE.md) | Components, flows, state and trust boundaries |
+| [Engineering](docs/ENGINEERING.md) | Module ownership, coding standards and quality gates |
 | [HTTP API](docs/API.md) | Endpoints, inputs, responses and access requirements |
 | [Configuration](docs/CONFIGURATION.md) | Every environment variable and validation rule |
 | [Deployment](docs/DEPLOYMENT.md) | Docker, Railway, persistence and operations |

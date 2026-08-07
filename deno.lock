@@ -2,24 +2,25 @@
   "version": "5",
   "specifiers": {
     "jsr:@std/assert@*": "1.0.19",
+    "jsr:@std/assert@1.0.19": "1.0.19",
     "jsr:@std/internal@^1.0.12": "1.0.14",
-    "npm:@astrojs/check@latest": "0.9.10_typescript@5.9.3",
-    "npm:@astrojs/solid-js@latest": "7.0.2_solid-js@1.9.14_@types+node@22.19.19",
-    "npm:@oslojs/encoding@latest": "1.1.0",
+    "npm:@astrojs/check@0.9.10": "0.9.10_typescript@5.9.3",
+    "npm:@astrojs/solid-js@7.0.2": "7.0.2_solid-js@1.9.14_@types+node@22.19.19",
+    "npm:@oslojs/encoding@1.1.0": "1.1.0",
     "npm:@types/node@22.19.19": "22.19.19",
-    "npm:@types/three@latest": "0.185.4",
-    "npm:astro@latest": "7.2.0_@emnapi+core@1.11.1_@emnapi+runtime@1.11.1_@types+node@22.19.19",
-    "npm:clsx@latest": "2.1.1",
-    "npm:devalue@latest": "5.9.0",
-    "npm:es-module-lexer@latest": "2.3.1",
-    "npm:html-escaper@latest": "3.0.3",
-    "npm:piccolore@latest": "0.1.3",
-    "npm:solid-js@latest": "1.9.14",
-    "npm:three@latest": "0.185.1",
+    "npm:@types/three@0.185.4": "0.185.4",
+    "npm:astro@7.2.0": "7.2.0_@emnapi+core@1.11.1_@emnapi+runtime@1.11.1_@types+node@22.19.19",
+    "npm:clsx@2.1.1": "2.1.1",
+    "npm:devalue@5.9.0": "5.9.0",
+    "npm:es-module-lexer@2.3.1": "2.3.1",
+    "npm:html-escaper@3.0.3": "3.0.3",
+    "npm:piccolore@0.1.3": "0.1.3",
+    "npm:solid-js@1.9.14": "1.9.14",
+    "npm:three@0.185.1": "0.185.1",
     "npm:typescript@5.9.3": "5.9.3",
     "npm:wrangler@4.119.0": "4.119.0",
     "npm:wrangler@latest": "4.119.0",
-    "npm:zod@latest": "4.4.3"
+    "npm:zod@4.4.3": "4.4.3"
   },
   "jsr": {
     "@std/assert@1.0.19": {
@@ -1146,7 +1147,7 @@
         "emmet",
         "jsonc-parser@2.3.1",
         "vscode-languageserver-textdocument",
-        "vscode-languageserver-types",
+        "vscode-languageserver-types@3.18.0",
         "vscode-uri"
       ]
     },
@@ -2551,7 +2552,7 @@
       "dependencies": [
         "@vscode/l10n",
         "vscode-languageserver-textdocument",
-        "vscode-languageserver-types",
+        "vscode-languageserver-types@3.17.5",
         "vscode-uri"
       ]
     },
@@ -2560,7 +2561,7 @@
       "dependencies": [
         "@vscode/l10n",
         "vscode-languageserver-textdocument",
-        "vscode-languageserver-types",
+        "vscode-languageserver-types@3.18.0",
         "vscode-uri"
       ]
     },
@@ -2569,7 +2570,7 @@
       "dependencies": [
         "jsonc-parser@3.3.1",
         "vscode-languageserver-textdocument",
-        "vscode-languageserver-types",
+        "vscode-languageserver-types@3.18.0",
         "vscode-nls",
         "vscode-uri"
       ]
@@ -2581,7 +2582,7 @@
       "integrity": "sha512-mb1bvRJN8SVznADSGWM9u/b07H7Ecg0I3OgXDuLdn307rl/J3A9YD6/eYOssqhecL27hK1IPZAsaqh00i/Jljg==",
       "dependencies": [
         "vscode-jsonrpc",
-        "vscode-languageserver-types"
+        "vscode-languageserver-types@3.17.5"
       ]
     },
     "vscode-languageserver-textdocument@1.0.12": {
@@ -2589,6 +2590,9 @@
     },
     "vscode-languageserver-types@3.17.5": {
       "integrity": "sha512-Ld1VelNuX9pdF39h2Hgaeb5hEZM2Z3jUrrMgWQAu82jMtZp7p3vJT3BzToKtZI7NgQssZje5o0zryOrhQvzQAg=="
+    },
+    "vscode-languageserver-types@3.18.0": {
+      "integrity": "sha512-8TsGPNMIMiiBdkORgRSvLjuiEIiAFtO+KssmYWxQ+uSVvlf7RjK8YKCOjPzZ+YA04jXEV7+7LvkSmHkhpNS99g=="
     },
     "vscode-languageserver@9.0.1": {
       "integrity": "sha512-woByF3PDpkHFUreUa7Hos7+pUWdeWMXRd26+ZX2A8cFx6v/JPTtd4/uN0/jB6XQHYaOlHbio03NTHCqrgG5n7g==",
@@ -2667,7 +2671,7 @@
         "vscode-json-languageservice",
         "vscode-languageserver",
         "vscode-languageserver-textdocument",
-        "vscode-languageserver-types",
+        "vscode-languageserver-types@3.18.0",
         "vscode-uri",
         "yaml"
       ],
@@ -2721,23 +2725,26 @@
   "workspace": {
     "members": {
       "site": {
+        "dependencies": [
+          "jsr:@std/assert@1.0.19"
+        ],
         "packageJson": {
           "dependencies": [
-            "npm:@astrojs/check@latest",
-            "npm:@astrojs/solid-js@latest",
-            "npm:@oslojs/encoding@latest",
+            "npm:@astrojs/check@0.9.10",
+            "npm:@astrojs/solid-js@7.0.2",
+            "npm:@oslojs/encoding@1.1.0",
             "npm:@types/node@22.19.19",
-            "npm:@types/three@latest",
-            "npm:astro@latest",
-            "npm:clsx@latest",
-            "npm:devalue@latest",
-            "npm:es-module-lexer@latest",
-            "npm:html-escaper@latest",
-            "npm:piccolore@latest",
-            "npm:solid-js@latest",
-            "npm:three@latest",
+            "npm:@types/three@0.185.4",
+            "npm:astro@7.2.0",
+            "npm:clsx@2.1.1",
+            "npm:devalue@5.9.0",
+            "npm:es-module-lexer@2.3.1",
+            "npm:html-escaper@3.0.3",
+            "npm:piccolore@0.1.3",
+            "npm:solid-js@1.9.14",
+            "npm:three@0.185.1",
             "npm:typescript@5.9.3",
-            "npm:zod@latest"
+            "npm:zod@4.4.3"
           ]
         }
       }

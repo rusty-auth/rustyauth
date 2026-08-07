@@ -6,6 +6,12 @@ export default defineConfig({
   output: "static",
   integrations: [solid()],
   vite: {
+    build: {
+      // Three.js is isolated in the single interactive hero island. The
+      // minified engine chunk is intentionally larger than Vite's generic
+      // application default and remains cacheable across every static route.
+      chunkSizeWarningLimit: 650,
+    },
     ssr: {
       noExternal: true,
     },

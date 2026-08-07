@@ -13,23 +13,23 @@
     "test": "deno task test"
   },
   "dependencies": {
-    "@oslojs/encoding": "latest",
-    "@astrojs/solid-js": "latest",
-    "astro": "latest",
-    "clsx": "latest",
-    "devalue": "latest",
-    "es-module-lexer": "latest",
-    "html-escaper": "latest",
-    "piccolore": "latest",
-    "solid-js": "latest",
-    "three": "latest",
-    "zod": "latest"
+    "@astrojs/solid-js": "7.0.2",
+    "@oslojs/encoding": "1.1.0",
+    "astro": "7.2.0",
+    "clsx": "2.1.1",
+    "devalue": "5.9.0",
+    "es-module-lexer": "2.3.1",
+    "html-escaper": "3.0.3",
+    "piccolore": "0.1.3",
+    "solid-js": "1.9.14",
+    "three": "0.185.1",
+    "zod": "4.4.3"
   },
   "devDependencies": {
-    "@astrojs/check": "latest",
+    "@astrojs/check": "0.9.10",
     "@types/node": "22.19.19",
     "typescript": "5.9.3",
-    "@types/three": "latest"
+    "@types/three": "0.185.4"
   },
   "type": "module"
 }

@@ -9,6 +9,34 @@ permissions:
   contents: read
 
 jobs:
+  site:
+    name: Site checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: denoland/setup-deno@22d081ff2d3a40755e97629de92e3bcbfa7cf2ed # v2
+        with:
+          deno-version: 2.9.3
+      - run: deno install --frozen
+      - run: deno task site:check
+      - run: deno task site:test
+
+  infrastructure:
+    name: Infrastructure checks
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: infra/cloudflare
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5
+        with:
+          go-version-file: infra/cloudflare/go.mod
+          cache-dependency-path: infra/cloudflare/go.sum
+      - run: test -z "$(gofmt -l .)"
+      - run: go vet ./...
+      - run: go test ./...
+
   rust:
     name: Rust checks
     runs-on: ubuntu-latest

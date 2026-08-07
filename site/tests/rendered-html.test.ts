@@ -1,4 +1,4 @@
-import { assertEquals, assertMatch, assertNotMatch } from "jsr:@std/assert";
+import { assertEquals, assertMatch, assertNotMatch } from "@std/assert";
 
 const outputFor = (path: string) => path === "/" ? "dist/index.html" : `dist${path}/index.html`;
 
@@ -14,7 +14,14 @@ Deno.test("renders the RustyAuth landing page", async () => {
 });
 
 Deno.test("renders every documentation route", async () => {
-  const routes = ["/docs", "/docs/getting-started", "/docs/architecture", "/docs/api", "/docs/configuration", "/docs/deployment"];
+  const routes = [
+    "/docs",
+    "/docs/getting-started",
+    "/docs/architecture",
+    "/docs/api",
+    "/docs/configuration",
+    "/docs/deployment",
+  ];
   for (const path of routes) {
     const html = await Deno.readTextFile(outputFor(path));
     assertEquals(html.includes("Documentation"), true, path);
