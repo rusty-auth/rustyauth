@@ -1,7 +1,10 @@
 name: rustyauth-integration
 
 services:
+  # Both SableDB services share one image tag: locally `--build` still builds it (once),
+  # while CI pre-builds the tag with a warm layer cache and starts compose without --build.
   source-sabledb:
+    image: rustyauth-sabledb:ci
     build:
       context: ./sabledb
       dockerfile: Dockerfile
@@ -14,6 +17,7 @@ services:
       retries: 60
 
   destination-sabledb:
+    image: rustyauth-sabledb:ci
     build:
       context: ./sabledb
       dockerfile: Dockerfile

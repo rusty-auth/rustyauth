@@ -1,5 +1,5 @@
 [package]
-name = "passkey-auth-service"
+name = "rustyauth"
 version = "0.1.0"
 edition = "2024"
 rust-version = "1.94.1"
@@ -18,7 +18,15 @@ anyhow = "1"
 async-stream = "0.3"
 aws-config = "1.8"
 aws-credential-types = "1.2"
-aws-sdk-s3 = "1.141"
+# The default feature set turns on `rustls`, which is the legacy hyper 0.14 connector built on
+# rustls 0.21 and its unmaintained rustls-webpki 0.101 (RUSTSEC-2026-0098/0099/0104). Selecting the
+# remaining defaults by hand keeps the backup client on the single modern rustls 0.23 stack.
+aws-sdk-s3 = { version = "1.141", default-features = false, features = [
+    "default-https-client",
+    "http-1x",
+    "rt-tokio",
+    "sigv4a",
+] }
 axum = "0.8"
 base64 = "0.22"
 buffa = "0.8.1"
@@ -38,7 +46,7 @@ subtle = "2"
 thiserror = "2"
 time = { version = "0.3", features = ["formatting", "serde"] }
 tokio = { version = "1", features = ["macros", "net", "rt-multi-thread", "signal", "sync", "time"] }
-tower-http = { version = "0.6", features = ["cors", "fs", "request-id", "sensitive-headers", "set-header", "trace"] }
+tower-http = { version = "0.6", features = ["catch-panic", "cors", "fs", "limit", "request-id", "sensitive-headers", "set-header", "timeout", "trace"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 url = { version = "2", features = ["serde"] }
@@ -52,11 +60,19 @@ connectrpc-build = "=0.8.0"
 protoc-bin-vendored = "3"
 
 [dev-dependencies]
+# Encodes the CBOR attestation objects a real authenticator would produce, so the
+# WebAuthn ceremonies can be exercised end to end rather than only at their edges.
+ciborium = "0.2"
 connectrpc = { version = "0.8.1", features = ["client"] }
 tower = { version = "0.5", features = ["util"] }
 
 [profile.release]
 codegen-units = 1
 lto = "thin"
-panic = "abort"
+# Unwinding, not aborting. Under `panic = "abort"` a panic anywhere — including
+# inside a dependency, which is exactly what RUSTSEC-2026-0104 was — terminates the
+# process and drops every concurrent request. Unwinding lets `CatchPanicLayer` turn
+# one panicking request into one 500 while the service keeps authenticating.
+# Durable state lives in SableDB, so an unwound request leaves nothing inconsistent.
+panic = "unwind"
 strip = "symbols"

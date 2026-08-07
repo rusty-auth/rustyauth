@@ -1,28 +1,46 @@
-FROM denoland/deno:2.9.3 AS dashboard-build
+# Base images are pinned by digest so a rebuild cannot silently pick up a re-tagged upstream image.
+# Refresh a digest with `docker buildx imagetools inspect <image>:<tag>` and update the tag with it.
+FROM denoland/deno:2.9.3@sha256:6288db6be1c26473bb9d1843f906d9a219c0dda57fd85de4aac90296951cf6ef AS dashboard-build
 
 WORKDIR /src
+# Workspace manifests first: dependency resolution caches until a manifest or the
+# lockfile changes, instead of re-downloading on every source edit.
 COPY deno.json deno.lock ./
+COPY dashboard/deno.json ./dashboard/deno.json
+COPY site/deno.json site/package.json ./site/
+COPY packages/protocol/deno.json ./packages/protocol/deno.json
+COPY packages/connect-solid/deno.json ./packages/connect-solid/deno.json
+COPY packages/client/deno.json ./packages/client/deno.json
+RUN deno install --frozen
 COPY dashboard ./dashboard
 COPY packages ./packages
 COPY site ./site
-RUN deno install --frozen \
-    && deno task dashboard:build
+RUN deno task dashboard:build
 
-FROM rust:1.94.1-slim-bookworm AS build
+FROM rust:1.94.1-slim-bookworm@sha256:cf9dd0ec73e75f827fe59123fff9dc65af1a1c8363c3c31ee8d7f8ad0b6a5fb2 AS build
 
 RUN apt-get update \
   && apt-get install -y --no-install-recommends clang libssl-dev pkg-config \
   && rm -rf /var/lib/apt/lists/*
 WORKDIR /src
-COPY Cargo.toml Cargo.lock ./
-COPY build.rs ./
+COPY Cargo.toml Cargo.lock build.rs ./
 COPY proto ./proto
+# Dependency layer: compile the full dependency graph (and the protobuf codegen in
+# build.rs) against stub sources, so it caches until Cargo.toml, Cargo.lock,
+# build.rs or the contracts change. Source edits never recompile dependencies.
+RUN mkdir src \
+    && echo 'fn main() {}' > src/main.rs \
+    && touch src/lib.rs \
+    && cargo build --locked --release \
+    && rm -rf src
 COPY src ./src
+# The stub-built artifacts are newer than the sources just copied; touch so cargo
+# rebuilds the workspace crate against the cached dependencies.
 RUN find src -type f -exec touch {} + \
     && cargo build --locked --release \
-    && cp /src/target/release/passkey-auth-service /usr/local/bin/passkey-auth-service
+    && cp /src/target/release/rustyauth /usr/local/bin/rustyauth
 
-FROM debian:bookworm-slim
+FROM debian:bookworm-slim@sha256:abd67ffcfa541b485a3dff59865ab629aa048a6c613e639d36e7456b0b229241
 LABEL org.opencontainers.image.title="RustyAuth" \
       org.opencontainers.image.description="Built in Rust. Built on SableDB. Built for passkeys." \
       org.opencontainers.image.source="https://github.com/rusty-auth/rustyauth" \
@@ -31,9 +49,9 @@ RUN apt-get update \
   && apt-get install -y --no-install-recommends ca-certificates \
   && rm -rf /var/lib/apt/lists/* \
   && useradd --system --uid 10001 --home /nonexistent --shell /usr/sbin/nologin passkey-auth
-COPY --from=build /usr/local/bin/passkey-auth-service /usr/local/bin/passkey-auth-service
+COPY --from=build /usr/local/bin/rustyauth /usr/local/bin/rustyauth
 COPY --from=dashboard-build /src/dashboard/dist /usr/share/rustyauth/dashboard
 COPY LICENSE NOTICE THIRD_PARTY_NOTICES.md THIRD_PARTY_LICENSES.html /usr/share/doc/rustyauth/
 USER 10001:10001
 EXPOSE 8080
-ENTRYPOINT ["/usr/local/bin/passkey-auth-service"]
+ENTRYPOINT ["/usr/local/bin/rustyauth"]

@@ -1,0 +1,81 @@
+# Supply-chain policy enforced by `cargo deny check` in CI.
+#
+# Regenerate the licence inventory after any dependency change:
+#   cargo about generate about.hbs > THIRD_PARTY_LICENSES.html
+
+[graph]
+all-features = true
+
+[output]
+feature-depth = 1
+
+[advisories]
+# Every unignored advisory is an error in cargo-deny 0.20; there is no lint level to soften.
+#
+# cargo-deny 0.20 has no `expires` key on an ignore entry, so each entry carries a machine-readable
+# `# expires: YYYY-MM-DD` comment on the line above it. The `Advisory ignores have not expired` step
+# in .github/workflows/ci.yml parses those comments and fails the build the day after the date
+# passes, so no ignore can outlive its review without someone looking at it again.
+ignore = [
+    # expires: 2026-11-06
+    { id = "RUSTSEC-2023-0071", reason = """
+Marvin timing sidechannel in rsa 0.9.10. No fixed release exists upstream.
+Reachability: rsa arrives only through jsonwebtoken's `rust_crypto` backend, which links every
+algorithm implementation whether or not it is used. RustyAuth mints and verifies ES256 only:
+src/jwt.rs generates p256 ECDSA signing keys, sets `Header::new(Algorithm::ES256)`, and publishes
+`"crv": "P-256"` JWKs. No RSA private key exists anywhere in the service, so no RSA signing or
+decryption is ever performed and the sidechannel has no secret to leak. Re-evaluate at expiry:
+either rsa 0.10 has shipped or jsonwebtoken's `aws_lc_rs` backend, which drops the rsa
+dependency entirely, has been assessed as a replacement for `rust_crypto`.
+""" },
+]
+
+[licenses]
+# cargo-deny 0.20 has no licence deny list: anything absent from `allow` fails the check, so GPL,
+# LGPL, AGPL, SSPL and every other whole-work reciprocal licence is refused by construction. That
+# matters here because operators receive the container image and cannot accept an obligation to
+# open their surrounding deployment. MPL-2.0 is allowed because its reciprocity is per-file and is
+# discharged by shipping the crates unmodified and pointing at upstream, which
+# THIRD_PARTY_NOTICES.md already does for the webauthn-rs family.
+#
+# This list is deliberately narrower than `about.toml`'s `accepted` list: it holds only the
+# licences the locked graph actually contains, so a new dependency introducing a new licence class
+# fails CI and gets a human decision rather than being absorbed silently.
+allow = [
+    "0BSD",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "BSL-1.0",
+    "CC0-1.0",
+    "ISC",
+    "MIT",
+    "MIT-0",
+    "MPL-2.0",
+    "Unicode-3.0",
+    "Zlib",
+]
+confidence-threshold = 0.8
+exceptions = []
+
+[licenses.private]
+ignore = false
+
+[bans]
+multiple-versions = "warn"
+wildcards = "deny"
+highlight = "all"
+deny = [
+    # The legacy rustls 0.21 line depends on the unmaintained rustls-webpki 0.101
+    # (RUSTSEC-2026-0098/0099/0104). It re-enters the graph the moment a crate turns on
+    # `aws-smithy-runtime/tls-rustls`, so ban it outright rather than rely on noticing the audit.
+    { crate = "rustls@0.21", reason = "rustls 0.21 pulls the unmaintained rustls-webpki 0.101" },
+    { crate = "rustls-webpki@0.101", reason = "unmaintained, see RUSTSEC-2026-0098/0099/0104" },
+]
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+allow-git = []
