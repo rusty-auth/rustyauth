@@ -38,7 +38,7 @@ subtle = "2"
 thiserror = "2"
 time = { version = "0.3", features = ["formatting", "serde"] }
 tokio = { version = "1", features = ["macros", "net", "rt-multi-thread", "signal", "sync", "time"] }
-tower-http = { version = "0.6", features = ["cors", "request-id", "sensitive-headers", "set-header", "trace"] }
+tower-http = { version = "0.6", features = ["cors", "fs", "request-id", "sensitive-headers", "set-header", "trace"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 url = { version = "2", features = ["serde"] }

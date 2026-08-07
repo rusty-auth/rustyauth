@@ -1,6 +1,6 @@
 //! Fail-closed environment configuration and deployment-policy validation.
 
-use std::{collections::HashSet, env, fmt, net::IpAddr, str::FromStr, sync::Arc};
+use std::{collections::HashSet, env, fmt, net::IpAddr, path::PathBuf, str::FromStr, sync::Arc};
 
 use anyhow::{Context, Result, bail};
 use secrecy::{ExposeSecret, SecretString};
@@ -133,6 +133,7 @@ pub struct Config {
     pub event_rpc_token: SecretString,
     pub identity_rpc_token: SecretString,
     pub operator_emails: Vec<String>,
+    pub dashboard_dir: PathBuf,
     pub audience: String,
     pub tenant_id: String,
     pub access_token_seconds: u64,
@@ -171,6 +172,10 @@ impl Config {
         let event_rpc_token = SecretString::from(required("AUTH_EVENT_RPC_TOKEN")?);
         let identity_rpc_token = SecretString::from(required("AUTH_IDENTITY_RPC_TOKEN")?);
         let operator_emails = parse_operator_emails(optional("AUTH_OPERATOR_EMAILS"))?;
+        let dashboard_dir = PathBuf::from(
+            optional("AUTH_DASHBOARD_DIR")
+                .unwrap_or_else(|| "/usr/share/rustyauth/dashboard".to_owned()),
+        );
         let audience = required("SPACETIME_AUDIENCE")?;
         let tenant_id = optional("AUTH_TENANT_ID").unwrap_or_else(|| "vtr".into());
         let access_token_seconds = integer("AUTH_ACCESS_TOKEN_SECONDS", 300, 60, 900)?;
@@ -220,6 +225,7 @@ impl Config {
             event_rpc_token,
             identity_rpc_token,
             operator_emails,
+            dashboard_dir,
             audience,
             tenant_id,
             access_token_seconds,

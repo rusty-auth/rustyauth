@@ -13,11 +13,15 @@ failure behavior and a small operational surface—not framework novelty or spec
 | `src/store.rs` | Durable records, key layout and atomic mutations | HTTP status codes or browser policy |
 | `src/identity_rpc.rs` | Safe identity projection and private control-plane RPC | WebAuthn material exposure or storage keys |
 | `src/event_rpc.rs` | Ordered replay/follow event projection | Event mutation or consumer checkpoints |
+| `src/operator_auth.rs` | Exact-origin passkey operator sessions and role capabilities | RPC persistence or browser state |
+| `src/organization_rpc.rs` | Single-organization and operator RPC projection | Session policy or storage keys |
+| `src/service_account_rpc.rs` | Service principal policy, credentials and token exchange | Secret persistence or signing-key custody |
 | `src/rpc.rs` | RPC composition, limits and scoped service authentication | Identity persistence policy |
 | `src/jwt.rs` | Signing-key custody and token issuance | Session validation or application authorization |
 | `src/config.rs` | Typed configuration and deployment validation | Runtime defaults that weaken production |
 | `src/backup.rs` | Logical snapshot validation, authenticated envelopes and S3 backup operations | HTTP policy or storage mutations outside the snapshot boundary |
 | `site/src` | Static public site and documentation UI | Product secrets or service-side auth logic |
+| `dashboard/src` | SolidJS operator experience and safe RPC projections | Authorization policy or raw credential persistence |
 | `infra/cloudflare` | Cloudflare Pages and DNS control plane | Application deployment or secret values |
 
 The current service is intentionally a single binary. New modules should represent a real security,
@@ -47,12 +51,16 @@ opaque WebAuthn credential state merely because it exists inside the aggregate.
 - Add rejection-path tests whenever a trust boundary changes.
 - `unsafe` code requires a written design rationale and independent review.
 
-## TypeScript and site rules
+## TypeScript, dashboard and site rules
 
 - Deno is the workspace runtime and task runner; dependency versions are pinned in `package.json` and
   resolved by the committed `deno.lock`.
 - Astro owns document structure and static routing. Solid islands are reserved for real client-side
   behavior, not static markup.
+- The SolidJS dashboard consumes only generated protobuf descriptors through
+  `@rustyauth/connect-solid`; Rust remains authoritative for every permission and mutation.
+- Service credential values may appear only in the one-time creation dialog and must never enter
+  query caches, preview fixtures, logs or persistent browser storage.
 - Browser-only resources must be created in lifecycle hooks and completely disposed during cleanup.
   The Three.js scene tracks GPU resources through `scene-primitives.ts` for this reason.
 - Prefer semantic HTML and CSS over JavaScript layout logic. All animation must respect reduced-motion
@@ -78,9 +86,9 @@ deno task check
 deno task test
 ```
 
-`check` enforces Rust formatting and Clippy, Deno formatting and linting, Astro type checks, Go
-formatting and `go vet`. `test` builds and tests the static site, runs Rust tests with the lockfile,
-and runs the Cloudflare Pulumi unit/compile checks.
+`check` enforces Rust formatting and Clippy, Deno formatting and linting, Astro and dashboard type
+checks, Go formatting and `go vet`. `test` builds the dashboard, builds and tests the static site,
+runs Rust tests with the lockfile, and runs the Cloudflare Pulumi unit/compile checks.
 
 For release candidates, also run:
 

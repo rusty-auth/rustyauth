@@ -22,15 +22,17 @@ The Railway template must generate `AUTH_MASTER_KEY_HEX`, `BOOTSTRAP_TOKEN`,
 `SABLEDB_URL` is assembled from the SableDB service's Railway private-domain reference, so no database
 hostname or credential needs to be copied between services.
 
-The deploy form asks for the browser application's WebAuthn origin and RP ID. The RP ID must exactly match the
-hostname in the WebAuthn origin, and production origins must use HTTPS. Other values have safe template
-defaults but remain editable during the environment step.
+The RustyAuth container serves its operator dashboard and RPC boundary on the same Railway HTTPS domain.
+Set the WebAuthn origin to that public domain and the RP ID to its exact hostname. The template must also ask
+for at least one operator email before first sign-in. Other values have safe template defaults but remain
+editable during the environment step.
 
 | Variable              | Deployment behavior                                                    |
 | --------------------- | ---------------------------------------------------------------------- |
-| `WEBAUTHN_RP_ORIGIN`  | Required user input: the exact HTTPS origin of the browser application |
-| `WEBAUTHN_RP_ID`      | Required user input: the hostname from `WEBAUTHN_RP_ORIGIN`            |
+| `WEBAUTHN_RP_ORIGIN`  | Exact HTTPS origin of the public RustyAuth dashboard                    |
+| `WEBAUTHN_RP_ID`      | Exact hostname from `WEBAUTHN_RP_ORIGIN`                               |
 | `WEBAUTHN_RP_NAME`    | Editable display name; defaults to `RustyAuth`                         |
+| `AUTH_OPERATOR_EMAILS` | Required canonical email(s) allowed to bootstrap the owner operator   |
 | `SPACETIME_AUDIENCE`  | Editable access-token audience; defaults to `rustyauth`                |
 | `AUTH_TENANT_ID`      | Editable tenant claim; defaults to `default`                           |
 | `AUTH_ISSUER`         | Automatically references the RustyAuth public Railway domain           |
@@ -47,6 +49,7 @@ template does not provision a bucket. Partial backup configuration is rejected a
 ## Why Deploy RustyAuth on Railway
 
 - Deploy the complete two-service topology as one unit.
+- Operate users, organization settings and scoped service accounts from the bundled dashboard.
 - Keep SableDB private while exposing RustyAuth through Railway-managed HTTPS.
 - Generate high-entropy application secrets automatically for each installation.
 - Preserve identity state across SableDB container replacement with a persistent volume.
@@ -62,9 +65,8 @@ template does not provision a bucket. Partial backup configuration is rejected a
 
 ## Dependencies for RustyAuth Hosting
 
-RustyAuth requires a browser application served from the HTTPS origin entered during deployment. That
-application performs the WebAuthn browser ceremonies and calls RustyAuth's HTTP API. A downstream API must
-verify issued tokens against RustyAuth's JWKS and enforce the configured issuer, audience, tenant, expiry, and
+RustyAuth includes the operator browser application at its HTTPS origin. A downstream API must verify issued
+tokens against RustyAuth's JWKS and enforce the configured issuer, audience, tenant, expiry and
 application-specific authorization policy.
 
 ### Deployment Dependencies
