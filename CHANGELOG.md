@@ -144,6 +144,11 @@ upgrading.
 - **The bootstrap token is compared in constant time** over SHA-256 digests. String equality short-circuits
   at the first differing byte, which leaks the token to an attacker timing this unauthenticated enrolment
   endpoint one byte at a time. Hashing first also makes the comparison independent of token length.
+- **Unauthenticated endpoints are rate limited per caller address.** Naming an account cost nothing, so an
+  attacker could enumerate which addresses hold accounts, and open ceremonies without bound. Identifier
+  probes, ceremonies and service-account token exchange now carry separate per-minute budgets over a fixed
+  60-second window and answer `429` with `Retry-After` once a budget is exhausted. The budgets are
+  deliberately generous enough that a person retrying a failed passkey tap is never throttled.
 - **Clickjacking, injected script and cross-origin leakage have browser-enforced boundaries.** The dashboard
   is an administrative surface on the same origin as the authentication API; CSP, `X-Frame-Options`, COOP and
   CORP now deny framing, inline and remote script, `base` rewriting and cross-origin subresource embedding.

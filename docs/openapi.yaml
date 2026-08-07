@@ -259,6 +259,8 @@ paths:
                 $ref: "#/components/schemas/Error"
         "413":
           $ref: "#/components/responses/PayloadTooLarge"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
         "500":
           $ref: "#/components/responses/InternalError"
   /v1/passkeys/registration/verify:
@@ -299,6 +301,8 @@ paths:
           $ref: "#/components/responses/RequestTimeout"
         "413":
           $ref: "#/components/responses/PayloadTooLarge"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
         "500":
           $ref: "#/components/responses/InternalError"
   /v1/passkeys/authentication/options:
@@ -340,6 +344,8 @@ paths:
           $ref: "#/components/responses/RequestTimeout"
         "413":
           $ref: "#/components/responses/PayloadTooLarge"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
         "500":
           $ref: "#/components/responses/InternalError"
   /v1/passkeys/authentication/verify:
@@ -379,6 +385,8 @@ paths:
           $ref: "#/components/responses/RequestTimeout"
         "413":
           $ref: "#/components/responses/PayloadTooLarge"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
         "500":
           $ref: "#/components/responses/InternalError"
   /v1/token:
@@ -898,6 +906,8 @@ paths:
           $ref: "#/components/responses/RequestTimeout"
         "413":
           $ref: "#/components/responses/PayloadTooLarge"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
         "500":
           $ref: "#/components/responses/InternalError"
   /v1/local-agent-handoff:
@@ -945,6 +955,8 @@ paths:
                 $ref: "#/components/schemas/Error"
         "408":
           $ref: "#/components/responses/RequestTimeout"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
         "500":
           $ref: "#/components/responses/InternalError"
 components:
@@ -993,6 +1005,22 @@ components:
       description: Request exceeded the 30-second ceiling.
     PayloadTooLarge:
       description: Request body exceeded 256 KiB.
+    TooManyRequests:
+      description: >-
+        Rate-limit budget exhausted for this caller address and request class.
+        Unauthenticated endpoints use a fixed 60-second window.
+      headers:
+        Retry-After:
+          description: Seconds until the rate-limit window resets.
+          schema:
+            type: integer
+            format: int64
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error: too many requests; retry later
     InternalError:
       description: >-
         Internal dependency/state failure, reported generically as

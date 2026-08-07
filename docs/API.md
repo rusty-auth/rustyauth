@@ -538,6 +538,16 @@ browser client makes, which remain governed by the exact-origin CORS policy.
 
 Requests are bounded at 30 seconds, a 256 KiB REST body and a 64 KiB RPC body.
 
+Unauthenticated endpoints are rate limited per caller address over a fixed 60-second window, so
+enumeration is not free while a person retrying a failed passkey tap is never throttled. A refused
+request returns `429` with a `Retry-After` header giving the seconds until the window resets.
+
+| Class | Endpoints | Budget per minute |
+| --- | --- | --- |
+| Identifier probe | Registration and authentication options, `POST /v1/email-links` | 10 |
+| Ceremony | Registration and authentication verification, development handoff | 30 |
+| Credential exchange | Service-account token exchange | 60 |
+
 ## Status codes
 
 | Status | Meaning |
@@ -552,5 +562,6 @@ Requests are bounded at 30 seconds, a 256 KiB REST body and a 64 KiB RPC body.
 | `408` | Request exceeded the 30-second ceiling |
 | `409` | Existing identifier/credential, identifier limit, or prohibited final removal |
 | `413` | Request body exceeded 256 KiB |
+| `429` | Rate-limit budget exhausted; retry after the `Retry-After` interval |
 | `500` | Internal dependency/state failure, reported generically |
 | `503` | SableDB readiness failure |
