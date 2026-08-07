@@ -1,0 +1,133 @@
+syntax = "proto3";
+
+package rustyauth.webhooks.v1;
+
+// Manages signed event delivery and the operational history needed to
+// diagnose and replay failed deliveries.
+service WebhookService {
+  rpc ListWebhooks(ListWebhooksRequest) returns (ListWebhooksResponse);
+  rpc GetWebhook(GetWebhookRequest) returns (Webhook);
+  rpc CreateWebhook(CreateWebhookRequest) returns (CreateWebhookResponse);
+  rpc UpdateWebhook(UpdateWebhookRequest) returns (Webhook);
+  rpc RotateSigningSecret(RotateSigningSecretRequest) returns (RotateSigningSecretResponse);
+  rpc TestWebhook(TestWebhookRequest) returns (WebhookDelivery);
+  rpc ListDeliveries(ListDeliveriesRequest) returns (ListDeliveriesResponse);
+  rpc ReplayDelivery(ReplayDeliveryRequest) returns (WebhookDelivery);
+  rpc DeleteWebhook(DeleteWebhookRequest) returns (DeleteWebhookResponse);
+}
+
+enum WebhookStatus {
+  WEBHOOK_STATUS_UNSPECIFIED = 0;
+  WEBHOOK_STATUS_ACTIVE = 1;
+  WEBHOOK_STATUS_PAUSED = 2;
+  WEBHOOK_STATUS_FAILING = 3;
+}
+
+enum DeliveryStatus {
+  DELIVERY_STATUS_UNSPECIFIED = 0;
+  DELIVERY_STATUS_PENDING = 1;
+  DELIVERY_STATUS_SUCCEEDED = 2;
+  DELIVERY_STATUS_RETRYING = 3;
+  DELIVERY_STATUS_FAILED = 4;
+}
+
+message Webhook {
+  string id = 1;
+  string name = 2;
+  string url = 3;
+  WebhookStatus status = 4;
+  repeated string event_types = 5;
+  string secret_hint = 6;
+  string created_at = 7;
+  string updated_at = 8;
+  string last_delivery_at = 9;
+}
+
+message WebhookDelivery {
+  string id = 1;
+  string webhook_id = 2;
+  string event_id = 3;
+  string event_type = 4;
+  DeliveryStatus status = 5;
+  uint32 attempt_count = 6;
+  uint32 response_status = 7;
+  uint64 latency_milliseconds = 8;
+  string created_at = 9;
+  string next_attempt_at = 10;
+  string completed_at = 11;
+  string error_class = 12;
+}
+
+message ListWebhooksRequest {
+  WebhookStatus status = 1;
+  uint32 page_size = 2;
+  string page_token = 3;
+}
+
+message ListWebhooksResponse {
+  repeated Webhook webhooks = 1;
+  string next_page_token = 2;
+}
+
+message GetWebhookRequest {
+  string webhook_id = 1;
+}
+
+message CreateWebhookRequest {
+  string name = 1;
+  string url = 2;
+  repeated string event_types = 3;
+}
+
+message CreateWebhookResponse {
+  Webhook webhook = 1;
+  // HMAC signing secret shown exactly once.
+  string signing_secret = 2;
+}
+
+message UpdateWebhookRequest {
+  string webhook_id = 1;
+  string name = 2;
+  string url = 3;
+  WebhookStatus status = 4;
+  repeated string event_types = 5;
+  string reason = 6;
+}
+
+message RotateSigningSecretRequest {
+  string webhook_id = 1;
+  string reason = 2;
+}
+
+message RotateSigningSecretResponse {
+  Webhook webhook = 1;
+  string signing_secret = 2;
+}
+
+message TestWebhookRequest {
+  string webhook_id = 1;
+}
+
+message ListDeliveriesRequest {
+  string webhook_id = 1;
+  DeliveryStatus status = 2;
+  uint32 page_size = 3;
+  string page_token = 4;
+}
+
+message ListDeliveriesResponse {
+  repeated WebhookDelivery deliveries = 1;
+  string next_page_token = 2;
+}
+
+message ReplayDeliveryRequest {
+  string delivery_id = 1;
+  string reason = 2;
+}
+
+message DeleteWebhookRequest {
+  string webhook_id = 1;
+  string reason = 2;
+}
+
+message DeleteWebhookResponse {}

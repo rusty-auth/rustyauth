@@ -1,0 +1,99 @@
+---
+import DocsLayout from "../../layouts/DocsLayout.astro";
+
+const accountFields = [
+  ["id", "UUID", "Stable account ID and WebAuthn user handle", "HTTP, RPC, JWT sub"],
+  ["profile", "Object", "Optional given, family and display names", "HTTP and RPC; not JWT"],
+  ["identifiers", "1–20 records", "Canonical email/phone discovery and contact records", "HTTP and RPC"],
+  ["passkeys", "1+ records", "Credential state plus private verification metadata", "Metadata-only projections"],
+  ["sessionVersion", "Integer", "Internal revoke-all generation copied into sessions", "JWT claim only"],
+  ["createdAt", "Unix seconds", "Account creation time", "HTTP and RPC as RFC 3339"],
+];
+
+const identifierFields = [
+  ["type", "email | phone", "Namespace used with the canonical value as a unique key"],
+  ["value", "String", "ASCII-lowercase dot-atom email or normalized E.164 phone"],
+  ["verified", "Boolean", "Control of the address or number has been confirmed by a trusted workflow"],
+  ["verifiedAt", "Timestamp?", "Set when verification becomes true; legacy verified email may be null"],
+  ["primary", "Boolean", "Exactly one identifier is primary for the whole account"],
+  ["createdAt", "Timestamp", "When the identifier was attached"],
+];
+
+const passkeyFields = [
+  ["id", "Unpadded Base64URL credential ID and uniqueness key"],
+  ["label", "1–80 character presentation label"],
+  ["counter", "Last accepted authenticator signature counter"],
+  ["createdAt / lastUsedAt", "Registration and latest successful-use timestamps"],
+  ["passkey", "Opaque webauthn-rs public-key credential state; private to RustyAuth"],
+];
+
+const sessionFields = [
+  ["id / userId", "Session UUID and owning account UUID"],
+  ["authMethod", "passkey or development-only agent"],
+  ["currentCredentialId", "Passkey used to create the session, when applicable"],
+  ["sessionVersion", "Account generation captured when the session was issued"],
+  ["createdAt / lastSeenAt", "Authentication time and sliding idle activity"],
+  ["absoluteExpiresAt", "Non-extendable session deadline"],
+];
+
+const exposures = [
+  ["GET /v1/account", "UUID, profile, identifiers, creation time", "Passkeys, sessions, internal generation"],
+  ["GET /v1/credentials", "Passkey ID, label, timestamps, current marker", "Credential state, public key, counter"],
+  ["Token response", "Preferred email/phone, verification booleans, profile, JWT", "Full identifier and credential records"],
+  ["JWT", "UUID, session, tenant and authentication claims", "Names, contacts, verification, passkeys"],
+  ["IdentityService", "UUID, profile, identifiers, passkey metadata", "Credential state, counters, sessions, tokens"],
+  ["Event APIs", "Sequence, type, subject UUID, tenant, timestamp", "Contact values and bearer/credential payloads"],
+];
+---
+
+<DocsLayout title="Identity data model" eyebrow="Persistence contract" intro="Every identity field RustyAuth stores, how it is validated, and what each integration boundary is allowed to see.">
+  <div class="doc-callout"><strong>The durable anchor is a UUID</strong><p>Email, phone, names and passkeys can change without changing the account ID or WebAuthn user handle. Downstream systems should key people by the RustyAuth UUID—not a contact value.</p></div>
+
+  <div class="identity-lifecycle" aria-label="Identity storage lifecycle">
+    <div><small>Durable aggregate</small><strong>Account</strong><span>UUID · profile · identifiers · passkeys</span></div>
+    <b>+</b>
+    <div><small>Expiring security state</small><strong>Sessions</strong><span>Hashed bearer key · idle + absolute expiry</span></div>
+    <b>+</b>
+    <div><small>Single use</small><strong>Ceremonies</strong><span>Server-side WebAuthn state · five minutes</span></div>
+  </div>
+
+  <h2>The account aggregate</h2>
+  <p><code>auth:user:&lt;uuid&gt;</code> is the authoritative identity record in SableDB. Account and index mutations use atomic pipelines. Every read validates identifier count, uniqueness, primary selection, verification consistency, phone canonicalization and safe profile text.</p>
+  <div class="doc-table-wrap"><table><thead><tr><th>Field</th><th>Stored type</th><th>Meaning</th><th>Exposure</th></tr></thead><tbody>{accountFields.map(([field, type, meaning, exposure]) => <tr><td><code>{field}</code></td><td>{type}</td><td>{meaning}</td><td>{exposure}</td></tr>)}</tbody></table></div>
+  <p>Two additional on-disk fields—<code>email</code> and <code>emailVerified</code>—mirror the preferred email for compatibility with the original email-only model. New code treats <code>identifiers</code> as the source of truth.</p>
+
+  <h2>Email and phone identifiers</h2>
+  <p>An identifier discovers an account and records contact/verification state. It is not an authenticator. Accounts can be email-only, phone-only or contain any mix up to 20 globally unique identifiers.</p>
+  <div class="doc-table-wrap compact"><table><thead><tr><th>Field</th><th>Type</th><th>Rule</th></tr></thead><tbody>{identifierFields.map(([field, type, rule]) => <tr><td><code>{field}</code></td><td>{type}</td><td>{rule}</td></tr>)}</tbody></table></div>
+  <h3>Canonical values</h3>
+  <ul><li>Email is trimmed, ASCII-lowercased and validated as the supported dot-atom form. Quoted local parts and internationalized addresses are not supported in 0.1.</li><li>Phone input starts with <code>+</code>; common visual separators are removed and the stored E.164 form contains 8–15 digits.</li><li>Lookup is exact after canonicalization. Making an identifier primary never makes it verified.</li></ul>
+  <p>Production browser flows create unverified identifiers and emit a verification-requested event. Delivery and challenge consumption are not implemented yet. The trusted private identity RPC can explicitly set or clear verification state.</p>
+
+  <h2>Profile names</h2>
+  <p>The profile contains only optional <code>givenName</code> (100 characters), <code>familyName</code> (100) and <code>displayName</code> (200). Updates replace the complete profile; blank values clear fields. RustyAuth trims values and rejects control, zero-width and directional-formatting characters, while preserving ordinary Unicode and case.</p>
+  <p>The display name labels WebAuthn registration, but it never replaces the UUID user handle. RustyAuth does not persist title, middle name, pronouns, birth date, address, locale, avatar, organization role or arbitrary attributes.</p>
+
+  <h2>Passkeys</h2>
+  <div class="doc-table-wrap compact"><table><thead><tr><th>Stored field</th><th>Meaning</th></tr></thead><tbody>{passkeyFields.map(([field, meaning]) => <tr><td><code>{field}</code></td><td>{meaning}</td></tr>)}</tbody></table></div>
+  <p>Only ID, label and timestamps cross HTTP/RPC metadata projections. New credential material must come from a WebAuthn ceremony. Duplicate IDs are rejected, a regressing non-zero counter fails authentication, and the final passkey cannot be revoked.</p>
+
+  <h2>Sessions and step-up state</h2>
+  <div class="doc-table-wrap compact"><table><thead><tr><th>Stored field</th><th>Meaning</th></tr></thead><tbody>{sessionFields.map(([field, meaning]) => <tr><td><code>{field}</code></td><td>{meaning}</td></tr>)}</tbody></table></div>
+  <p>The raw cookie is never stored: its SHA-256 digest forms the SableDB key. Agent sessions are read-only for identity and credential mutation. Recent-passkey operations additionally require a passkey session created within five minutes.</p>
+  <p>Registration and authentication ceremonies contain server-side <code>webauthn-rs</code> state, expire after five minutes and are atomically consumed. Additional-passkey ceremonies are bound to their purpose, account and exact initiating session. Ceremonies and agent handoffs are excluded from backups.</p>
+
+  <h2>Indexes, events and recovery</h2>
+  <p>Durable indexes map canonical identifiers and credential IDs to the owning UUID. Backup validation checks both directions, so an aggregate with a missing index—or an index that points to an account that does not own it—cannot be restored.</p>
+  <p>Identity events persist sequence, event UUID, type, optional subject UUID, tenant, timestamp and a redacted JSON object. They do not contain names, contact values, cookies, JWTs, passkey material or challenge payloads. Sessions are captured by logical backup, but restore skips them and increments account session generations by default.</p>
+
+  <h2>Exposure by boundary</h2>
+  <div class="doc-table-wrap"><table><thead><tr><th>Boundary</th><th>Returned</th><th>Excluded</th></tr></thead><tbody>{exposures.map(([boundary, returned, excluded]) => <tr><td><code>{boundary}</code></td><td>{returned}</td><td>{excluded}</td></tr>)}</tbody></table></div>
+
+  <h2>Deliberately not persisted</h2>
+  <p>RustyAuth does not store passwords or hashes, recovery codes, raw session/handoff values, issued JWT strings, completed assertion/attestation payloads, email/SMS verification tokens, application roles, permissions, entitlements, billing state, resource ownership or custom claims.</p>
+  <div class="doc-callout warning"><strong>Application data belongs with the application</strong><p>Persist additional person or customer fields in your own data model keyed by the RustyAuth UUID. Do not overload names, passkey labels or events as an arbitrary metadata store.</p></div>
+
+  <h2>Integration rules</h2>
+  <ol><li>Use the UUID as the downstream foreign identity key.</li><li>Treat contact identifiers as mutable and verification as independent from primary selection.</li><li>Never authorize by email, phone or display name.</li><li>Keep the identity RPC credential in a trusted service, never browser code.</li><li>Validate JWT signature, issuer, audience, expiry, tenant and required authentication claims.</li><li>Plan verified email/SMS delivery and account recovery before production adoption.</li></ol>
+  <p>For exact request contracts, continue to the <a href="/docs/api">HTTP and RPC API</a>. For key families, backup behavior and trust boundaries, see <a href="/docs/architecture">Architecture</a>.</p>
+</DocsLayout>

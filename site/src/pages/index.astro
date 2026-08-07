@@ -7,15 +7,16 @@ const capabilities = [
   ["Sessions", "Durable and revocable", "HttpOnly sessions with idle and absolute expiry. Raw bearer values never become durable database records."],
   ["Tokens", "Narrow downstream trust", "Short-lived ES256 access tokens, public JWKS and explicit issuer, audience, tenant and authentication claims."],
   ["Storage", "Built on SableDB", "One private, volume-backed persistence engine for users, credentials, ceremonies, sessions and ordered events."],
-  ["Operations", "Fails closed", "Exact-origin enforcement, dependency readiness, structured logs and startup validation for security-critical configuration."],
+  ["Operations", "Fails closed", "Automatic signing-key rotation, verified scheduled snapshots, JSON operator receipts and clean-room restore."],
   ["Ownership", "Your identity boundary", "Self-hosted infrastructure with no required identity SaaS. Your application keeps authorization and entitlement decisions."],
 ];
 const status = [
   ["Passkey registration and sign-in", "Available"],
   ["Sessions and credential management", "Available"],
-  ["ES256 tokens and JWKS", "Available"],
-  ["Protobuf + gRPC service boundary", "Planned"],
-  ["Recovery and signing-key rotation", "Before 1.0"],
+  ["ES256 tokens and automatic key rotation", "Available"],
+  ["Scheduled backups and clean-room restore", "Available"],
+  ["Protobuf + gRPC service boundary", "Available"],
+  ["Account recovery and multi-writer qualification", "Before 1.0"],
 ];
 ---
 
@@ -42,12 +43,12 @@ const status = [
       <div class="section-heading">
         <p class="kicker"><span></span> Deliberate technology choices</p>
         <h2>Secure and lightweight.<br />Ready to scale.</h2>
-        <p>Each layer has one job: Rust protects the public boundary, SableDB keeps identity state compact and private, and typed contracts will keep application integrations explicit.</p>
+        <p>Each layer has one job: Rust protects the public boundary, SableDB keeps identity state compact and private, and typed contracts keep application integrations explicit.</p>
       </div>
       <div class="stack-grid">
         <article><span class="stack-index">01</span><p>Why Rust</p><h3>Safety without a runtime tax.</h3><ul><li>Memory safety without garbage-collection pauses</li><li>Predictable latency at the authentication boundary</li><li>One small binary with a narrow operational surface</li><li>A mature cryptography and WebAuthn ecosystem</li></ul><strong>Shipped today</strong></article>
         <article class="stack-featured"><span class="stack-index">02</span><p>Why SableDB</p><h3>Durable state, without database sprawl.</h3><ul><li>Rust-native, Valkey-compatible persistence</li><li>Private, volume-backed identity storage</li><li>Fast atomic pipelines for credentials and sessions</li><li>A compact topology that remains easy to own</li></ul><strong>Shipped today</strong></article>
-        <article><span class="stack-index">03</span><p>Why typed contracts</p><h3>Protocol clarity across services.</h3><ul><li>Protobuf schemas as an explicit interface</li><li>Efficient gRPC for trusted service communication</li><li>Generated clients instead of hand-written payloads</li><li>Versionable contracts as RustyAuth grows</li></ul><strong class="roadmap">Planned boundary</strong></article>
+        <article><span class="stack-index">03</span><p>Why typed contracts</p><h3>Protocol clarity across services.</h3><ul><li>Protobuf schemas as an explicit interface</li><li>Efficient gRPC for trusted service communication</li><li>Generated clients instead of hand-written payloads</li><li>Versionable contracts as RustyAuth grows</li></ul><strong>Shipped today</strong></article>
       </div>
     </section>
 

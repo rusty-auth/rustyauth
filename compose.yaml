@@ -14,6 +14,9 @@ services:
       SABLEDB_URL: redis://sabledb:6379
       AUTH_MASTER_KEY_HEX: ${AUTH_MASTER_KEY_HEX:-0000000000000000000000000000000000000000000000000000000000000000}
       BOOTSTRAP_TOKEN: ${BOOTSTRAP_TOKEN:-vtr-local-enrolment-only}
+      AUTH_EVENT_RPC_TOKEN: ${AUTH_EVENT_RPC_TOKEN:-local-event-rpc-token-replace-before-use-0001}
+      AUTH_IDENTITY_RPC_TOKEN: ${AUTH_IDENTITY_RPC_TOKEN:-local-identity-rpc-token-replace-before-use-0001}
+      AUTH_OPERATOR_EMAILS: ${AUTH_OPERATOR_EMAILS:-admin@rustyauth.local}
       SPACETIME_AUDIENCE: ${SPACETIME_AUDIENCE:-vtr-dashboard-v2-local}
       AUTH_TENANT_ID: ${AUTH_TENANT_ID:-vtr}
       PORT: 8080

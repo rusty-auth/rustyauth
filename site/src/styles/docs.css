@@ -226,6 +226,74 @@
 .doc-architecture .dark span {
   color: #aaa39d;
 }
+.identity-lifecycle {
+  display: grid;
+  grid-template-columns: 1fr 24px 1fr 24px 1fr;
+  align-items: stretch;
+  margin: 34px 0 54px;
+}
+.identity-lifecycle > div {
+  min-height: 128px;
+  padding: 18px;
+  border: 1px solid var(--line);
+  background: rgba(255,255,255,.28);
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+.identity-lifecycle > b {
+  align-self: center;
+  text-align: center;
+  color: #9b948c;
+}
+.identity-lifecycle small {
+  color: var(--copper-deep);
+  font: 8px var(--mono);
+  text-transform: uppercase;
+  letter-spacing: .08em;
+}
+.identity-lifecycle strong {
+  margin: 8px 0;
+  font-size: 18px;
+}
+.identity-lifecycle span {
+  color: var(--ink-soft);
+  font: 9px/1.5 var(--mono);
+}
+.doc-table-wrap {
+  margin: 24px 0 32px;
+  overflow-x: auto;
+  border-top: 2px solid var(--ink);
+}
+.doc-table-wrap table {
+  width: 100%;
+  min-width: 670px;
+  border-collapse: collapse;
+  text-align: left;
+}
+.doc-table-wrap.compact table {
+  min-width: 560px;
+}
+.doc-table-wrap th {
+  padding: 13px 12px;
+  color: var(--copper-deep);
+  border-bottom: 1px solid var(--line);
+  font: 9px var(--mono);
+  text-transform: uppercase;
+  letter-spacing: .08em;
+}
+.doc-table-wrap td {
+  padding: 14px 12px;
+  color: var(--ink-soft);
+  border-bottom: 1px solid var(--line);
+  font-size: 12px;
+  line-height: 1.55;
+  vertical-align: top;
+}
+.doc-table-wrap td:first-child {
+  color: var(--ink);
+  white-space: nowrap;
+}
 .endpoint-table {
   border-top: 1px solid var(--line);
 }

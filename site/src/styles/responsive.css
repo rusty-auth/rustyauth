@@ -177,8 +177,16 @@
     grid-template-columns: 1fr;
     gap: 8px;
   }
-  .doc-architecture > b {
+  .doc-architecture > b,
+  .identity-lifecycle > b {
     transform: rotate(90deg);
+  }
+  .identity-lifecycle {
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+  .identity-lifecycle > div {
+    min-height: 108px;
   }
   .variable-list > div {
     grid-template-columns: 1fr;

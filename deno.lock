@@ -3,9 +3,13 @@
   "specifiers": {
     "jsr:@std/assert@*": "1.0.19",
     "jsr:@std/assert@1.0.19": "1.0.19",
+    "jsr:@std/assert@^1.0.14": "1.0.19",
     "jsr:@std/internal@^1.0.12": "1.0.14",
     "npm:@astrojs/check@0.9.10": "0.9.10_typescript@5.9.3",
     "npm:@astrojs/solid-js@7.0.2": "7.0.2_solid-js@1.9.14_@types+node@22.19.19",
+    "npm:@bufbuild/protobuf@^2.2.3": "2.13.0",
+    "npm:@connectrpc/connect-web@2": "2.1.2_@bufbuild+protobuf@2.13.0_@connectrpc+connect@2.1.2__@bufbuild+protobuf@2.13.0",
+    "npm:@connectrpc/connect@2": "2.1.2_@bufbuild+protobuf@2.13.0",
     "npm:@oslojs/encoding@1.1.0": "1.1.0",
     "npm:@types/node@22.19.19": "22.19.19",
     "npm:@types/three@0.185.4": "0.185.4",
@@ -377,6 +381,9 @@
       "os": ["win32"],
       "cpu": ["x64"]
     },
+    "@bufbuild/protobuf@2.13.0": {
+      "integrity": "sha512-acq7c49vxfm1ggJ95P70TX7ABDM0vxr1SYD3BB0o0jnBLB4OAqeHyKuN+cD3w80gXEDQ2zxHpR6CUeA+O/aU9g=="
+    },
     "@capsizecss/unpack@4.0.1": {
       "integrity": "sha512-CuNiSqg7+e1cO/GjffyMOm5Tt2jUF9CWHHnvQ/UkqvtkGfHdgwEC0wpmq7fkN3gxwpRnrAN0WzO3vREKmNolMQ==",
       "dependencies": [
@@ -436,6 +443,19 @@
       "integrity": "sha512-2oQz+Ksu4ji6e/+ZoYX+tWQEcxAii2p7l+iR8kx48W1llMalaufAsmVxTlk+3/vrM7D3/2c0iK448e0UQTcIMg==",
       "os": ["win32"],
       "cpu": ["x64"]
+    },
+    "@connectrpc/connect-web@2.1.2_@bufbuild+protobuf@2.13.0_@connectrpc+connect@2.1.2__@bufbuild+protobuf@2.13.0": {
+      "integrity": "sha512-1tfaK85MU+gJjwwmL31d2rzdf0XCYX99chZf63uG89SGBUd4XuZ4ZzhGo2u79TPXOE6nLIZQ2okrpyey42PYdg==",
+      "dependencies": [
+        "@bufbuild/protobuf",
+        "@connectrpc/connect"
+      ]
+    },
+    "@connectrpc/connect@2.1.2_@bufbuild+protobuf@2.13.0": {
+      "integrity": "sha512-MXkBijtcX09R10Eb6sFeIetc6w6746eio6xtfuyVOH7oQAacT1X0GzMIQFux6Qy8cq3W/T5qX5Bei8YbFtmRGA==",
+      "dependencies": [
+        "@bufbuild/protobuf"
+      ]
     },
     "@cspotcode/source-map-support@0.8.1": {
       "integrity": "sha512-IchNf6dN4tHoMFIn/7OE8LWZ19Y6q/67Bmf6vnGREv8RSbBVb9LPJxEcnwrcwX6ixSvaiGoomAUvu4YSxXrVgw==",
@@ -1147,7 +1167,7 @@
         "emmet",
         "jsonc-parser@2.3.1",
         "vscode-languageserver-textdocument",
-        "vscode-languageserver-types@3.18.0",
+        "vscode-languageserver-types",
         "vscode-uri"
       ]
     },
@@ -2552,7 +2572,7 @@
       "dependencies": [
         "@vscode/l10n",
         "vscode-languageserver-textdocument",
-        "vscode-languageserver-types@3.17.5",
+        "vscode-languageserver-types",
         "vscode-uri"
       ]
     },
@@ -2561,7 +2581,7 @@
       "dependencies": [
         "@vscode/l10n",
         "vscode-languageserver-textdocument",
-        "vscode-languageserver-types@3.18.0",
+        "vscode-languageserver-types",
         "vscode-uri"
       ]
     },
@@ -2570,7 +2590,7 @@
       "dependencies": [
         "jsonc-parser@3.3.1",
         "vscode-languageserver-textdocument",
-        "vscode-languageserver-types@3.18.0",
+        "vscode-languageserver-types",
         "vscode-nls",
         "vscode-uri"
       ]
@@ -2582,7 +2602,7 @@
       "integrity": "sha512-mb1bvRJN8SVznADSGWM9u/b07H7Ecg0I3OgXDuLdn307rl/J3A9YD6/eYOssqhecL27hK1IPZAsaqh00i/Jljg==",
       "dependencies": [
         "vscode-jsonrpc",
-        "vscode-languageserver-types@3.17.5"
+        "vscode-languageserver-types"
       ]
     },
     "vscode-languageserver-textdocument@1.0.12": {
@@ -2590,9 +2610,6 @@
     },
     "vscode-languageserver-types@3.17.5": {
       "integrity": "sha512-Ld1VelNuX9pdF39h2Hgaeb5hEZM2Z3jUrrMgWQAu82jMtZp7p3vJT3BzToKtZI7NgQssZje5o0zryOrhQvzQAg=="
-    },
-    "vscode-languageserver-types@3.18.0": {
-      "integrity": "sha512-8TsGPNMIMiiBdkORgRSvLjuiEIiAFtO+KssmYWxQ+uSVvlf7RjK8YKCOjPzZ+YA04jXEV7+7LvkSmHkhpNS99g=="
     },
     "vscode-languageserver@9.0.1": {
       "integrity": "sha512-woByF3PDpkHFUreUa7Hos7+pUWdeWMXRd26+ZX2A8cFx6v/JPTtd4/uN0/jB6XQHYaOlHbio03NTHCqrgG5n7g==",
@@ -2671,7 +2688,7 @@
         "vscode-json-languageservice",
         "vscode-languageserver",
         "vscode-languageserver-textdocument",
-        "vscode-languageserver-types@3.18.0",
+        "vscode-languageserver-types",
         "vscode-uri",
         "yaml"
       ],
@@ -2724,6 +2741,18 @@
   },
   "workspace": {
     "members": {
+      "packages/connect-solid": {
+        "dependencies": [
+          "jsr:@std/assert@^1.0.14",
+          "npm:@connectrpc/connect-web@2",
+          "npm:@connectrpc/connect@2"
+        ]
+      },
+      "packages/protocol": {
+        "dependencies": [
+          "npm:@bufbuild/protobuf@^2.2.3"
+        ]
+      },
       "site": {
         "dependencies": [
           "jsr:@std/assert@1.0.19"

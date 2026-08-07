@@ -17,9 +17,9 @@
 </div>
 
 > [!WARNING]
-> RustyAuth is pre-release software. Recovery, scheduled backup/restore, signing-key rotation and an
-> independent security assessment are not complete. Do not make it the sole identity system for a
-> production service yet.
+> RustyAuth is pre-release software. Account recovery, abuse controls, multi-writer qualification
+> and an independent security assessment are not complete. Do not make it the sole identity system
+> for a production service yet.
 
 ## What RustyAuth is
 
@@ -38,6 +38,8 @@ permissions, entitlements and resource ownership.
 - WebAuthn passkey registration and authentication with five-minute, server-side, single-use
   ceremonies;
 - persistent users, passkeys and sessions in SableDB using its Valkey-compatible protocol;
+- multiple canonical email/phone identifiers and optional given, family and display names per
+  stable account UUID;
 - HttpOnly, SameSite=Strict sessions with idle and absolute expiry;
 - multiple passkeys per account, labels, last-used timestamps and final-credential protection;
 - recent-authentication enforcement before credential removal;
@@ -45,11 +47,14 @@ permissions, entitlements and resource ownership.
 - ES256 JWT issuance with issuer, audience, tenant, subject, session and authentication-method
   claims;
 - OpenID-style discovery and a public JWKS endpoint;
-- ordered, cursor-based authentication-event polling;
+- ordered, cursor-based authentication-event polling and gRPC streaming;
+- private Connect/gRPC identity reads, exact search and controlled mutations;
 - exact-origin CORS and request-origin enforcement;
 - liveness, dependency readiness, request IDs and structured JSON logging;
-- development-only, one-use agent browser handoffs for an existing account; and
-- an application-encrypted S3 upload primitive for future backup scheduling.
+- development-only, one-use agent browser handoffs for an existing account;
+- automatic staged signing-key rotation with overlapping JWKS publication; and
+- scheduled, authenticated logical backups to S3-compatible storage with verification and
+  clean-room restore commands.
 
 See [Project status](#project-status) for functionality that is deliberately not claimed yet.
 
@@ -61,7 +66,7 @@ flowchart LR
     Auth -->|"private Valkey protocol"| Sable["SableDB\nidentity state"]
     Auth -->|"short-lived ES256 JWT"| API["Application API / SpacetimeDB"]
     API -->|"JWKS verification"| Auth
-    Auth -.->|"AES-256-GCM envelope\nnot yet scheduled"| Bucket["S3-compatible bucket"]
+    Auth -.->|"scheduled AES-256-GCM\nlogical backups"| Bucket["S3-compatible bucket"]
 ```
 
 Only RustyAuth is public. SableDB must remain private and volume-backed; it is a persistence engine,
@@ -103,6 +108,33 @@ intentionally want to erase the local identity store.
 > The checked-in development key and bootstrap token are public test values. They are only safe on
 > loopback. Generate independent secrets before any shared deployment.
 
+## Backup and key operations
+
+The same binary provides a small operator CLI. When backup storage is configured, the service
+creates a verified logical backup after startup and every six hours by default; signing-key
+maintenance is automatic.
+
+```sh
+passkey-auth-service doctor
+passkey-auth-service backup create
+passkey-auth-service backup list
+passkey-auth-service backup verify <object-key>
+passkey-auth-service keys status
+passkey-auth-service keys rotate
+```
+
+Run restore as an offline operation against an empty RustyAuth namespace:
+
+```sh
+passkey-auth-service backup restore <object-key>
+passkey-auth-service doctor
+```
+
+Restore invalidates sessions by default, creates fresh signing-key material and fails closed if its
+final security steps do not complete. `--preserve-sessions` exists only for an explicitly reviewed
+incident response. See [Configuration](docs/CONFIGURATION.md) for key-overlap settings and
+[Deployment](docs/DEPLOYMENT.md) for the clean-room recovery runbook.
+
 ## How integration works
 
 ### Registration
@@ -119,7 +151,7 @@ before production use.
 
 ### Sign-in and token exchange
 
-1. The browser requests authentication options for a canonical email address.
+1. The browser requests authentication options for a canonical email address or E.164 phone number.
 2. RustyAuth stores a single-use ceremony and returns WebAuthn options.
 3. The browser calls `navigator.credentials.get()` and returns the assertion.
 4. RustyAuth verifies user presence and verification, advances credential state and creates an
@@ -140,21 +172,27 @@ are stored only as SHA-256-derived SableDB keys; the raw bearer value lives in t
 | `GET /readyz` | Public | SableDB-backed readiness |
 | `GET /.well-known/passkey-auth` | Public | Runtime capabilities |
 | `GET /.well-known/openid-configuration` | Public | Issuer and token metadata |
-| `GET /.well-known/jwks.json` | Public | Active ES256 public key |
+| `GET /.well-known/jwks.json` | Public | Active, staged and overlapping ES256 public keys |
 | `POST /v1/passkeys/registration/options` | Origin + bootstrap | Start initial registration |
 | `POST /v1/passkeys/registration/verify` | Origin + bootstrap | Finish initial registration |
 | `POST /v1/passkeys/authentication/options` | Origin | Start passkey sign-in |
 | `POST /v1/passkeys/authentication/verify` | Origin | Finish passkey sign-in |
 | `POST /v1/token` | Session + origin | Mint a short-lived access token |
 | `POST /v1/sign-out` | Origin | Revoke the current session |
+| `GET /v1/account` | Session + origin | Read profile and email/phone identifiers |
+| `POST /v1/account/profile` | Passkey session + origin | Replace given, family and display names |
+| `POST /v1/account/identifiers*` | Recent passkey + origin | Add, remove or select a primary identifier |
 | `GET /v1/credentials` | Session + origin | List account passkeys |
-| `POST /v1/passkeys/registration/add/*` | Session + origin | Add another passkey |
-| `POST /v1/credentials/rename` | Session + origin | Rename a passkey |
-| `POST /v1/credentials/revoke` | Recent session + origin | Remove a non-final passkey |
+| `POST /v1/passkeys/registration/add/*` | Recent passkey + origin | Add another passkey |
+| `POST /v1/credentials/rename` | Passkey session + origin | Rename a passkey |
+| `POST /v1/credentials/revoke` | Recent passkey + origin | Remove a non-final passkey |
 | `GET /v1/events?after=N` | Bootstrap | Poll up to 500 ordered events |
 | `POST /v1/email-links` | Origin | Record a sign-in request; delivery is not implemented |
 
-The complete request/response contract and error behavior are documented in [HTTP API](docs/API.md).
+The complete HTTP and private RPC contracts are documented in [API](docs/API.md). The private
+`rustyauth.identity.v1` service reads/searches profile, identifier and passkey metadata and applies
+controlled identity mutations. `rustyauth.events.v1` provides resumable server streaming. Both use
+separately scoped bearer credentials and support Connect, gRPC-Web and gRPC.
 The API may change before `1.0`; pin a release or commit.
 
 ## Configuration and deployment
@@ -178,21 +216,24 @@ RustyAuth is currently `0.1.0` pre-release software.
 | Capability | Status |
 | --- | --- |
 | Passkey registration and authentication | Implemented |
+| Multiple email/phone identifiers and basic account profiles | Implemented; external verification delivery required |
 | Durable sessions and credential management | Implemented |
-| ES256 JWT and JWKS | Implemented; rotation not implemented |
-| Ordered HTTP event polling | Implemented |
+| ES256 JWT, JWKS and automatic rotation | Implemented with prepublication and retired-key overlap |
+| Ordered HTTP event polling and gRPC event streaming | Implemented |
+| Private identity gRPC reads, exact search and mutations | Implemented |
 | Email sign-in and verification delivery | Event recording only |
 | Account recovery | Not implemented |
-| S3 envelope encryption/upload primitive | Implemented but not scheduled |
-| Snapshot export and point-in-time restore | Not implemented |
-| Stable streaming/webhook contract | Not implemented |
+| Scheduled encrypted logical backups | Implemented with manifests and read-after-write verification |
+| Snapshot restore | Implemented for an empty target; sessions invalidated by default |
+| Webhook event delivery | Not implemented |
+| Dashboard organization, service-account, webhook and metrics APIs | Protobuf contracts generated; Rust handlers and operator UI not implemented |
 | Multi-tenant runtime isolation | Claims/events are tenant-tagged; one configured tenant per instance |
 | Independent security review | Not completed |
 
-Production `1.0` requires recovery and abuse controls, scheduled export plus tested restore,
-signing-key overlap/rotation, stable events, cross-instance concurrency review, dependency and
-protocol audits, authenticator coverage and an independent security assessment. The detailed gate
-is documented in [Architecture](docs/ARCHITECTURE.md) and the [Security policy](SECURITY.md).
+Production `1.0` still requires account recovery and abuse controls, event retention/webhook policy,
+cross-instance concurrency review, dependency and protocol audits, authenticator coverage and an
+independent security assessment. The detailed gate is documented in
+[Architecture](docs/ARCHITECTURE.md) and the [Security policy](SECURITY.md).
 
 ## Development
 
@@ -205,9 +246,10 @@ cargo test
 cargo build --locked --release
 ```
 
-Tests currently cover configuration validation, browser-handoff confinement, credential input
-validation and backup-envelope properties. Integration, concurrency and protocol-negative coverage
-must expand before production readiness.
+Tests cover configuration validation, browser-handoff confinement, credential input validation,
+signing-key lifecycle and authenticated backup envelopes. CI also performs a clean-room recovery
+drill against real SableDB and S3-compatible MinIO services. Concurrency, authenticator and broader
+protocol-negative coverage must expand before production readiness.
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for the development workflow and security-sensitive change
 requirements.
@@ -220,6 +262,15 @@ deno task site:dev
 deno task site:test
 ```
 
+ConnectRPC contracts and the Solid Query adapter live in `packages/protocol` and
+`packages/connect-solid`. Regenerate and verify them with:
+
+```sh
+deno task gen
+deno task connect:check
+deno task connect:test
+```
+
 Cloudflare Pages and `rustyauth.dev` are managed in
 [`infra/cloudflare`](infra/cloudflare/README.md) with Pulumi. Production credentials are injected
 from the maintainers' self-hosted Infisical environment and are never committed or stored in plain
@@ -230,11 +281,14 @@ Pulumi configuration.
 | Document | Contents |
 | --- | --- |
 | [Architecture](docs/ARCHITECTURE.md) | Components, flows, state and trust boundaries |
+| [Identity data model](docs/IDENTITY_DATA_MODEL.md) | Every persisted identity field, invariant, index and API projection |
+| [Dashboard control-plane decision](docs/decisions/0001-dashboard-control-plane.md) | SolidJS, ConnectRPC, Rust, Railway and SableDB trust boundaries |
 | [Engineering](docs/ENGINEERING.md) | Module ownership, coding standards and quality gates |
 | [HTTP API](docs/API.md) | Endpoints, inputs, responses and access requirements |
 | [Configuration](docs/CONFIGURATION.md) | Every environment variable and validation rule |
 | [Deployment](docs/DEPLOYMENT.md) | Docker, Railway, persistence and operations |
 | [Security policy](SECURITY.md) | Reporting, threat model and known limitations |
+| [Future product strategy](docs/business/FUTURE_FEATURES.md) | Exploratory business direction for people, agents and delegated authority |
 | [Contributing](CONTRIBUTING.md) | Build, review and pull-request expectations |
 | [Code of conduct](CODE_OF_CONDUCT.md) | Community expectations and enforcement |
 | [Brand guide](docs/BRAND.md) | Naming, voice, logo and attribution usage |

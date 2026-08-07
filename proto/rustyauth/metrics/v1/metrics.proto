@@ -1,0 +1,105 @@
+syntax = "proto3";
+
+package rustyauth.metrics.v1;
+
+// Exposes bounded aggregate rollups. It never returns user, email, IP
+// address, credential, or webhook URL dimensions.
+service MetricsService {
+  rpc GetOverview(GetOverviewRequest) returns (MetricsOverview);
+  rpc QuerySeries(QuerySeriesRequest) returns (MetricSeries);
+  rpc GetAuthenticationFunnel(GetAuthenticationFunnelRequest) returns (AuthenticationFunnel);
+  rpc GetFailureBreakdown(GetFailureBreakdownRequest) returns (FailureBreakdown);
+}
+
+enum Metric {
+  METRIC_UNSPECIFIED = 0;
+  METRIC_AUTHENTICATION_ATTEMPTS = 1;
+  METRIC_AUTHENTICATION_SUCCESSES = 2;
+  METRIC_AUTHENTICATION_FAILURES = 3;
+  METRIC_AUTHENTICATION_LATENCY_MILLISECONDS = 4;
+  METRIC_REGISTRATIONS = 5;
+  METRIC_ACTIVE_USERS = 6;
+  METRIC_SESSIONS_CREATED = 7;
+  METRIC_TOKENS_ISSUED = 8;
+  METRIC_SERVICE_ACCOUNT_RPC_CALLS = 9;
+  METRIC_SERVICE_ACCOUNT_DENIALS = 10;
+  METRIC_WEBHOOK_DELIVERIES = 11;
+  METRIC_WEBHOOK_FAILURES = 12;
+  METRIC_WEBHOOK_LATENCY_MILLISECONDS = 13;
+  METRIC_SABLEDB_LATENCY_MILLISECONDS = 14;
+  METRIC_API_ERRORS = 15;
+}
+
+enum Granularity {
+  GRANULARITY_UNSPECIFIED = 0;
+  GRANULARITY_FIVE_MINUTES = 1;
+  GRANULARITY_HOUR = 2;
+  GRANULARITY_DAY = 3;
+}
+
+message TimeRange {
+  string starts_at = 1;
+  string ends_at = 2;
+}
+
+message MetricPoint {
+  string starts_at = 1;
+  double value = 2;
+}
+
+message GetOverviewRequest {
+  TimeRange range = 1;
+  bool compare_previous_period = 2;
+}
+
+message MetricsOverview {
+  uint64 total_users = 1;
+  uint64 active_users = 2;
+  uint64 registrations = 3;
+  uint64 authentication_attempts = 4;
+  double authentication_success_rate = 5;
+  double authentication_latency_p95_milliseconds = 6;
+  uint64 active_service_accounts = 7;
+  double webhook_delivery_success_rate = 8;
+  uint64 webhook_delivery_backlog = 9;
+  string last_backup_at = 10;
+  bool backup_healthy = 11;
+}
+
+message QuerySeriesRequest {
+  Metric metric = 1;
+  TimeRange range = 2;
+  Granularity granularity = 3;
+  // Bounded server-defined dimensions such as outcome or RPC method.
+  map<string, string> filters = 4;
+}
+
+message MetricSeries {
+  Metric metric = 1;
+  repeated MetricPoint points = 2;
+}
+
+message GetAuthenticationFunnelRequest {
+  TimeRange range = 1;
+}
+
+message AuthenticationFunnel {
+  uint64 registration_options_started = 1;
+  uint64 registrations_completed = 2;
+  uint64 authentication_options_started = 3;
+  uint64 authentications_completed = 4;
+  uint64 challenges_expired = 5;
+}
+
+message GetFailureBreakdownRequest {
+  TimeRange range = 1;
+}
+
+message FailureCount {
+  string error_class = 1;
+  uint64 count = 2;
+}
+
+message FailureBreakdown {
+  repeated FailureCount failures = 1;
+}

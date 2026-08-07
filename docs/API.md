@@ -1,4 +1,4 @@
-# RustyAuth HTTP API
+# RustyAuth HTTP and private RPC API
 
 This is the pre-`1.0` contract implemented by the Rust service. All JSON request bodies use
 `Content-Type: application/json`. Error responses have the form:
@@ -16,9 +16,53 @@ The endpoint tables use these terms:
 - **Origin** — the `Origin` header exactly equals `WEBAUTHN_RP_ORIGIN` without a trailing slash.
 - **Bootstrap** — `x-bootstrap-token` exactly matches `BOOTSTRAP_TOKEN`.
 - **Session** — a valid `passkey_auth_session` HttpOnly cookie plus the exact origin.
-- **Recent session** — the valid session was created no more than five minutes ago.
+- **Passkey session** — a session created by WebAuthn, rather than a local agent handoff.
+- **Recent passkey** — the valid session was created by a passkey no more than five minutes ago.
+- **Event RPC** — `Authorization: Bearer <AUTH_EVENT_RPC_TOKEN>` on an event-service method.
+- **Identity RPC** — `Authorization: Bearer <AUTH_IDENTITY_RPC_TOKEN>` on an identity-service method.
 
-The bootstrap token is an administrative secret, not an end-user browser credential.
+The bootstrap and RPC tokens are administrative service secrets, not end-user browser credentials.
+They are independently scoped and configuration rejects reuse between them.
+
+For the authoritative field-by-field persistence contract—including internal fields deliberately
+excluded from these APIs—see [Identity data model](IDENTITY_DATA_MODEL.md).
+
+## Private RPC boundary
+
+RustyAuth serves Connect, gRPC-Web and native gRPC on the same listener as HTTP. The versioned
+protobuf sources are in `proto/rustyauth`. These methods are intended for trusted back-office and
+service-to-service consumers; browser WebAuthn ceremonies remain on the HTTP API.
+
+### `rustyauth.identity.v1.IdentityService`
+
+| RPC | Purpose |
+| --- | --- |
+| `GetUser` | Read one user by stable UUID |
+| `SearchUsers` | Find users by exact UUID, canonical email/phone, passkey credential ID or label, and profile names |
+| `UpdateProfile` | Replace given, family and display names; empty values clear fields |
+| `AddIdentifier` | Add a canonical email or E.164 phone, with explicit trusted verification state |
+| `RemoveIdentifier` | Remove a non-final linked identifier |
+| `SetPrimaryIdentifier` | Select the account's primary identifier |
+| `SetIdentifierVerification` | Set or clear trusted verification state and timestamp |
+| `RenamePasskey` | Change passkey display metadata |
+| `RevokePasskey` | Remove a non-final passkey |
+
+`SearchUsers` combines every populated criterion with AND and rejects an empty search. Email and
+phone searches use their canonical exact indexes. Name and passkey-label filters are exact,
+privileged administrative filters. Results are ordered by user UUID with opaque pagination tokens;
+the default page is 25 and the maximum is 100.
+
+The returned `User` contains profile fields, identifier verification metadata, and passkey ID,
+label, creation and last-used timestamps. It never contains the stored WebAuthn credential, public
+key, authenticator counter, assertion data, sessions or tokens. Passkey cryptographic material can
+only be registered through a WebAuthn ceremony, not written through gRPC.
+
+### `rustyauth.events.v1.AuthEventService`
+
+`Subscribe` replays the durable event log after `after_sequence` and then follows new events. It
+supports exact event-type and tenant filters plus periodic checkpoints. Delivery is at least once:
+consumers must persist their cursor only after their own work commits. A missing or malformed
+sequence terminates the stream with `DATA_LOSS` instead of silently skipping the event.
 
 ## Health and discovery
 
@@ -43,14 +87,18 @@ Returns runtime capability metadata:
 {
   "issuer": "https://auth.example.com",
   "passkeys": true,
-  "event_protocols": ["http-poll"],
-  "backup_sink_configured": false,
-  "scheduled_backups": false
+  "event_protocols": ["http-poll", "connect", "grpc-web", "grpc"],
+  "identity_protocols": ["connect", "grpc-web", "grpc"],
+  "backup_sink_configured": true,
+  "scheduled_backups": true,
+  "last_backup_at": 1786093200,
+  "backup_healthy": true
 }
 ```
 
-`backup_sink_configured` means credentials and an encryption key were accepted. It does not mean
-exports are scheduled.
+The backup fields are `false`, `false`, `null` and `null` when backup configuration is absent.
+`backup_healthy` remains `null` until the first scheduled attempt and becomes true only after a
+verified upload with no later failure. Timestamps are Unix seconds.
 
 ### `GET /.well-known/openid-configuration`
 
@@ -59,11 +107,14 @@ discovery but RustyAuth is not claiming full OpenID Provider conformance.
 
 ### `GET /.well-known/jwks.json`
 
-Returns the active public P-256 signing key:
+Returns the public P-256 signing keyset:
 
 ```json
 { "keys": [{ "kty": "EC", "crv": "P-256", "alg": "ES256", "use": "sig", "kid": "…" }] }
 ```
+
+The set contains the active key, any prepublished staged key and unexpired retired keys needed to
+verify existing access tokens. Responses are publicly cacheable for five minutes.
 
 ## Initial registration
 
@@ -74,11 +125,24 @@ Access: Origin + Bootstrap.
 Request:
 
 ```json
-{ "email": "person@example.com" }
+{
+  "identifier": { "type": "phone", "value": "+44 7700 900123" },
+  "givenName": "Ada",
+  "familyName": "Lovelace",
+  "displayName": "Ada Lovelace"
+}
 ```
 
-The email is trimmed and lowercased. Superficial format and 320-byte length checks are applied; this
-is not mail-delivery verification. Existing emails return `409`.
+Exactly one identifier is required. New clients can supply an explicit `identifier` with type
+`email` or `phone`; `{ "email": "person@example.com" }` remains supported, and `{ "phone":
+"+447700900123" }` is shorthand for a phone identifier. Emails are trimmed, lowercased and must
+use the supported ASCII dot-atom address form. Phone numbers are normalized to international E.164
+form and must contain 8–15 digits. Existing identifiers return `409`.
+
+The three profile names are optional. Given and family names contain at most 100 characters;
+display names contain at most 200. Values are trimmed; control and invisible directional-formatting
+characters are rejected. The display name, or the joined given and family names, becomes the
+WebAuthn display label. The stable RustyAuth user UUID remains the WebAuthn user handle.
 
 Response `200`:
 
@@ -118,11 +182,13 @@ Access: Origin.
 Request:
 
 ```json
-{ "email": "person@example.com" }
+{ "phone": "+44 7700 900123" }
 ```
 
+The request accepts the same explicit identifier and email/phone shorthand shapes as registration.
 An absent user returns the same `401 passkey authentication is unavailable` class as unavailable
-authentication state.
+authentication state. RustyAuth loads every passkey attached to the resolved account; identifiers
+are account discovery keys, not passkey credentials.
 
 Response `200` contains a five-minute `ceremonyId` and WebAuthn request `options`.
 
@@ -156,14 +222,23 @@ Returns a fresh short-lived token for the existing durable session and refreshes
 ```json
 {
   "email": "person@example.com",
-  "emailVerified": false,
+  "emailVerified": true,
+  "phoneNumber": "+447700900123",
+  "phoneNumberVerified": false,
+  "profile": {
+    "givenName": "Ada",
+    "familyName": "Lovelace",
+    "displayName": "Ada Lovelace"
+  },
   "token": "eyJ…",
   "expiresIn": 300
 }
 ```
 
-In development, the response reports `emailVerified: true` so local use does not require a mail
-provider. Production preserves stored verification state. Email is not embedded in the JWT.
+`email` and `phoneNumber` are nullable when an account does not have that identifier type. In
+development, present identifiers report as verified so local use does not require delivery
+providers. Production preserves stored verification state. Contact details and profile fields are
+not embedded in the JWT.
 
 ### `POST /v1/sign-out`
 
@@ -171,6 +246,82 @@ Access: Origin.
 
 Deletes the current session when present, expires the cookie and returns `204`. The operation is
 idempotent.
+
+## Account profile and identifiers
+
+Passkeys, identifiers and the basic profile belong to the stable account UUID. Changing a contact
+address or number never changes the WebAuthn user handle and does not require re-registering the
+account's passkeys.
+
+### `GET /v1/account`
+
+Access: Session.
+
+```json
+{
+  "id": "3e706d6b-091d-4dc5-a885-5de9ccbf89e8",
+  "profile": {
+    "givenName": "Ada",
+    "familyName": "Lovelace",
+    "displayName": "Ada Lovelace"
+  },
+  "identifiers": [
+    {
+      "type": "email",
+      "value": "person@example.com",
+      "verified": true,
+      "verifiedAt": "2026-08-07T10:00:00Z",
+      "primary": true,
+      "createdAt": "2026-08-07T10:00:00Z"
+    }
+  ],
+  "createdAt": "2026-08-07T10:00:00Z"
+}
+```
+
+`verifiedAt` may be `null` for a verified email migrated from the original single-email record,
+because that format stored verification state without its timestamp.
+
+### `POST /v1/account/profile`
+
+Access: Passkey session. Replaces the small profile and returns the account response. Omitted or
+blank fields clear their current values. Local agent sessions remain read-only for identity data.
+
+```json
+{ "givenName": "Ada", "familyName": "Lovelace", "displayName": "Ada" }
+```
+
+### `POST /v1/account/identifiers`
+
+Access: Recent passkey.
+
+```json
+{ "type": "phone", "value": "+44 7700 900123" }
+```
+
+Adds a globally unique identifier and returns `201` with the account response. An account may hold
+at most 20 identifiers. Development marks the identifier verified immediately. Production stores
+it unverified and appends `email.verification.requested` or `phone.verification.requested` for an
+external delivery/verification workflow. RustyAuth `0.1.0` does not itself deliver or consume a
+verification challenge.
+
+### `POST /v1/account/identifiers/primary`
+
+Access: Recent passkey. Makes the linked identifier primary and returns the account response.
+
+```json
+{ "type": "email", "value": "person@example.com" }
+```
+
+### `POST /v1/account/identifiers/remove`
+
+Access: Recent passkey. Removes the linked identifier and returns the account response. Removing
+the final identifier returns `409`; when the primary identifier is removed, the oldest remaining
+identifier becomes primary.
+
+```json
+{ "type": "phone", "value": "+447700900123" }
+```
 
 ## Credential management
 
@@ -200,25 +351,25 @@ the current passkey session.
 
 ### `POST /v1/passkeys/registration/add/options`
 
-Access: Session.
+Access: Recent passkey.
 
 ```json
 { "label": "YubiKey 5" }
 ```
 
-Labels are trimmed, contain 1–80 characters and may not contain control characters. The response is
-the same ceremony/options shape as initial registration.
+Labels are trimmed, contain 1–80 characters and may not contain control or invisible directional-
+formatting characters. The response is the same ceremony/options shape as initial registration.
 
 ### `POST /v1/passkeys/registration/add/verify`
 
-Access: Session.
+Access: Recent passkey.
 
-Uses the registration verification body. The ceremony must belong to the authenticated account.
-Returns `204`; duplicate credentials return `409`.
+Uses the registration verification body. The ceremony must belong to the authenticated account and
+the exact passkey session that started it. Returns `204`; duplicate credentials return `409`.
 
 ### `POST /v1/credentials/rename`
 
-Access: Session.
+Access: Passkey session.
 
 ```json
 { "credentialId": "base64url-credential-id", "label": "Office security key" }
@@ -228,7 +379,7 @@ Returns `204` or `400` when the credential is not linked to the account.
 
 ### `POST /v1/credentials/revoke`
 
-Access: Recent session.
+Access: Recent passkey.
 
 ```json
 { "credentialId": "base64url-credential-id" }
@@ -265,7 +416,8 @@ Returns at most 500 events strictly after the supplied cursor:
       "tenantId": "vtr",
       "type": "session.created",
       "subject": "3e706d6b-091d-4dc5-a885-5de9ccbf89e8",
-      "occurredAt": 1786096800
+      "occurredAt": 1786096800,
+      "data": {}
     }
   ]
 }
@@ -274,13 +426,16 @@ Returns at most 500 events strictly after the supplied cursor:
 Known event types include:
 
 - `identity.created`;
-- `email.verification.requested`;
+- `email.verification.requested` and `phone.verification.requested`;
 - `email.sign_in.requested`;
+- `identifier.added`, `identifier.removed`, `identifier.primary_changed`,
+  `identifier.verified`, `identifier.unverified` and `profile.updated`;
 - `credential.created`, `credential.renamed`, `credential.revoked`;
 - `session.created`; and
 - `agent.handoff.created`.
 
-There is no retention, acknowledgement or stable streaming contract yet.
+There is no retention or server-side acknowledgement record. The private event RPC provides
+at-least-once replay/follow streaming; consumers persist their own sequence after processing.
 
 ## Development-only agent handoff
 
@@ -302,6 +457,6 @@ The endpoint is disabled in production and is not a general login or impersonati
 | `303` | Development handoff consumed and redirected |
 | `400` | Invalid caller input or account/credential relationship |
 | `401` | Missing/invalid origin, bootstrap, session, ceremony or WebAuthn verification |
-| `409` | Existing email/credential or prohibited final-passkey removal |
+| `409` | Existing identifier/credential, identifier limit, or prohibited final removal |
 | `500` | Internal dependency/state failure, reported generically |
 | `503` | SableDB readiness failure |

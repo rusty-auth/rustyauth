@@ -1,0 +1,28 @@
+---
+import DocsLayout from "../../layouts/DocsLayout.astro";
+---
+<DocsLayout title="Backups and key rotation" eyebrow="Recovery operations" intro="A small, explicit operator workflow for encrypted backups, key changes and clean-room restore drills.">
+  <div class="doc-callout"><strong>Simple by default</strong><p>Provide the complete backup environment once. RustyAuth creates a verified logical backup after startup and every six hours by default, while signing keys rotate automatically with staged JWKS publication and retired-key overlap.</p></div>
+
+  <h2>Operator commands</h2><pre class="doc-code"><code>passkey-auth-service doctor
+passkey-auth-service backup create
+passkey-auth-service backup list
+passkey-auth-service backup verify &lt;object-key&gt;
+passkey-auth-service keys status
+passkey-auth-service keys rotate</code></pre>
+  <p>Commands print structured JSON receipts for automation and incident records. <code>doctor</code> checks configuration, the durable store, signing-key state and configured backup storage without exposing secret key material.</p>
+
+  <h2>Signing keys</h2><p>RustyAuth creates and stores ES256 signing keys, publishes the next public key before activation and keeps a retired public key available long enough for already-issued tokens to expire. The maintenance loop and a cross-process lease make this automatic; <code>keys rotate</code> is the intentional on-demand path.</p>
+
+  <h3>Rotate the master key</h3><ol><li>Generate a new independent 32-byte key.</li><li>Set it as <code>AUTH_MASTER_KEY_HEX</code> and retain the old key in <code>AUTH_MASTER_PREVIOUS_KEYS_HEX</code>.</li><li>Restart each instance and confirm <code>keys status</code> succeeds.</li><li>Remove the old key only after every instance has rewrapped the stored signing-key material.</li></ol>
+
+  <h2>Backup encryption keys</h2><p>Set the new key in <code>AUTH_BACKUP_ENCRYPTION_KEY_HEX</code> and retain the old key in <code>AUTH_BACKUP_PREVIOUS_KEYS_HEX</code>. Keep previous keys until every backup they protect has expired under retention policy or has been replaced by a verified recovery point.</p>
+
+  <h2>Clean-room restore drill</h2><pre class="doc-code"><code>passkey-auth-service backup verify &lt;object-key&gt;
+passkey-auth-service backup restore &lt;object-key&gt;
+passkey-auth-service doctor</code></pre>
+  <p>Restore is an offline operation and accepts only an empty RustyAuth namespace in SableDB. By default it invalidates existing sessions, creates fresh signing-key material and records a recovery event. An in-progress sentinel prevents normal startup if the final security steps do not complete.</p>
+  <div class="doc-callout warning"><strong>Preserve sessions only by exception</strong><p><code>--preserve-sessions</code> exists for a specifically reviewed incident response. The safe default is to make users authenticate again after recovery.</p></div>
+
+  <h2>Before relying on a backup</h2><p>Run restore drills against a new SableDB volume, retain the JSON receipts, run <code>doctor</code>, and complete a real passkey sign-in. Configuration and retention guidance live in the <a href="/docs/configuration">configuration reference</a>; topology and deployment guidance live in the <a href="/docs/deployment">deployment guide</a>.</p>
+</DocsLayout>

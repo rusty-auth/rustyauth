@@ -22,7 +22,7 @@ pub(crate) struct AppState {
     pub(crate) session_idle_seconds: u64,
     pub(crate) session_absolute_seconds: u64,
     pub(crate) secure_cookie: bool,
-    pub(crate) email_verification_required: bool,
+    pub(crate) identity_verification_required: bool,
     pub(crate) local_agent_handoffs_enabled: bool,
     pub(crate) backup: Option<BackupStore>,
 }

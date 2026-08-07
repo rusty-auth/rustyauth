@@ -69,19 +69,35 @@ ceremonies, expired sessions, credential/account confusion and accidental exposu
 default network topology. It does not defend against a malicious deployment administrator with
 access to environment secrets and the SableDB volume.
 
+The field-level persistence and exposure boundary is defined in
+[Identity data model](docs/IDENTITY_DATA_MODEL.md). In particular, stored WebAuthn credential state,
+session metadata and compatibility fields are intentionally narrower than the public HTTP/RPC
+identity projections.
+
 ## Security invariants
 
 - Production issuer and relying-party origins use HTTPS.
 - RP ID exactly equals the configured application-origin host.
 - Registration and authentication ceremony state is server-side, five-minute and atomically
   consumed.
+- Additional-passkey ceremonies require a recent passkey session and are bound to the exact
+  session that created them; initial and additional registration ceremonies are not interchangeable.
 - Private endpoints require both exact origin and a valid durable session.
 - The production session cookie is HttpOnly, Secure, SameSite=Strict and time bounded.
+- Agent handoff sessions are read-only for profile, identifier and passkey mutations.
 - The final passkey cannot be removed.
 - A credential-removal session must be no older than five minutes.
+- Stored accounts must have exactly one primary identifier, unique canonical phone identifiers and
+  internally consistent verification state; malformed records and reverse indexes fail closed.
 - Non-zero passkey signature counters cannot regress.
 - Raw session and handoff tokens are not stored as database keys.
 - JWT private key bytes are encrypted at rest under a deployment-provided AES-256 key.
+- A replacement signing key is published before activation; retired public keys remain available
+  for at least the maximum access-token lifetime plus the JWKS cache allowance.
+- Backups use a versioned, authenticated AES-256-GCM envelope, a content manifest and tenant-bound
+  object paths; every upload is read back and verified.
+- Restore accepts only an empty target and invalidates durable sessions by default. An incomplete
+  restore marker prevents the service from starting.
 - SableDB is private and volume-backed.
 - Missing state or invalid configuration fails closed.
 - Logs and events must never contain bearer or credential payloads.
@@ -94,9 +110,8 @@ These are explicit reasons RustyAuth is pre-release:
 - Account recovery is absent.
 - There is no public revoke-all-sessions operation.
 - Credential removal uses session-creation recency rather than a dedicated fresh step-up ceremony.
-- Signing-key rotation and retired-key overlap are absent.
-- Backup export, scheduling, manifest verification and restore are absent.
-- Event access uses the bootstrap token and polling; stable scoped consumers are absent.
+- HTTP event polling still uses the bootstrap credential; private event streaming and identity RPCs
+  use separate static bearer credentials rather than workload identity or mTLS.
 - Stored keys are one configured tenant per instance rather than tenant-prefixed.
 - Compound-mutation coordination is process-local; multiple writer replicas are unqualified.
 - Automated dependency auditing, protocol fuzzing and an independent assessment are not complete.
@@ -115,5 +130,14 @@ cargo test
 cargo build --locked --release
 ```
 
+The recovery path also has a real-service integration drill:
+
+```sh
+docker compose -f compose.integration.yaml up -d --wait source-sabledb destination-sabledb minio
+docker compose -f compose.integration.yaml run --rm minio-init
+cargo test --locked integration_tests::clean_room_backup_restore_and_rotation -- --ignored --exact
+docker compose -f compose.integration.yaml down --volumes
+```
+
 The production gate additionally requires dependency audit/deny checks, authenticator coverage,
-negative protocol tests, deployment isolation verification and a tested recovery drill.
+negative protocol tests, deployment isolation verification and regular operator recovery drills.

@@ -4,9 +4,65 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 use webauthn_rs::prelude::{PublicKeyCredential, RegisterPublicKeyCredential};
 
+use crate::store::IdentifierKind;
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(super) struct IdentifierRequest {
+    #[serde(rename = "type")]
+    pub(super) kind: IdentifierKind,
+    pub(super) value: String,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(super) struct RegistrationOptionsInput {
+    #[serde(default)]
+    pub(super) identifier: Option<IdentifierRequest>,
+    #[serde(default)]
+    pub(super) email: Option<String>,
+    #[serde(default)]
+    pub(super) phone: Option<String>,
+    #[serde(default)]
+    pub(super) given_name: Option<String>,
+    #[serde(default)]
+    pub(super) family_name: Option<String>,
+    #[serde(default)]
+    pub(super) display_name: Option<String>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(super) struct IdentifierLookupInput {
+    #[serde(default)]
+    pub(super) identifier: Option<IdentifierRequest>,
+    #[serde(default)]
+    pub(super) email: Option<String>,
+    #[serde(default)]
+    pub(super) phone: Option<String>,
+}
+
 #[derive(Deserialize)]
 pub(super) struct EmailInput {
     pub(super) email: String,
+}
+
+#[derive(Deserialize)]
+pub(super) struct ChangeIdentifierInput {
+    #[serde(rename = "type")]
+    pub(super) kind: IdentifierKind,
+    pub(super) value: String,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(super) struct UpdateProfileInput {
+    #[serde(default)]
+    pub(super) given_name: Option<String>,
+    #[serde(default)]
+    pub(super) family_name: Option<String>,
+    #[serde(default)]
+    pub(super) display_name: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -43,6 +99,18 @@ pub(super) struct CredentialOutput {
     pub(super) last_used_at: String,
     pub(super) authenticator: &'static str,
     pub(super) current: bool,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(super) struct IdentifierOutput {
+    #[serde(rename = "type")]
+    pub(super) kind: IdentifierKind,
+    pub(super) value: String,
+    pub(super) verified: bool,
+    pub(super) verified_at: Option<String>,
+    pub(super) primary: bool,
+    pub(super) created_at: String,
 }
 
 #[derive(Deserialize)]
