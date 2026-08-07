@@ -14,6 +14,11 @@ import {
 } from "@rustyauth/protocol";
 import type { OperatorView, OrganizationView, ServiceAccountView, UserView } from "./models.ts";
 
+// Round trips a single search may spend, and the most rows it returns. Both bound
+// what one operator keystroke can cost when the term matches nothing.
+const MAX_SEARCH_PAGES = 10;
+const MAX_SEARCH_RESULTS = 50;
+
 const transport = createConnectSolidTransport({ baseUrl: "/" });
 const identity = createClient(IdentityService, transport);
 const organizations = createClient(OrganizationService, transport);
@@ -56,8 +61,23 @@ export async function searchUsers(
   } else {
     input.displayName = value;
   }
-  const response = await identity.searchUsers(input, { signal });
-  return response.users.map(userView);
+  // A name search has no index behind it, so the server walks accounts under a
+  // per-request budget and hands back a cursor when it stops early. A single call
+  // therefore sees only the first slice of a large tenant — following the cursor
+  // is what makes the search find anything beyond it. The round-trip cap keeps a
+  // no-match term from walking the whole namespace.
+  const users: UserView[] = [];
+  let pageToken = "";
+  for (let page = 0; page < MAX_SEARCH_PAGES; page += 1) {
+    const response = await identity.searchUsers(
+      pageToken ? { ...input, pageToken } : input,
+      { signal },
+    );
+    users.push(...response.users.map(userView));
+    pageToken = response.nextPageToken;
+    if (!pageToken || users.length >= MAX_SEARCH_RESULTS) break;
+  }
+  return users.slice(0, MAX_SEARCH_RESULTS);
 }
 
 export async function listServiceAccounts(
