@@ -50,6 +50,7 @@
 }
 .hero-actions {
   display: flex;
+  flex-wrap: wrap;
   gap: 12px;
   margin-top: 36px;
 }
@@ -82,6 +83,14 @@
 }
 .button-secondary:hover {
   background: rgba(255,255,255,.45);
+}
+.button-railway {
+  color: white;
+  background: #0b0d0e;
+  border-color: #0b0d0e;
+}
+.button-railway:hover {
+  background: #2c2e31;
 }
 .hero-note {
   margin: 22px 0 0;

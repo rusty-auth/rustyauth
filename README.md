@@ -12,6 +12,8 @@
   [![Storage: SableDB](https://img.shields.io/badge/storage-SableDB-303030.svg)](https://github.com/sabledb-io/sabledb)
 
   [Website](https://rustyauth.dev) · [Documentation](https://rustyauth.dev/docs) · [Source](https://github.com/rusty-auth/rustyauth)
+
+  [![Deploy on Railway](https://railway.com/button.svg)](https://railway.com/new/template/rustyauth?utm_medium=integration&utm_source=button&utm_campaign=rustyauth)
 </div>
 
 > [!WARNING]

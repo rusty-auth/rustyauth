@@ -8,6 +8,8 @@ Deno.test("renders the RustyAuth landing page", async () => {
   assertMatch(html, /Built in Rust/);
   assertMatch(html, /Built on SableDB/);
   assertMatch(html, /GitHub/);
+  assertMatch(html, /Deploy on Railway/);
+  assertMatch(html, /railway\.com\/new\/template\/rustyauth/);
   assertMatch(html, /Why Rust/);
   assertMatch(html, /Protobuf \+ gRPC service boundary/);
   assertNotMatch(html, /codex-preview|Your site is taking shape/);
