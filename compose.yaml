@@ -12,23 +12,27 @@ services:
       WEBAUTHN_RP_ORIGIN: ${WEBAUTHN_RP_ORIGIN:-http://localhost:8081}
       WEBAUTHN_RP_NAME: ${WEBAUTHN_RP_NAME:-RustyAuth Local}
       SABLEDB_URL: redis://sabledb:6379
-      AUTH_MASTER_KEY_HEX: ${AUTH_MASTER_KEY_HEX:-0000000000000000000000000000000000000000000000000000000000000000}
-      BOOTSTRAP_TOKEN: ${BOOTSTRAP_TOKEN:-vtr-local-enrolment-only}
-      AUTH_EVENT_RPC_TOKEN: ${AUTH_EVENT_RPC_TOKEN:-local-event-rpc-token-replace-before-use-0001}
-      AUTH_IDENTITY_RPC_TOKEN: ${AUTH_IDENTITY_RPC_TOKEN:-local-identity-rpc-token-replace-before-use-0001}
+      # No defaults. A committed default is a published secret, and the entropy check
+      # in src/config.rs cannot tell a generated key from a public one — so compose
+      # refuses to start rather than substituting a value anyone can read in git.
+      # Populate .env first; `docker compose up` reads it automatically.
+      AUTH_MASTER_KEY_HEX: ${AUTH_MASTER_KEY_HEX:?set it in .env, e.g. openssl rand -hex 32}
+      BOOTSTRAP_TOKEN: ${BOOTSTRAP_TOKEN:?set it in .env, e.g. openssl rand -base64 48}
+      AUTH_EVENT_RPC_TOKEN: ${AUTH_EVENT_RPC_TOKEN:?set it in .env, e.g. openssl rand -base64 48}
+      AUTH_IDENTITY_RPC_TOKEN: ${AUTH_IDENTITY_RPC_TOKEN:?set it in .env, e.g. openssl rand -base64 48}
       AUTH_OPERATOR_EMAILS: ${AUTH_OPERATOR_EMAILS:-admin@rustyauth.local}
       AUTH_DASHBOARD_DIR: ${AUTH_DASHBOARD_DIR:-/usr/share/rustyauth/dashboard}
       SPACETIME_AUDIENCE: ${SPACETIME_AUDIENCE:-vtr-dashboard-v2-local}
       AUTH_TENANT_ID: ${AUTH_TENANT_ID:-vtr}
       PORT: 8080
-      RUST_LOG: ${RUST_LOG:-passkey_auth_service=info,tower_http=info}
+      RUST_LOG: ${RUST_LOG:-rustyauth=info,tower_http=info}
     ports:
       - "127.0.0.1:8081:8080"
     depends_on:
       sabledb:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "/usr/local/bin/passkey-auth-service", "--healthcheck"]
+      test: ["CMD", "/usr/local/bin/rustyauth", "--healthcheck"]
       interval: 5s
       timeout: 3s
       retries: 20
