@@ -1251,7 +1251,8 @@ impl Store {
             .position(|stored| stored.kind == identifier.kind && stored.value == identifier.value)
             .ok_or(StorePolicyError::IdentifierNotLinked)?;
         let removed_primary = user.identifiers[position].primary;
-        user.identifiers.remove(position);
+        user.identifiers
+            .retain(|stored| stored.kind != identifier.kind || stored.value != identifier.value);
         if removed_primary {
             user.identifiers[0].primary = true;
         }
@@ -1483,12 +1484,14 @@ impl Store {
         if user.passkeys.len() <= 1 {
             return Err(StorePolicyError::FinalCredential.into());
         }
-        let position = user
+        if !user
             .passkeys
             .iter()
-            .position(|passkey| passkey.id == credential_id)
-            .ok_or(StorePolicyError::CredentialNotLinked)?;
-        user.passkeys.remove(position);
+            .any(|passkey| passkey.id == credential_id)
+        {
+            return Err(StorePolicyError::CredentialNotLinked.into());
+        }
+        user.passkeys.retain(|passkey| passkey.id != credential_id);
         let events = self
             .pending_events(vec![("credential.revoked".to_owned(), Some(user_id))])
             .await?;
