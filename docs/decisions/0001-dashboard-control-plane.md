@@ -1,6 +1,6 @@
 # 0001: Rust control plane with a SolidJS dashboard
 
-- Status: accepted
+- Status: superseded for the dashboard client by ADR 0003; the Rust authorization and database boundary remains accepted
 - Date: 2026-08-07
 
 ## Context
@@ -74,3 +74,12 @@ explicit cross-origin session and CSRF design.
 The SolidJS dashboard, passkey operator authorization, organization persistence, service-account
 persistence and token exchange are implemented. Webhook delivery and metric rollups remain preview
 surfaces only; they become shipped when their Rust handlers, storage, tests and Railway checks land.
+
+## Future fleet evolution
+
+This decision describes the embedded single-instance dashboard. The future
+[fleet control-plane direction](../FLEET_CONTROL_PLANE.md) preserves its core rule that browsers call
+an authorized Rust service rather than SableDB. Fleet mode would add a central dashboard and control
+API that connect to versioned RustyAuth management endpoints or outbound connectors for many isolated
+deployments. It does not make the browser a direct database client and does not change the current
+one-organization-per-instance claim.

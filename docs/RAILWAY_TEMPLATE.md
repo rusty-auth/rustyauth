@@ -1,102 +1,189 @@
-# Deploy and Host RustyAuth on Railway
+# Railway deployment templates
 
-RustyAuth is a small, self-hosted identity service for WebAuthn passkey ceremonies, durable browser sessions,
-and short-lived ES256 access tokens. This template deploys the public RustyAuth service alongside a private,
-persistent SableDB service in one Railway project. The services communicate over Railway's private network;
-only RustyAuth receives a public HTTPS domain. Railway places both services in the template group named
-`RustyAuth`.
+**Status:** Target topology; the current release still ships the legacy combined backend/dashboard image until
+the Dioxus live-API and regression gates pass.
 
-RustyAuth is pre-release software. Account recovery, abuse controls, multi-writer qualification and an
-independent security assessment are not complete. Automatic signing-key rotation and encrypted backup and
-restore tooling are implemented. Use this template for evaluation and integration work, and do not make this
-release the sole identity system for a production service.
+RustyAuth uses separate Railway services so the user interface, policy services and stateful stores have
+independent deploy, scaling, health and recovery boundaries. SableDB is always private and always attached to
+a persistent volume.
 
-## About Hosting RustyAuth
+## Template A: standalone realm
 
-The template creates RustyAuth and SableDB services from versioned public container images built from the
-[`rusty-auth/rustyauth`](https://github.com/rusty-auth/rustyauth) repository. SableDB has no public domain or
-TCP proxy and stores identity state on a Railway volume mounted at `/var/lib/sabledb`.
+The standalone template contains three services:
 
-The Railway template must generate `AUTH_MASTER_KEY_HEX`, `BOOTSTRAP_TOKEN`,
-`AUTH_EVENT_RPC_TOKEN` and `AUTH_IDENTITY_RPC_TOKEN` independently for every deployment.
-`SABLEDB_URL` is assembled from the SableDB service's Railway private-domain reference, so no database
-hostname or credential needs to be copied between services.
-
-The RustyAuth container serves its operator dashboard and RPC boundary on the same Railway HTTPS domain.
-Set the WebAuthn origin to that public domain and the RP ID to its exact hostname. The template must also ask
-for at least one operator email before first sign-in. Other values have safe template defaults but remain
-editable during the environment step.
-
-| Variable              | Deployment behavior                                                    |
-| --------------------- | ---------------------------------------------------------------------- |
-| `AUTH_ENV`            | Must be set to `production`. There is no default; an unset value stops startup |
-| `AUTH_TRUSTED_PROXY_HOPS` | Required in production. Set to `1`: Railway terminates TLS, so the TCP peer is the edge and only `X-Forwarded-For` identifies the client |
-| `WEBAUTHN_RP_ORIGIN`  | Exact HTTPS origin of the public RustyAuth dashboard                    |
-| `WEBAUTHN_RP_ID`      | Exact hostname from `WEBAUTHN_RP_ORIGIN`                               |
-| `WEBAUTHN_RP_NAME`    | Editable display name; defaults to `RustyAuth`                         |
-| `AUTH_OPERATOR_EMAILS` | Required canonical email(s) permitted to bootstrap the owner operator through the browser, once that address is verified |
-| `SPACETIME_AUDIENCE`  | Editable access-token audience; defaults to `rustyauth`                |
-| `AUTH_TENANT_ID`      | Editable tenant claim; defaults to `default`                           |
-| `AUTH_ISSUER`         | Automatically references the RustyAuth public Railway domain           |
-| `SABLEDB_URL`         | Automatically references SableDB on Railway's private network          |
-| `AUTH_MASTER_KEY_HEX` | Automatically generated 256-bit hexadecimal secret. A placeholder whose 32 bytes are all identical is rejected at startup |
-| `BOOTSTRAP_TOKEN`     | Automatically generated 64-character secret                            |
-| `AUTH_EVENT_RPC_TOKEN` | Required generated private event-stream credential                     |
-| `AUTH_IDENTITY_RPC_TOKEN` | Required generated private identity-control credential              |
-
-### Creating the first operator
-
-`AUTH_OPERATOR_EMAILS` on its own does not grant operator access. Browser bootstrap additionally requires the
-account to have verified that address, and production never marks a self-service identifier verified — so a
-fresh deployment cannot produce its first operator through the browser alone.
-
-Enrol the founding account, then run from the Railway service shell:
-
-```sh
-rustyauth operator promote founder@example.com owner
-rustyauth operator list
+```text
+rustyauth-dashboard  ->  rustyauth-backend  ->  realm-sabledb
+public HTTPS             private API*           private + volume
 ```
 
-Promotion writes the operator record and marks the address verified, after which the same account can sign in
-to the dashboard normally. Because this path costs shell access to the service, restrict who can open a
-Railway shell on the RustyAuth service as tightly as who can read `AUTH_MASTER_KEY_HEX`.
+`rustyauth-dashboard` serves the Dioxus web release and forwards only bounded authentication and ConnectRPC
+paths to the backend over Railway private networking. This keeps the browser same-origin for passkey sessions
+without combining the processes. The backend remains the only authorization and mutation boundary.
 
-Signing-key maintenance runs automatically with prepublication and retired-key overlap. Encrypted scheduled
-backups are optional and require the complete S3-compatible `AUTH_BACKUP_*` environment; the base two-service
-template does not provision a bucket. Partial backup configuration is rejected at startup.
+`rustyauth-backend` may also have a public application-authentication domain when relying-party applications
+call it directly. The dashboard gateway is for operator browser traffic, not a general-purpose open proxy.
 
-## Why Deploy RustyAuth on Railway
+| Service | Image | Public exposure | Persistent state | Initial replicas |
+| --- | --- | --- | --- | --- |
+| `rustyauth-dashboard` | `ghcr.io/rusty-auth/dashboard:v0.1.0` | HTTPS | None | 1 or more |
+| `rustyauth-backend` | `ghcr.io/rusty-auth/rustyauth:v0.1.0` | Optional application API domain | None | 1 |
+| `realm-sabledb` | `ghcr.io/rusty-auth/sabledb:v0.1.0` | None | `/var/lib/sabledb` | 1 stateful service |
 
-- Deploy the complete two-service topology as one unit.
-- Operate users, organization settings and scoped service accounts from the bundled dashboard.
-- Keep SableDB private while exposing RustyAuth through Railway-managed HTTPS.
-- Generate high-entropy application secrets automatically for each installation.
-- Preserve identity state across SableDB container replacement with a persistent volume.
-- Operate automatic signing-key rotation and optional verified backups through one small CLI.
-- Use checked-in Docker and health-check configuration from the upstream repository.
+## Template B: Fleet control plane
 
-## Common Use Cases
+The central Fleet template also contains three services:
 
-- Evaluate passkey-first authentication without adopting a hosted identity provider.
-- Add WebAuthn registration, sign-in, sessions, and ES256 tokens to an internal application.
-- Prototype a self-hosted authentication boundary for an API or SpacetimeDB application.
-- Review RustyAuth's explicit origin, issuer, audience, and tenant trust boundaries.
+```text
+rustyauth-dashboard  ->  rustyauth-control-plane  ->  fleet-sabledb
+public HTTPS             private web API*             private + volume
+                                                        |
+                                                        +-> fleet-backups bucket
+```
 
-## Dependencies for RustyAuth Hosting
+The control plane owns Fleet operator identities, organizations, projects, environments, memberships, role
+bindings, connection metadata, bounded projections and central audit records. It does not serve customer
+authentication and does not connect to realm databases.
 
-RustyAuth includes the operator browser application at its HTTPS origin. A downstream API must verify issued
-tokens against RustyAuth's JWKS and enforce the configured issuer, audience, tenant, expiry and
-application-specific authorization policy.
+Desktop and mobile clients require a public native API domain on `rustyauth-control-plane`. That endpoint uses
+short-lived device credentials, not browser cookies. The browser continues through the same-origin dashboard
+gateway.
 
-### Deployment Dependencies
+| Service | Image | Public exposure | Persistent state | Initial replicas |
+| --- | --- | --- | --- | --- |
+| `rustyauth-dashboard` | `ghcr.io/rusty-auth/dashboard:v0.1.0` | HTTPS | None | 1 or more |
+| `rustyauth-control-plane` | `ghcr.io/rusty-auth/control-plane:v0.1.0` | Optional native API domain | None | 1 |
+| `fleet-sabledb` | `ghcr.io/rusty-auth/sabledb:v0.1.0` | None | `/var/lib/sabledb` | 1 stateful service |
 
-- One Railway service for RustyAuth, with a generated public domain and health check on `/healthz`.
-- One private SableDB service on port `6379`.
-- One persistent Railway volume for SableDB at `/var/lib/sabledb`.
-- A relying-party HTTPS origin whose hostname exactly matches `WEBAUTHN_RP_ID`.
+`fleet-backups` is an encrypted S3-compatible Railway bucket resource rather than a running service. The
+control-plane process schedules backups initially. A separate `fleet-worker` service is added when connector,
+projection or backup work needs independent horizontal scaling.
 
-After deployment, check `/healthz` for process liveness and `/readyz` for SableDB-backed readiness. Keep the
-generated bootstrap and RPC tokens out of browser bundles. They are independently scoped administrative
-credentials; RPC consumers send only the token for their service. Run `rustyauth doctor` after
-configuration changes and follow the repository deployment guide for backup verification and clean-room
-restore drills.
+Each managed application environment lives in its own Railway project or environment and adds a
+`rustyauth-backend` plus a private `realm-sabledb`. Public HTTPS management or an outbound connector links the
+realm to Fleet; the Fleet project never receives `SABLEDB_URL` for a realm.
+
+## Template C: all-in-one evaluation
+
+The evaluation template combines one Fleet control plane and one local realm:
+
+```text
+rustyauth-dashboard
+rustyauth-control-plane
+fleet-sabledb
+rustyauth-backend
+realm-sabledb
+```
+
+This is five independently deployable services. The dashboard can switch between Fleet and the local realm
+through explicit configured routes. The two SableDB services must remain separate: one holds Fleet metadata and
+Fleet operator state; the other holds the realm's users, passkeys, sessions, signing state and backups.
+
+An outbound connector gateway becomes an optional sixth service only when long-lived connection volume needs
+an independent scaling boundary. The first implementation keeps it inside the control-plane service.
+
+The combined template also provisions separate `fleet-backups` and optional realm-backup buckets. Backups never
+cross state boundaries: restoring Fleet does not restore a realm, and restoring a realm does not restore Fleet.
+
+## Dashboard gateway contract
+
+The dashboard service is stateless. It may know only:
+
+- the private API upstream;
+- the exact public dashboard origin;
+- allowed RPC path prefixes;
+- request and response size limits; and
+- health/build metadata.
+
+It must not contain a database URL, realm-management credential, bootstrap token, signing key or master key.
+It forwards `Origin`, `Cookie`, `Set-Cookie`, request IDs, content type and Connect/gRPC-Web headers without
+inventing identity or scope headers. The upstream service performs all authentication, authorization,
+validation, rate limiting and auditing.
+
+Suggested dashboard variables:
+
+| Variable | Purpose |
+| --- | --- |
+| `RUSTYAUTH_DASHBOARD_MODE` | `standalone` or `fleet` |
+| `RUSTYAUTH_API_UPSTREAM` | Railway private URL for the backend or control plane |
+| `RUSTYAUTH_PUBLIC_ORIGIN` | Exact public dashboard HTTPS origin |
+| `PORT` | Dashboard service port |
+
+## Backend variables
+
+Every realm receives independent generated values for:
+
+- `AUTH_MASTER_KEY_HEX`;
+- `BOOTSTRAP_TOKEN`;
+- `AUTH_EVENT_RPC_TOKEN`;
+- `AUTH_IDENTITY_RPC_TOKEN`;
+- `AUTH_REALM_ID` when an externally assigned durable ID is required; and
+- optional backup encryption and S3 credentials.
+
+The template wires `SABLEDB_URL` from `realm-sabledb` through Railway private service references. It never
+copies the value to the dashboard or control plane.
+
+Production also requires exact issuer, relying-party, audience, proxy and operator settings documented in
+[Configuration](CONFIGURATION.md). The backend refuses to start with development defaults in production.
+
+## Control-plane variables
+
+The Fleet control plane receives independent generated values for:
+
+- its operator-session and master keys;
+- device-token signing material;
+- pairing and connector signing material;
+- `FLEET_INSTANCE_ID`; and
+- optional backup encryption and object-storage credentials.
+
+`FLEET_SABLEDB_URL` references only `fleet-sabledb`. Realm connection credentials are encrypted with a
+Fleet-specific key or stored through an approved external secret provider; ordinary connection records contain
+only an opaque credential reference.
+
+Fleet logical backups include operator credentials and session metadata, the resource hierarchy, role
+bindings, connection metadata, idempotency state and central audit events. Ephemeral health caches and expired
+pairing attempts may be omitted under an explicit retention policy. Backup encryption keys are escrowed outside
+the Fleet project and outside the bucket provider account.
+
+## SableDB services
+
+Both SableDB services use the pinned RustyAuth image, have no public domain or TCP proxy, expose port `6379`
+only on Railway private networking, and mount a volume at `/var/lib/sabledb`.
+
+SableDB is a stateful service. “Scale independently” means its CPU, memory, volume and maintenance lifecycle are
+separate; it does not mean increasing a replica slider. Replication or failover requires a separately qualified
+topology.
+
+## Scaling rules
+
+- Dashboard: horizontally scalable immediately because it is stateless.
+- Control plane: one writer replica until distributed idempotency, locking, session coordination and audit
+  sequencing pass; read/connector workers may split later.
+- Realm backend: one writer replica until cross-process locking and event sequencing pass.
+- SableDB: one stateful service with a persistent volume in the initial supported topology.
+
+Railway services are still independently deployable and vertically scalable from day one. The replica limits
+protect correctness; they do not require combining services.
+
+## Health and routing
+
+| Service | Liveness | Readiness |
+| --- | --- | --- |
+| Dashboard | `/healthz` | `/readyz` verifies the configured private upstream is reachable |
+| Control plane | `/healthz` | `/readyz` requires Fleet SableDB and policy initialization |
+| Realm backend | `/healthz` | `/readyz` requires realm SableDB and signing readiness |
+| SableDB | TCP health check | Durable volume mounted and accepting commands |
+
+Railway drain and platform timeouts must exceed each service's internal timeout and shutdown grace. A queued
+deployment is not success; template release verification waits for terminal `SUCCESS` and then exercises the
+readiness endpoint and one binary RPC.
+
+## Security invariants
+
+- No SableDB service has a public domain or TCP proxy.
+- The dashboard has no backend or database credential.
+- The control plane never receives a realm database URL.
+- Each realm has unique secrets, credentials, issuer, RP policy and persistent state.
+- Fleet failure does not interrupt realm registration, authentication, session validation, token issuance,
+  JWKS, backups or local administration.
+- Pairing uses a short-lived single-use code and produces a revocable environment-scoped relationship.
+- Published images are pinned by version and eventually signed with provenance and SBOMs.

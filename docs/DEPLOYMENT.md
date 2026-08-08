@@ -1,9 +1,14 @@
 # Deploying RustyAuth
 
-RustyAuth ships as two containers:
+The current pre-release image still combines the SolidJS dashboard with the Rust/Axum realm backend. The
+accepted target topology ships three standalone services:
 
-- a public Rust/Axum authentication service; and
+- a public, stateless Dioxus dashboard and bounded same-origin Connect gateway;
+- a Rust/Axum authentication realm backend; and
 - a private, persistent SableDB service.
+
+The Fleet template uses the same three-service shape with the realm backend replaced by a distinct Fleet
+control-plane service. See [Railway deployment templates](RAILWAY_TEMPLATE.md).
 
 An optional S3-compatible bucket enables scheduled encrypted logical backups and clean-room restore.
 
@@ -27,9 +32,9 @@ starting on something an attacker could read in the repository. A committed defa
 and the entropy check in `config.rs` cannot tell a generated key from one that has been published — so
 generating is the only path, including locally.
 
-The Compose topology publishes only `127.0.0.1:8081` for RustyAuth. SableDB joins an internal Docker network
-and has no host port. Its named volume is `sabledb_data`. The same Rust container serves the built operator
-dashboard at `http://localhost:8081`; `?preview=1` opens realistic local preview data.
+The current compatibility Compose topology publishes only `127.0.0.1:8081` for RustyAuth. SableDB joins an
+internal Docker network and has no host port. Its named volume is `sabledb_data`. This remains available while
+the separate Dioxus dashboard service and gateway replace the combined image.
 
 Check both probes:
 
@@ -54,13 +59,15 @@ routine restart or upgrade automation.
 
 ## Railway topology
 
-Create three resources in one project and preferred region:
+The target standalone template creates three core services in one project and preferred region. An optional
+backup bucket is a project resource rather than a running service:
 
-| Resource    | Exposure                                  | Persistent resource          |
-| ----------- | ----------------------------------------- | ---------------------------- |
-| RustyAuth   | Public HTTPS, container port `8080`       | None                         |
-| SableDB     | Railway private network only, port `6379` | Volume at `/var/lib/sabledb` |
-| AuthBackups | Private credentials only                  | S3-compatible bucket         |
+| Resource | Exposure | Persistent resource |
+| --- | --- | --- |
+| Dashboard | Public HTTPS | None |
+| RustyAuth backend | Private operator API; optional public application API | None |
+| Realm SableDB | Railway private network only, port `6379` | Volume at `/var/lib/sabledb` |
+| AuthBackups | Private credentials only | Optional S3-compatible bucket |
 
 The bucket remains optional, but any deployment claiming recovery must configure it and complete a restore
 drill.
@@ -78,9 +85,10 @@ Use the repository root as the source root and `Dockerfile` as the builder. Set:
 settings, which would drop `Secure` from the session cookie, accept an HTTP relying-party origin and treat
 self-service identifiers as verified. Set `AUTH_ENV=production`.
 
-The container serves the dashboard and RPC APIs from the same public origin. Configure `WEBAUTHN_RP_ORIGIN` to
-that Railway HTTPS origin, set `WEBAUTHN_RP_ID` to its exact hostname and set `AUTH_OPERATOR_EMAILS` before
-the first operator signs in.
+The target dashboard service forwards operator authentication and RPC paths over the private network so the
+browser remains on one public origin. Configure the operator origin to the dashboard HTTPS origin and keep the
+realm's relying-party policy explicit. The backend, not the gateway, validates the session, origin and method
+policy.
 
 Readiness should also be monitored separately at `/readyz`. A liveness-only deploy can be running while unable
 to authenticate users.
@@ -142,9 +150,24 @@ relying-party browser. Use a backup encryption key generated and escrowed outsid
 bucket provider account.
 
 RustyAuth creates a backup immediately after startup and at `AUTH_BACKUP_INTERVAL_SECONDS`. Each object
-contains durable users, identifiers, passkeys, sessions, signing state, organization, operators, service
-accounts, credential locators and ordered events; short-lived WebAuthn ceremonies and agent handoffs are
-deliberately excluded. Upload succeeds only after a read-after-write decrypt and manifest check.
+contains the complete server-side workspace: durable users, identifiers, passkeys, sessions, signing state,
+organization/dashboard settings, operator grants, service accounts, credential locators, ordered events and
+Fleet organizations/projects/environments with their slug indexes, idempotency records and audit trail.
+The dashboard has no durable browser-local state; its compiled assets come from the release image. Short-lived
+WebAuthn ceremonies, agent handoffs, leases and health counters are deliberately excluded. An unknown future
+durable key family fails snapshot creation rather than silently producing an incomplete workspace backup.
+
+New objects are compact binary, compressed with Zstandard and protected with application-level AES-256-GCM.
+The destination must additionally provide Versioning, a default compliance-mode Object Lock rule and the
+configured server-side encryption. Upload succeeds only after a read-after-write decrypt, manifest check,
+version-ID check, retention check and server-side-encryption check. For AWS, deploy
+`infra/aws/backup-bucket.yaml`; its application policy permits only list/get/put and explicitly denies delete
+and retention bypass.
+
+The release image and runtime environment are part of the recovery plan but not the data backup. Retain the
+deployed image digest, non-secret configuration inventory and independently escrowed master/backup keys in a
+separate operator-controlled system. Putting the only decryption key inside the bucket it decrypts is not a
+recoverable workspace.
 
 Use the binary inside the deployed container for operator checks:
 
@@ -152,6 +175,7 @@ Use the binary inside the deployed container for operator checks:
 rustyauth doctor
 rustyauth backup create
 rustyauth backup list
+rustyauth backup status
 rustyauth backup verify <object-key>
 rustyauth operator list
 rustyauth operator find <email>
@@ -161,14 +185,18 @@ rustyauth operator demote <user-id>
 
 ## Container properties
 
-The RustyAuth runtime image:
+The current compatibility RustyAuth runtime image:
 
 - contains the release binary and CA certificates only;
-- contains the compiled SolidJS dashboard under `/usr/share/rustyauth/dashboard`;
+- contains the compiled SolidJS dashboard under `/usr/share/rustyauth/dashboard` until the Dioxus retirement
+  gate passes;
 - runs as non-root UID/GID `10001`;
 - has no shell-owned writable application directory;
 - exposes port `8080`; and
 - includes project and third-party licence notices.
+
+The target release publishes separate `dashboard`, `control-plane`, `rustyauth` and `sabledb` images. Neither
+Rust API image contains a JavaScript dashboard runtime.
 
 The SableDB image runs as non-root UID/GID `10002` and stores data under `/var/lib/sabledb`.
 
@@ -288,9 +316,10 @@ Monitor at least:
 - authentication failure rate without storing credential payloads;
 - signing-key maintenance failures and `keys status`;
 - `operator.created` and `operator.promoted` events, and the output of `operator list`;
-- backup freshness and failure count from `rustyauth doctor` (the public metadata endpoint no longer
-  reports them, so this check must run on the host or in a scheduled job);
-- backup scheduler errors and bucket retention; and
+- backup freshness and failure count from `rustyauth doctor`; it exits non-zero while alerting, so this
+  host-side or scheduled check must page the operator independently of log collection;
+- `backup_health_alert=true`, Object Lock retention and SSE-KMS posture as supporting telemetry;
+- a monthly clean-room restore job whose non-zero exit pages the operator; and
 - event-consumer cursor lag.
 
 ## Clean-room recovery

@@ -360,6 +360,16 @@ Version `0.1.0` is one configured tenant per RustyAuth instance. Tokens and even
 user/session/database keys are not tenant-prefixed. Do not point multiple independently trusted tenants at one
 SableDB namespace.
 
+The active roadmap keeps this single-tenant data-plane boundary while adding a
+[fleet control plane](FLEET_CONTROL_PLANE.md) that manages many isolated RustyAuth deployments from one Dioxus
+dashboard. It does not change the data-plane isolation rule or authorize direct dashboard access to databases.
+
+The `console/` Dioxus application is the sole dashboard implementation target for embedded web, separately
+deployed Fleet web, desktop and later mobile. Its current screens and operator sign-in journey still use preview
+fixtures, so they are not an authority and do not imply that pairing or remote management is already shipped.
+The migration and transport decision is recorded in
+[ADR 0003](decisions/0003-unified-dioxus-fleet-control-plane.md).
+
 ## Concurrency and scaling
 
 Multi-key user and credential writes use atomic SableDB pipelines. A process-local async mutex serializes
