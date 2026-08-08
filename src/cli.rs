@@ -257,13 +257,14 @@ pub async fn run(
                 .operators()
                 .await?
                 .into_iter()
-                .map(|(operator, user)| {
+                .map(|listing| {
                     json!({
-                        "userId": operator.user_id,
-                        "role": operator.role,
-                        "email": user.primary_email().map(|value| value.value.clone()),
-                        "createdAt": operator.created_at,
-                        "lastAuthenticatedAt": operator.last_authenticated_at,
+                        "userId": listing.operator.user_id,
+                        "role": listing.operator.role,
+                        "email": listing.user.primary_email().map(|value| value.value.clone()),
+                        "createdAt": listing.operator.created_at,
+                        "lastAuthenticatedAt": listing.last_authenticated_at,
+                        "revokedAt": listing.operator.revoked_at,
                     })
                 })
                 .collect::<Vec<_>>();

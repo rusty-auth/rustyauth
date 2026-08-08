@@ -18,7 +18,9 @@ pub use self::ceremonies::{
 };
 pub use self::credentials::StoredPasskey;
 pub use self::events::{AuthEvent, EventLogIntegrityError};
-pub use self::organization::{OperatorRecord, OperatorRoleRecord, OrganizationRecord};
+pub use self::organization::{
+    OperatorListing, OperatorRecord, OperatorRoleRecord, OrganizationRecord,
+};
 pub(crate) use self::service_accounts::ServiceCredentialLocator;
 pub use self::service_accounts::{
     ServiceAccountCredentialRecord, ServiceAccountGrant, ServiceAccountRecord,
@@ -83,6 +85,9 @@ const RESTORE_SENTINEL: &str = "auth:restore:in-progress";
 const BACKUP_LEASE_KEY: &str = "auth:backup:lease";
 const ORGANIZATION_KEY: &str = "auth:organization";
 const OPERATOR_PREFIX: &str = "auth:operator:";
+/// Operator last-seen timestamps. Operational telemetry, not a grant, so it is
+/// written on the hot path and deliberately excluded from snapshots.
+const OPERATOR_SEEN_PREFIX: &str = "auth:operator-seen:";
 const SERVICE_ACCOUNT_PREFIX: &str = "auth:service-account:";
 const SERVICE_CREDENTIAL_PREFIX: &str = "auth:service-credential:";
 const MAX_SNAPSHOT_KEYS: usize = 1_000_000;

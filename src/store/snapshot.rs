@@ -9,8 +9,8 @@ use uuid::Uuid;
 
 use super::{
     BACKUP_LEASE_KEY, MAX_SNAPSHOT_KEYS, MAX_SNAPSHOT_VALUE_BYTES, OPERATOR_PREFIX,
-    ORGANIZATION_KEY, RESTORE_SENTINEL, SERVICE_ACCOUNT_PREFIX, SERVICE_CREDENTIAL_PREFIX, Store,
-    User, now,
+    OPERATOR_SEEN_PREFIX, ORGANIZATION_KEY, RESTORE_SENTINEL, SERVICE_ACCOUNT_PREFIX,
+    SERVICE_CREDENTIAL_PREFIX, Store, User, now,
 };
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -291,6 +291,7 @@ fn snapshot_key_policy(key: &str) -> Result<SnapshotKeyPolicy> {
             "auth:authentication:",
             "auth:agent-handoff:",
             "auth:backup:",
+            OPERATOR_SEEN_PREFIX,
         ]
         .iter()
         .any(|prefix| key.starts_with(prefix))

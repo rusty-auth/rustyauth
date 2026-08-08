@@ -14,7 +14,7 @@ use crate::{
         ListOperatorsResponse, Operator as ProtoOperator, OperatorRole, Organization,
         OrganizationService, UpdateOrganizationRequest,
     },
-    store::{OperatorRecord, OperatorRoleRecord, OrganizationRecord, Store, User},
+    store::{OperatorRecord, OperatorRoleRecord, OrganizationRecord, Store, User, now},
 };
 
 const DEFAULT_PAGE_SIZE: usize = 25;
@@ -92,13 +92,23 @@ impl OrganizationService for OrganizationRpc {
         let after = decode_page_token(request.page_token)?;
         let page_size = page_size(request.page_size)?;
         let mut operators = self.store.operators().await.map_err(source_error)?;
-        operators.retain(|(operator, _)| after.is_none_or(|after| operator.user_id > after));
+        // A revoked grant is retained in the store for audit but is not an operator.
+        operators.retain(|listing| {
+            listing.operator.revoked_at.is_none()
+                && after.is_none_or(|after| listing.operator.user_id > after)
+        });
         let next_page_token = (operators.len() > page_size)
-            .then(|| encode_page_token(operators[page_size - 1].0.user_id));
+            .then(|| encode_page_token(operators[page_size - 1].operator.user_id));
         operators.truncate(page_size);
         let operators = operators
             .into_iter()
-            .map(|(operator, user)| operator_to_proto(operator, user))
+            .map(|listing| {
+                operator_to_proto(
+                    listing.operator,
+                    listing.user,
+                    listing.last_authenticated_at,
+                )
+            })
             .collect::<Result<Vec<_>, _>>()?;
         Response::ok(ListOperatorsResponse {
             operators,
@@ -109,10 +119,15 @@ impl OrganizationService for OrganizationRpc {
 }
 
 fn actor_to_proto(actor: OperatorActor) -> Result<ProtoOperator, ConnectError> {
-    operator_to_proto(actor.operator, actor.user)
+    // The actor just authenticated, so its own view reports now.
+    operator_to_proto(actor.operator, actor.user, Some(now()))
 }
 
-fn operator_to_proto(operator: OperatorRecord, user: User) -> Result<ProtoOperator, ConnectError> {
+fn operator_to_proto(
+    operator: OperatorRecord,
+    user: User,
+    last_authenticated_at: Option<u64>,
+) -> Result<ProtoOperator, ConnectError> {
     let email = user
         .primary_email()
         .map(|identifier| identifier.value.clone())
@@ -144,7 +159,10 @@ fn operator_to_proto(operator: OperatorRecord, user: User) -> Result<ProtoOperat
             OperatorRoleRecord::Auditor => OperatorRole::Auditor.into(),
         },
         created_at: format_timestamp(operator.created_at)?,
-        last_authenticated_at: format_timestamp(operator.last_authenticated_at)?,
+        last_authenticated_at: match last_authenticated_at {
+            Some(seen) => format_timestamp(seen)?,
+            None => String::new(),
+        },
         ..Default::default()
     })
 }
