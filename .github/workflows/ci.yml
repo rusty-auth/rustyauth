@@ -38,6 +38,15 @@ jobs:
       - run: test -z "$(gofmt -l .)"
       - run: go vet ./...
       - run: go test ./...
+      # The Rust service is gated by cargo-deny, but this module was audited by
+      # nothing — GitHub reported 31 advisories here while `cargo audit` was clean,
+      # because the two cover different ecosystems. govulncheck is used rather than
+      # a version matcher because it reports only vulnerabilities this code can
+      # actually reach.
+      - name: Go vulnerabilities
+        run: |
+          go install golang.org/x/vuln/cmd/govulncheck@latest
+          "$(go env GOPATH)/bin/govulncheck" ./...
 
   # Lint and test are independent lanes: neither waits on the other, and each keeps
   # its own incremental cache. The release build is covered by the container job,

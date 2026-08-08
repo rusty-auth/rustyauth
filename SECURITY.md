@@ -141,9 +141,11 @@ These are explicit reasons RustyAuth is pre-release:
   use separate static bearer credentials rather than workload identity or mTLS.
 - Stored keys are one configured tenant per instance rather than tenant-prefixed.
 - Compound-mutation coordination is process-local; multiple writer replicas are unqualified.
-- Protocol fuzzing and an independent assessment are not complete. Dependency auditing is
-  automated: `cargo-deny` gates every push and every tagged release on advisories, licences,
-  bans and sources, and each advisory ignore carries an expiry date that CI enforces.
+- Protocol fuzzing and an independent assessment are not complete. Dependency auditing is automated
+  for the two ecosystems that carry code: `cargo-deny` gates the Rust service on every push and every
+  tagged release, over advisories, licences, bans and sources, with an enforced expiry date on each
+  advisory ignore; `govulncheck` gates the Pulumi module, and reports only advisories this code can
+  actually reach. The TypeScript packages have no automated advisory gate.
 - The rate limiter tracks a bounded number of distinct callers and refuses rather than forgets when
   that bound is reached, so a flood from more distinct addresses than it holds degrades to a
   service-wide `429`. Failing closed is deliberate on an authentication surface, but it makes a wide
