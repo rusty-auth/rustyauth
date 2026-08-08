@@ -30,6 +30,7 @@ editable during the environment step.
 | Variable              | Deployment behavior                                                    |
 | --------------------- | ---------------------------------------------------------------------- |
 | `AUTH_ENV`            | Must be set to `production`. There is no default; an unset value stops startup |
+| `AUTH_TRUSTED_PROXY_HOPS` | Required in production. Set to `1`: Railway terminates TLS, so the TCP peer is the edge and only `X-Forwarded-For` identifies the client |
 | `WEBAUTHN_RP_ORIGIN`  | Exact HTTPS origin of the public RustyAuth dashboard                    |
 | `WEBAUTHN_RP_ID`      | Exact hostname from `WEBAUTHN_RP_ORIGIN`                               |
 | `WEBAUTHN_RP_NAME`    | Editable display name; defaults to `RustyAuth`                         |
