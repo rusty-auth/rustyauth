@@ -92,6 +92,11 @@ Requirements: Docker with Compose and `curl`.
 git clone https://github.com/rusty-auth/rustyauth.git
 cd rustyauth
 cp .env.example .env
+# Secrets in .env.example are intentionally blank. Generate real ones:
+printf 'AUTH_MASTER_KEY_HEX=%s\n'     "$(openssl rand -hex 32)"    >> .env
+printf 'BOOTSTRAP_TOKEN=%s\n'         "$(openssl rand -base64 48)" >> .env
+printf 'AUTH_EVENT_RPC_TOKEN=%s\n'    "$(openssl rand -base64 48)" >> .env
+printf 'AUTH_IDENTITY_RPC_TOKEN=%s\n' "$(openssl rand -base64 48)" >> .env
 docker compose up --build
 ```
 
@@ -115,10 +120,12 @@ The `sabledb_data` volume survives container replacement. Add `--volumes` only w
 intentionally want to erase the local identity store.
 
 > [!IMPORTANT]
-> The checked-in development key and bootstrap token are public test values. They are only safe on
-> loopback. Generate independent secrets before any shared deployment. RustyAuth also refuses a
-> 32-byte encryption key whose bytes are all identical, so an unedited `0000…` or `1111…`
-> placeholder now stops startup rather than silently protecting nothing.
+> No secret ships with a value. `.env.example` leaves every one blank and `compose.yaml` refuses to
+> substitute a default, so an unpopulated `.env` stops the stack by name rather than starting on
+> something readable in this repository. Generate each secret independently, including for local
+> work. RustyAuth additionally refuses a 32-byte key whose bytes are all identical, which catches an
+> unedited `0000…` placeholder — but that check cannot tell a generated key from a published one,
+> which is why there are no defaults to inherit.
 
 ## Backup, key and operator operations
 

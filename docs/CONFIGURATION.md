@@ -67,7 +67,7 @@ Backup configuration is all-or-nothing. Supply all six required values or none:
 
 | Variable | Meaning |
 | --- | --- |
-| `AUTH_BACKUP_ENDPOINT` | S3-compatible API origin |
+| `AUTH_BACKUP_ENDPOINT` | S3-compatible API origin. Must be HTTPS in production: snapshots carry every account and the wrapped signing keys, and the SigV4 header carries the access key id |
 | `AUTH_BACKUP_REGION` | SDK signing region |
 | `AUTH_BACKUP_BUCKET` | Private destination bucket |
 | `AUTH_BACKUP_ACCESS_KEY_ID` | Bucket access identifier |
@@ -86,7 +86,13 @@ Optional backup controls:
 
 When backup configuration is present, RustyAuth creates a verified logical backup at process start
 and then at the configured interval. Key IDs are derived automatically; operators never configure
-or synchronize separate IDs. Partial configuration fails startup.
+or synchronize separate IDs.
+
+Backup configuration is all-or-nothing in both directions. Supplying some of the six required values
+fails startup, and so does supplying any of the optional controls above — including
+`AUTH_BACKUP_INTERVAL_SECONDS` — while the six are absent. Setting a backup interval on a deployment
+with no backup sink is the shape of a deployment that believes it has backups and does not, so it is
+refused rather than ignored.
 
 ## Secret generation
 
@@ -124,11 +130,13 @@ The rejection applies in development as well as production. Generate every key w
 openssl rand -hex 32
 ```
 
-This is a placeholder filter, not a key-quality test. It cannot tell a weak key from a strong one;
-it refuses only the specific shape that proves no key was generated. The `AUTH_MASTER_KEY_HEX` in
-`.env.example` and `compose.yaml` passes the check but is committed to this repository and therefore
-public, as is the `vtr-local-enrolment-only` bootstrap token. Neither may appear in a shared
-deployment.
+This is a placeholder filter, not a key-quality test. It cannot tell a weak key from a strong one, and
+it cannot tell a generated key from one that has been published — it refuses only the specific shape
+that proves no key was generated at all.
+
+That limit is why no secret ships with a value. `.env.example` leaves every one blank and
+`compose.yaml` refuses to substitute a default, so a missing value stops startup by name instead of
+falling back to something readable in the repository. Generate each one, including for local work.
 
 ### First operator
 

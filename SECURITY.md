@@ -144,6 +144,10 @@ These are explicit reasons RustyAuth is pre-release:
 - Protocol fuzzing and an independent assessment are not complete. Dependency auditing is
   automated: `cargo-deny` gates every push and every tagged release on advisories, licences,
   bans and sources, and each advisory ignore carries an expiry date that CI enforces.
+- The rate limiter tracks a bounded number of distinct callers and refuses rather than forgets when
+  that bound is reached, so a flood from more distinct addresses than it holds degrades to a
+  service-wide `429`. Failing closed is deliberate on an authentication surface, but it makes a wide
+  distributed flood a denial of service rather than merely an unmetered one.
 - An operator can act on another operator. `RevokePasskey`, `RemoveIdentifier` and
   `SetPrimaryIdentifier` take a target account and are gated at Support, with no comparison
   between the actor's role and the target's, so a Support operator can disrupt an Owner's

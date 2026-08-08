@@ -19,9 +19,16 @@ upgrading.
   silently selecting development, which would have dropped `Secure` from the session cookie, accepted an HTTP
   relying-party origin and treated every self-service identifier as verified.
 - **`AUTH_MASTER_KEY_HEX` and `AUTH_BACKUP_ENCRYPTION_KEY_HEX` reject placeholder keys.** A 32-byte key whose
-  bytes are all identical is refused, including the all-zero key this repository previously shipped in
-  `.env.example` and `compose.yaml`. Both fixtures now carry a real — but still public — development key.
-  Generate a per-environment key with `openssl rand -hex 32`; the rule applies in development too.
+  bytes are all identical is refused, including the all-zero key this repository previously shipped.
+- **No secret ships with a value.** `.env.example` leaves every secret blank and `compose.yaml` refuses to
+  substitute a default, so an unpopulated `.env` now stops the stack by name. The placeholder check cannot
+  tell a generated key from a published one, so a committed development default would have passed it while
+  remaining readable in this repository. Generate each secret, including for local work.
+- **`AUTH_TRUSTED_PROXY_HOPS` is required in production.** State the number of reverse proxies in front of
+  the service — `1` when the platform terminates TLS. Without it the rate limiter either trusts a
+  client-supplied `X-Forwarded-For` or collapses every client into the edge's single bucket.
+- **`AUTH_BACKUP_ENDPOINT` must use HTTPS in production.** A plaintext endpoint exposed snapshots and the
+  SigV4 credential scope on the wire.
 - **`AddIdentifier` rejects `verified: true`.** The identity RPC returns `invalid_argument` instead of
   creating a verified identifier. Callers that relied on the one-step behaviour must now call `AddIdentifier`
   followed by `SetIdentifierVerification`.
@@ -36,11 +43,14 @@ upgrading.
 
 ### Added
 
-- `rustyauth operator promote <email> <owner|administrator|support|auditor>` and
-  `rustyauth operator list`. Promotion is the supported way to create the first Owner: browser
-  bootstrap requires an operator email the account has already verified, and nothing can verify one until an
-  operator exists to do it. The CLI breaks that cycle and deliberately costs shell access to the deployment
-  rather than control of an inbox.
+- `rustyauth operator list`, `operator find <email>`, `operator promote <user-id> <role>` and
+  `operator demote <user-id>`. Promotion is the supported way to create the first Owner: browser bootstrap
+  requires an operator email the account has already verified, and nothing can verify one until an operator
+  exists to do it. The CLI breaks that cycle and deliberately costs shell access to the deployment rather
+  than control of an inbox. It takes a **user id** rather than an address, because any enrolled account can
+  claim an unclaimed address through the self-service API — `operator find` shows which accounts hold an
+  address and when they claimed it. `operator demote` withdraws a grant; removing an address from
+  `AUTH_OPERATOR_EMAILS` does not, because a stored grant is honoured before the allowlist is consulted.
 - Response security headers on every response: `Content-Security-Policy` (self-only script, style, font,
   image and connect sources, `frame-ancestors 'none'`, `base-uri 'none'`, `object-src 'none'`),
   `X-Frame-Options: DENY`, `Cross-Origin-Opener-Policy: same-origin`,

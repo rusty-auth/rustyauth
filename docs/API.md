@@ -62,7 +62,7 @@ any method needing an operator session must stay unary.
 | `AddIdentifier` | Identity RPC or operator support | Add a canonical email or E.164 phone. Always stored unverified |
 | `RemoveIdentifier` | Identity RPC or operator support | Remove a non-final linked identifier |
 | `SetPrimaryIdentifier` | Identity RPC or operator support | Select the account's primary identifier |
-| `SetIdentifierVerification` | Identity RPC or operator administer | Set or clear trusted verification state and timestamp |
+| `SetIdentifierVerification` | Operator administer **only** — no bearer path | Set or clear trusted verification state and timestamp |
 | `RenamePasskey` | Identity RPC or operator support | Change passkey display metadata |
 | `RevokePasskey` | Identity RPC or operator support | Remove a non-final passkey and end the sessions it created |
 
@@ -80,8 +80,12 @@ address in one step, which produces an `email_verified` claim for an address nob
 and, in the same motion, an identifier that satisfies operator bootstrap.
 
 The verification decision now lives only in `SetIdentifierVerification`, which requires **operator
-administer** rather than operator support. A caller that needs to add and then verify makes two
-calls at two privilege levels, and the second one is auditable on its own.
+administer** and accepts no bearer token at all. That exclusion is the point: the interceptor accepts
+the service token before it consults the capability, so leaving this method on the shared bearer path
+would make `AUTH_IDENTITY_RPC_TOKEN` equivalent to Owner — attach an allowlisted operator address to
+any account, mark it verified, and browser bootstrap mints the role. A caller that needs to add and
+then verify makes two calls at two privilege levels, and only a human operator session can make the
+second.
 
 `SearchUsers` combines every populated criterion with AND and rejects an empty search. Email and
 phone searches use their canonical exact indexes. Name and passkey-label filters are exact,
@@ -539,8 +543,14 @@ browser client makes, which remain governed by the exact-origin CORS policy.
 Requests are bounded at 30 seconds, a 256 KiB REST body and a 64 KiB RPC body.
 
 Unauthenticated endpoints are rate limited per caller address over a fixed 60-second window, so
-enumeration is not free while a person retrying a failed passkey tap is never throttled. A refused
-request returns `429` with a `Retry-After` header giving the seconds until the window resets.
+enumeration is not free while a person retrying a failed passkey tap is not throttled under normal
+load. A refused request returns `429` with a `Retry-After` header giving the seconds until the window
+resets.
+
+The limiter tracks a bounded number of distinct callers. A flood from more distinct addresses than it
+can hold makes it refuse rather than forget, so a wide distributed flood degrades to a service-wide
+`429` instead of an unmetered authentication surface. That is the deliberate direction to fail, but
+it means such a flood is a denial of service; see the limitations in SECURITY.md.
 
 | Class | Endpoints | Budget per minute |
 | --- | --- | --- |

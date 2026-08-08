@@ -41,8 +41,11 @@ The control-plane contract is divided by policy boundary:
   credential, or webhook URL dimensions.
 
 Organization and service-account services are mounted only behind the Rust passkey-operator policy.
-The first passkey-authenticated user whose canonical primary email appears in
-`AUTH_OPERATOR_EMAILS` bootstraps the owner record. Service credentials are generated once, indexed
+The first passkey-authenticated user whose canonical primary email appeared in
+`AUTH_OPERATOR_EMAILS` bootstrapped the owner record. That rule was superseded: bootstrap now
+requires the address to be **verified**, and the first Owner is created from the host with
+`rustyauth operator promote <user-id> owner`, because an unverified address is one any enrolled
+account can claim through the self-service API. Service credentials are generated once, indexed
 by SHA-256, independently revocable and exchangeable only for an allowed subset of their account's
 scopes. Webhook and metrics services remain contract foundations and are not mounted until their
 durable storage, policy and rejection-path tests land. The private event and identity RPC bearer

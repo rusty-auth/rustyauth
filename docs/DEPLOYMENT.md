@@ -13,14 +13,19 @@ From this directory:
 
 ```sh
 cp .env.example .env
+# The secrets in .env.example are intentionally blank; generate real ones.
+printf 'AUTH_MASTER_KEY_HEX=%s\n'     "$(openssl rand -hex 32)"    >> .env
+printf 'BOOTSTRAP_TOKEN=%s\n'         "$(openssl rand -base64 48)" >> .env
+printf 'AUTH_EVENT_RPC_TOKEN=%s\n'    "$(openssl rand -base64 48)" >> .env
+printf 'AUTH_IDENTITY_RPC_TOKEN=%s\n' "$(openssl rand -base64 48)" >> .env
 docker compose up --build
 ```
 
-RustyAuth refuses a 32-byte encryption key whose bytes are all identical, so an unedited `0000…` placeholder
-now stops startup with `AUTH_MASTER_KEY_HEX is a placeholder with no entropy`. The `AUTH_MASTER_KEY_HEX` in
-`.env.example` and `compose.yaml` carries real entropy solely so a loopback stack starts. It is committed to
-this repository and therefore public; it protects nothing. Generate a per-environment key with
-`openssl rand -hex 32` for anything shared.
+No secret ships with a value. `.env.example` leaves every one blank and `compose.yaml` refuses to
+substitute a default, so an unpopulated `.env` stops the stack with a named missing variable rather than
+starting on something an attacker could read in the repository. A committed default is a published default,
+and the entropy check in `config.rs` cannot tell a generated key from one that has been published — so
+generating is the only path, including locally.
 
 The Compose topology publishes only `127.0.0.1:8081` for RustyAuth. SableDB joins an internal Docker network
 and has no host port. Its named volume is `sabledb_data`. The same Rust container serves the built operator
