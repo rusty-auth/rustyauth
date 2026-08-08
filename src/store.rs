@@ -24,7 +24,7 @@ pub use self::service_accounts::{
     ServiceAccountCredentialRecord, ServiceAccountGrant, ServiceAccountRecord,
     ServiceAccountStatusRecord,
 };
-pub use self::sessions::Session;
+pub use self::sessions::{Session, SessionOrigin};
 pub use self::snapshot::StoreRecord;
 pub(crate) use self::users::forbidden_display_character;
 pub use self::users::{

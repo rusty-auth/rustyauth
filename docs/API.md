@@ -35,7 +35,7 @@ identifier listed in `AUTH_OPERATOR_EMAILS`. An unverified match is refused: eve
 self-service API is caller-chosen and unverified in production, so trusting one would let any
 enrolled account claim an unclaimed operator address. Because production has no way to verify an
 identifier before an operator exists, the first Owner is created with
-`rustyauth operator promote <email> owner` from the host. Local-agent sessions are
+`rustyauth operator promote <user-id> owner` from the host. Local-agent sessions are
 deliberately rejected by every operator RPC.
 
 For the authoritative field-by-field persistence contract—including internal fields deliberately

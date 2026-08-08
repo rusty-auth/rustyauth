@@ -313,10 +313,18 @@ Browser bootstrap requires the passkey account to hold a verified email identifi
 itself an administer-capability operator action, so on an empty deployment the two requirements form a cycle:
 no operator can exist until an address is verified, and no address can be verified until an operator exists.
 
-`rustyauth operator promote <email> <role>` breaks the cycle from the host. It writes the operator
-record and marks that address verified so the account can bootstrap through the browser afterwards. The cost
-is deliberate — creating the first Owner requires shell access to the deployment rather than control of an
-inbox, which is a materially harder thing for an attacker to obtain than an unclaimed email address.
+`rustyauth operator promote <user-id> <role>` breaks the cycle from the host. It writes the operator
+record for a named account and nothing else. The cost is deliberate — creating the first Owner requires shell
+access to the deployment rather than control of an inbox, which is a materially harder thing for an attacker
+to obtain than an unclaimed email address.
+
+It takes a user id rather than an address because the address is not a safe way to name an account here. Any
+enrolled account can attach an unclaimed identifier to itself through the self-service API, so a command that
+resolved the allowlisted address would grant Owner to whichever account claimed it first — turning the
+administrator's own bootstrap into the attacker's escalation. `operator find <email>` reports every account
+holding an address, with when each claimed it and whether it is verified, so the id being promoted is one a
+human has looked at. `operator demote <user-id>` withdraws a grant; the allowlist cannot, because a stored
+operator record is honoured before the allowlist is consulted.
 
 Service-account secrets are high-entropy random `rsa_` values shown once. SableDB stores only their SHA-256
 locator and a six-character display hint. A live, unexpired credential can be exchanged for a short-lived

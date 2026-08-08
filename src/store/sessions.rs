@@ -21,14 +21,49 @@ pub struct Session {
     pub absolute_expires_at: u64,
 }
 
+/// How a session came to exist.
+///
+/// A passkey session carries the credential that produced it, because revoking
+/// that credential has to be able to end the session. Modelling it as an enum
+/// rather than a `&str` plus an `Option` is what stops a caller creating a
+/// passkey session with no originating credential: that combination would make
+/// the revocation check in `session_verdict` silently unreachable, and no test
+/// of that function would notice, because the fixture would still be valid.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum SessionOrigin {
+    Passkey {
+        credential_id: String,
+    },
+    /// A local agent handoff. No credential produced it, so passkey revocation
+    /// does not apply.
+    Agent,
+}
+
+impl SessionOrigin {
+    fn auth_method(&self) -> &'static str {
+        match self {
+            Self::Passkey { .. } => "passkey",
+            Self::Agent => "agent",
+        }
+    }
+
+    fn credential_id(self) -> Option<String> {
+        match self {
+            Self::Passkey { credential_id } => Some(credential_id),
+            Self::Agent => None,
+        }
+    }
+}
+
 impl Store {
     pub async fn create_session(
         &self,
         user: &User,
-        auth_method: &str,
-        current_credential_id: Option<String>,
+        origin: SessionOrigin,
         absolute_seconds: u64,
     ) -> Result<(String, Session)> {
+        let auth_method = origin.auth_method();
+        let current_credential_id = origin.credential_id();
         let _snapshot = self.snapshot_gate.read().await;
         let token = URL_SAFE_NO_PAD.encode(rand::random::<[u8; 32]>());
         let current = now();
@@ -173,6 +208,25 @@ mod tests {
             ),
             SessionVerdict::Valid
         );
+    }
+
+    /// A passkey session cannot exist without the credential that made it.
+    ///
+    /// This is what keeps the revocation branch in `session_verdict` reachable.
+    /// Before `SessionOrigin` existed the caller passed a `&str` and an
+    /// `Option`, so passing `None` for a passkey login compiled fine, disabled
+    /// credential-scoped revocation entirely, and left every test green.
+    #[test]
+    fn a_passkey_session_always_carries_its_originating_credential() {
+        let passkey = SessionOrigin::Passkey {
+            credential_id: "cred-a".to_owned(),
+        };
+        assert_eq!(passkey.auth_method(), "passkey");
+        assert_eq!(passkey.credential_id(), Some("cred-a".to_owned()));
+
+        // An agent handoff has no credential, and must survive revocation.
+        assert_eq!(SessionOrigin::Agent.auth_method(), "agent");
+        assert_eq!(SessionOrigin::Agent.credential_id(), None);
     }
 
     /// The expiry pre-check must agree with the verdict, or a session would be

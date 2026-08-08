@@ -134,7 +134,9 @@ rustyauth backup verify <object-key>
 rustyauth keys status
 rustyauth keys rotate
 rustyauth operator list
-rustyauth operator promote <email> <owner|administrator|support|auditor>
+rustyauth operator find <email>
+rustyauth operator promote <user-id> <owner|administrator|support|auditor>
+rustyauth operator demote <user-id>
 ```
 
 `operator promote` is the supported way to create the first Owner. Dashboard bootstrap requires an

@@ -30,7 +30,7 @@ upgrading.
   controls one.
 - **`AUTH_OPERATOR_EMAILS` alone no longer grants operator access.** Browser bootstrap additionally requires
   the account to hold a *verified* email identifier from that list. Create the first Owner with
-  `rustyauth operator promote <email> owner`.
+  `rustyauth operator promote <user-id> owner`.
 - **Revoking a passkey ends the sessions created with it.** Deployments that relied on a session surviving
   its credential's removal will see those sessions rejected on their next request.
 

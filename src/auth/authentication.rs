@@ -15,7 +15,7 @@ use uuid::Uuid;
 use crate::{
     app_state::AppState,
     rate_limit::RateLimitClass,
-    store::{AuthenticationCeremony, IdentifierValue, now},
+    store::{AuthenticationCeremony, IdentifierValue, SessionOrigin, now},
 };
 
 use super::{
@@ -109,8 +109,9 @@ pub(super) async fn authentication_verify(
         .store
         .create_session(
             &user,
-            "passkey",
-            Some(current_credential_id),
+            SessionOrigin::Passkey {
+                credential_id: current_credential_id,
+            },
             state.session_absolute_seconds,
         )
         .await

@@ -88,17 +88,28 @@ verified — so on a fresh deployment nothing can verify one, because verifying 
 operator action. Create the first Owner from a shell on the deployed container:
 
 ```sh
-rustyauth operator promote founder@example.com owner
+rustyauth operator find founder@example.com
+rustyauth operator promote <user-id> owner
 rustyauth operator list
 ```
 
+Promotion takes a user id, not an address, and `operator find` is how you get one. Any enrolled account can
+attach an unclaimed address to itself through the self-service API, so a command that resolved an address
+would promote whoever claimed it first — an attacker who claims your operator address before you run the
+promotion would receive Owner from your own hand. `operator find` prints every account holding the address
+with `claimedAt` and `verified`; promote the id you recognise, and treat an unfamiliar recent claim on an
+operator address as an incident.
+
 Roles are `owner`, `administrator`, `support` and `auditor`. The account must already exist — enrol it
-through the normal bootstrap-token registration flow first. Promotion writes the operator record and marks
-that address verified, so the same account can bootstrap through the browser afterwards.
+through the normal bootstrap-token registration flow first.
 
 This deliberately costs shell access to the deployment rather than control of an inbox. Treat the ability to
 run `operator promote` as equivalent to Owner: anyone who can execute in the container can grant themselves
 the control plane. Restrict container exec the way you restrict the master key.
+
+`operator demote <user-id>` removes a grant. Removing an address from `AUTH_OPERATOR_EMAILS` does **not**
+revoke an existing operator — a stored record is honoured before the allowlist is consulted — so demotion is
+the only way to withdraw one. Include it in your offboarding runbook.
 
 `operator list` prints every stored operator with role, primary email and last authentication time. Review it
 after any promotion and as part of routine access review.
@@ -138,7 +149,9 @@ rustyauth backup create
 rustyauth backup list
 rustyauth backup verify <object-key>
 rustyauth operator list
-rustyauth operator promote <email> <owner|administrator|support|auditor>
+rustyauth operator find <email>
+rustyauth operator promote <user-id> <owner|administrator|support|auditor>
+rustyauth operator demote <user-id>
 ```
 
 ## Container properties

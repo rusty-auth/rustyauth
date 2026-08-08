@@ -18,7 +18,7 @@ use crate::{
     rate_limit::RateLimitClass,
     store::{
         AccountProfile, IdentifierKind, IdentifierValue, RegistrationCeremony, RegistrationPurpose,
-        StorePolicyError, now,
+        SessionOrigin, StorePolicyError, now,
     },
 };
 
@@ -142,8 +142,9 @@ pub(super) async fn registration_verify(
         .store
         .create_session(
             &user,
-            "passkey",
-            Some(current_credential_id),
+            SessionOrigin::Passkey {
+                credential_id: current_credential_id,
+            },
             state.session_absolute_seconds,
         )
         .await

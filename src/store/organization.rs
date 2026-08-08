@@ -6,8 +6,7 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use super::{
-    IdentifierValue, OPERATOR_PREFIX, ORGANIZATION_KEY, Store, StorePolicyError, User,
-    events::queue_events, now, require_canonical_identifier,
+    OPERATOR_PREFIX, ORGANIZATION_KEY, Store, StorePolicyError, User, events::queue_events, now,
 };
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -105,13 +104,23 @@ impl Store {
         // concurrently captures the operator record without its creation event.
         let _snapshot = self.snapshot_gate.read().await;
         let key = format!("{OPERATOR_PREFIX}{}", user.id);
-        if let Some(mut operator) = self.get_json::<OperatorRecord>(&key).await? {
+        if let Some(operator) = self.get_json::<OperatorRecord>(&key).await? {
             if operator.last_authenticated_at.saturating_add(60) <= now() {
-                operator.last_authenticated_at = now();
-                let mut connection = self.redis.clone();
-                let _: () = connection
-                    .set(&key, serde_json::to_string(&operator)?)
-                    .await?;
+                // Re-read under the lock and write back only the timestamp. Writing
+                // the record read before the lock would carry a stale `role` with
+                // it, so a sign-in racing a demotion silently restores the role the
+                // operator just lost.
+                let _guard = self.mutation.lock().await;
+                if let Some(mut current) = self.get_json::<OperatorRecord>(&key).await? {
+                    current.last_authenticated_at = now();
+                    let mut connection = self.redis.clone();
+                    let _: () = connection
+                        .set(&key, serde_json::to_string(&current)?)
+                        .await?;
+                    return Ok(Some(current));
+                }
+                // Demoted between the two reads; the grant is gone.
+                return Ok(None);
             }
             return Ok(Some(operator));
         }
@@ -143,16 +152,23 @@ impl Store {
     /// This is the supported way to create the first Owner. Browser bootstrap
     /// requires an already-verified operator address, which nothing can set until
     /// an operator exists; breaking that cycle deliberately costs host access.
+    /// Grants an operator role to a named account.
+    ///
+    /// Takes a user id rather than an address on purpose. Resolving an address
+    /// would grant the role to whichever account currently holds it, and any
+    /// enrolled user can attach an unclaimed address to themselves through the
+    /// self-service API — so an attacker who claims the allowlisted address first
+    /// receives Owner the moment an administrator runs the promotion they were
+    /// always going to run.
     pub async fn promote_operator(
         &self,
-        identifier: &IdentifierValue,
+        user_id: Uuid,
         role: OperatorRoleRecord,
-    ) -> Result<OperatorRecord> {
-        require_canonical_identifier(identifier)?;
+    ) -> Result<(OperatorRecord, User)> {
         let _snapshot = self.snapshot_gate.read().await;
         let _guard = self.mutation.lock().await;
         let user = self
-            .user_by_identifier(identifier)
+            .user(user_id)
             .await?
             .ok_or(StorePolicyError::UserMissing)?;
         let key = format!("{OPERATOR_PREFIX}{}", user.id);
@@ -170,7 +186,26 @@ impl Store {
             .context("persist promoted operator")?;
         self.append_event_locked("operator.promoted", Some(user.id))
             .await?;
-        Ok(operator)
+        Ok((operator, user))
+    }
+
+    /// Removes an operator record entirely.
+    ///
+    /// Taking an address off AUTH_OPERATOR_EMAILS does not revoke anything —
+    /// `ensure_operator` returns a stored record before it consults the allowlist —
+    /// so without this a grant could never be withdrawn from the product at all.
+    pub async fn demote_operator(&self, user_id: Uuid) -> Result<bool> {
+        let _snapshot = self.snapshot_gate.read().await;
+        let _guard = self.mutation.lock().await;
+        let key = format!("{OPERATOR_PREFIX}{user_id}");
+        if self.get_json::<OperatorRecord>(&key).await?.is_none() {
+            return Ok(false);
+        }
+        let mut connection = self.redis.clone();
+        let _: () = connection.del(&key).await.context("remove operator")?;
+        self.append_event_locked("operator.demoted", Some(user_id))
+            .await?;
+        Ok(true)
     }
 
     pub async fn operators(&self) -> Result<Vec<(OperatorRecord, User)>> {

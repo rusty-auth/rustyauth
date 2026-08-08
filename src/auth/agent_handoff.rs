@@ -8,7 +8,7 @@ use axum::{
     response::{IntoResponse, Response},
 };
 
-use crate::{app_state::AppState, rate_limit::RateLimitClass};
+use crate::{app_state::AppState, rate_limit::RateLimitClass, store::SessionOrigin};
 
 use super::{
     dto::LocalAgentHandoffQuery, error::ApiError, guard::require_rate_limit,
@@ -38,7 +38,7 @@ pub(super) async fn local_agent_handoff(
         .ok_or_else(|| ApiError::unauthorized("agent handoff account no longer exists"))?;
     let (session_token, _) = state
         .store
-        .create_session(&user, "agent", None, 3_600)
+        .create_session(&user, SessionOrigin::Agent, 3_600)
         .await
         .map_err(ApiError::internal)?;
     let location = HeaderValue::from_str(&handoff.redirect_url)

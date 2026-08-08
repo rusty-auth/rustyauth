@@ -10,6 +10,7 @@ use std::{
 use anyhow::{Context, Result};
 use redis::AsyncCommands;
 use serde_json::json;
+use uuid::Uuid;
 
 use crate::{
     backup::BackupStore,
@@ -42,8 +43,14 @@ pub enum ProcessMode {
     KeysStatus,
     KeysRotate,
     OperatorPromote {
-        email: String,
+        user_id: String,
         role: String,
+    },
+    OperatorDemote {
+        user_id: String,
+    },
+    OperatorFind {
+        email: String,
     },
     OperatorList,
     Doctor,
@@ -87,10 +94,20 @@ pub fn parse_process_arguments(arguments: Vec<String>) -> Result<ProcessMode> {
         [group, command] if group == "keys" && command == "rotate" => {
             return Ok(ProcessMode::KeysRotate);
         }
-        [group, command, email, role] if group == "operator" && command == "promote" => {
+        [group, command, user_id, role] if group == "operator" && command == "promote" => {
             return Ok(ProcessMode::OperatorPromote {
-                email: email.clone(),
+                user_id: user_id.clone(),
                 role: role.clone(),
+            });
+        }
+        [group, command, user_id] if group == "operator" && command == "demote" => {
+            return Ok(ProcessMode::OperatorDemote {
+                user_id: user_id.clone(),
+            });
+        }
+        [group, command, email] if group == "operator" && command == "find" => {
+            return Ok(ProcessMode::OperatorFind {
+                email: email.clone(),
             });
         }
         [group, command] if group == "operator" && command == "list" => {
@@ -132,14 +149,21 @@ Usage:
   rustyauth keys status
   rustyauth keys rotate
   rustyauth operator list
-  rustyauth operator promote <email> <owner|administrator|support|auditor>
+  rustyauth operator find <email>
+  rustyauth operator promote <user-id> <owner|administrator|support|auditor>
+  rustyauth operator demote <user-id>
 
 Running without a command starts the HTTP service. Restore requires an empty SableDB namespace and
 invalidates existing sessions unless --preserve-sessions is explicitly supplied.
 
 Operator promotion is the supported way to create the first Owner. Dashboard bootstrap requires an
 operator email that the account has already verified, which nothing can set before an operator
-exists; this command breaks that cycle and requires shell access to the deployment.";
+exists; this command breaks that cycle and requires shell access to the deployment.
+
+Promotion takes a user id, not an address. Any enrolled account can attach an unclaimed address to
+itself, so resolving an address here would promote whoever claimed it first. Run `operator find
+<email>` to see which accounts hold the address and when they claimed it, then promote the id you
+recognise.";
 
 /// Executes one operator subcommand against the already-initialized store.
 ///
@@ -223,9 +247,11 @@ pub async fn run(
             println!("{}", serde_json::to_string_pretty(&status)?);
             Ok(())
         }
-        ProcessMode::OperatorPromote { email, role } => {
-            promote_operator(&store, &email, &role).await
+        ProcessMode::OperatorPromote { user_id, role } => {
+            promote_operator(&store, &user_id, &role).await
         }
+        ProcessMode::OperatorDemote { user_id } => demote_operator(&store, &user_id).await,
+        ProcessMode::OperatorFind { email } => find_operator_candidates(&store, &email).await,
         ProcessMode::OperatorList => {
             let operators = store
                 .operators()
@@ -331,7 +357,15 @@ async fn doctor(
 /// verify one until an operator exists to do it. This command breaks that cycle,
 /// and deliberately costs shell access to the deployment rather than merely
 /// control of an inbox.
-async fn promote_operator(store: &Store, email: &str, role: &str) -> Result<()> {
+///
+/// It takes a user id, not an address. Resolving an address here would grant the
+/// role to whichever account currently holds it, and any enrolled user can attach
+/// an unclaimed address to themselves through the self-service API — so an
+/// attacker who claims the allowlisted address first would receive Owner the
+/// moment an administrator ran the promotion they were always going to run.
+/// `operator find` exists so the administrator can see which account they are
+/// about to promote, and when that account claimed the address.
+async fn promote_operator(store: &Store, user_id: &str, role: &str) -> Result<()> {
     let role = match role {
         "owner" => OperatorRoleRecord::Owner,
         "administrator" => OperatorRoleRecord::Administrator,
@@ -341,25 +375,75 @@ async fn promote_operator(store: &Store, email: &str, role: &str) -> Result<()> 
             anyhow::bail!("role must be owner, administrator, support or auditor, got {other}")
         }
     };
-    let identifier = IdentifierValue::canonical(IdentifierKind::Email, email)
-        .context("operator email is not a valid address")?;
-    let operator = store
-        .promote_operator(&identifier, role)
+    let user_id = Uuid::parse_str(user_id.trim())
+        .context("expected a user id; run `rustyauth operator find <email>` to look one up")?;
+    let (operator, user) = store
+        .promote_operator(user_id, role)
         .await
         .context("promote operator")?;
-    // Verify the address too, so the promoted account can also bootstrap through
-    // the browser without needing this command again.
-    store
-        .set_identifier_verification(operator.user_id, &identifier, true)
-        .await
-        .context("mark the operator email verified")?;
     println!(
         "{}",
         serde_json::to_string_pretty(&json!({
             "userId": operator.user_id,
-            "email": identifier.value,
             "role": operator.role,
+            "identifiers": identifier_summary(&user),
         }))?
+    );
+    Ok(())
+}
+
+/// Shows the accounts holding an address, so a promotion names an account the
+/// administrator has actually looked at.
+///
+/// `claimedAt` and `verified` are the fields that matter: an operator address
+/// claimed recently by an account nobody recognises is someone trying to be
+/// promoted by the administrator's own hand.
+async fn find_operator_candidates(store: &Store, email: &str) -> Result<()> {
+    let identifier = IdentifierValue::canonical(IdentifierKind::Email, email)
+        .context("operator email is not a valid address")?;
+    let found = store
+        .user_by_identifier(&identifier)
+        .await
+        .context("look up the address")?;
+    let candidates = found
+        .iter()
+        .map(|user| {
+            json!({
+                "userId": user.id,
+                "createdAt": user.created_at,
+                "identifiers": identifier_summary(user),
+            })
+        })
+        .collect::<Vec<_>>();
+    println!("{}", serde_json::to_string_pretty(&candidates)?);
+    Ok(())
+}
+
+fn identifier_summary(user: &crate::store::User) -> Vec<serde_json::Value> {
+    user.identifiers
+        .iter()
+        .map(|identifier| {
+            json!({
+                "type": identifier.kind,
+                "value": identifier.value,
+                "verified": identifier.verified,
+                "primary": identifier.primary,
+                "claimedAt": identifier.created_at,
+            })
+        })
+        .collect()
+}
+
+/// Removes an operator record.
+async fn demote_operator(store: &Store, user_id: &str) -> Result<()> {
+    let user_id = Uuid::parse_str(user_id.trim()).context("expected a user id")?;
+    let removed = store
+        .demote_operator(user_id)
+        .await
+        .context("remove operator")?;
+    println!(
+        "{}",
+        serde_json::to_string_pretty(&json!({ "userId": user_id, "removed": removed }))?
     );
     Ok(())
 }
