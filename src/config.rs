@@ -1,6 +1,6 @@
 //! Fail-closed environment configuration and deployment-policy validation.
 
-use std::{collections::HashSet, env, fmt, net::IpAddr, path::PathBuf, str::FromStr, sync::Arc};
+use std::{collections::HashSet, env, fmt, net::IpAddr, str::FromStr, sync::Arc};
 
 use anyhow::{Context, Result, bail};
 use secrecy::{ExposeSecret, SecretString};
@@ -164,9 +164,9 @@ pub struct Config {
     pub event_rpc_token: SecretString,
     pub identity_rpc_token: SecretString,
     pub operator_emails: Vec<String>,
-    pub dashboard_dir: PathBuf,
     pub audience: String,
     pub tenant_id: String,
+    pub realm_id: String,
     pub access_token_seconds: u64,
     pub session_idle_seconds: u64,
     pub session_absolute_seconds: u64,
@@ -212,15 +212,26 @@ impl Config {
             "master",
         )?;
         let bootstrap_token = SecretString::from(required("BOOTSTRAP_TOKEN")?);
-        let event_rpc_token = SecretString::from(required("AUTH_EVENT_RPC_TOKEN")?);
-        let identity_rpc_token = SecretString::from(required("AUTH_IDENTITY_RPC_TOKEN")?);
+        let (event_rpc_token, identity_rpc_token) = match deployment_role {
+            DeploymentRole::Realm => (
+                SecretString::from(required("AUTH_EVENT_RPC_TOKEN")?),
+                SecretString::from(required("AUTH_IDENTITY_RPC_TOKEN")?),
+            ),
+            DeploymentRole::FleetControlPlane => (
+                disabled_rpc_token("events", &master_keys),
+                disabled_rpc_token("identity", &master_keys),
+            ),
+        };
         let operator_emails = parse_operator_emails(optional("AUTH_OPERATOR_EMAILS"))?;
-        let dashboard_dir = PathBuf::from(
-            optional("AUTH_DASHBOARD_DIR")
-                .unwrap_or_else(|| "/usr/share/rustyauth/dashboard".to_owned()),
-        );
-        let audience = required("SPACETIME_AUDIENCE")?;
+        let audience = match optional("SPACETIME_AUDIENCE") {
+            Some(value) => value,
+            None if deployment_role == DeploymentRole::FleetControlPlane => {
+                "rustyauth-fleet-dashboard".to_owned()
+            }
+            None => bail!("required environment variable SPACETIME_AUDIENCE is missing"),
+        };
         let tenant_id = optional("AUTH_TENANT_ID").unwrap_or_else(|| "vtr".into());
+        let realm_id = optional("AUTH_REALM_ID").unwrap_or_else(|| tenant_id.clone());
         let access_token_seconds = integer("AUTH_ACCESS_TOKEN_SECONDS", 300, 60, 900)?;
         let session_idle_seconds = integer("AUTH_SESSION_IDLE_SECONDS", 1_800, 300, 86_400)?;
         let session_absolute_seconds =
@@ -262,13 +273,16 @@ impl Config {
         validate_rp(&rp_id, &rp_origin)?;
         validate_sable_url(&environment, &sabledb_url)?;
         validate_tenant_id(&tenant_id)?;
+        validate_tenant_id(&realm_id).context("AUTH_REALM_ID is invalid")?;
         if prepublish_seconds >= rotation_seconds {
             bail!("AUTH_SIGNING_KEY_PREPUBLISH_SECONDS must be shorter than the rotation period");
         }
         if environment == Environment::Production && bootstrap_token.expose_secret().len() < 32 {
             bail!("BOOTSTRAP_TOKEN must contain at least 32 characters in production");
         }
-        validate_rpc_tokens(&bootstrap_token, &event_rpc_token, &identity_rpc_token)?;
+        if deployment_role == DeploymentRole::Realm {
+            validate_rpc_tokens(&bootstrap_token, &event_rpc_token, &identity_rpc_token)?;
+        }
 
         let backup = BackupConfig::from_env(&environment)?;
 
@@ -287,9 +301,9 @@ impl Config {
             event_rpc_token,
             identity_rpc_token,
             operator_emails,
-            dashboard_dir,
             audience,
             tenant_id,
+            realm_id,
             access_token_seconds,
             session_idle_seconds,
             session_absolute_seconds,
@@ -303,6 +317,17 @@ impl Config {
             backup,
         })
     }
+}
+
+/// Fleet does not mount the realm event or identity services, so requiring two
+/// operational bearer credentials for them adds secret-management work without
+/// adding a boundary. The interceptor still needs non-empty digests; derive
+/// distinct, non-credential sentinels from the public key identifier.
+fn disabled_rpc_token(service: &str, master_keys: &KeyRing) -> SecretString {
+    SecretString::from(format!(
+        "disabled-for-fleet-{service}-{}",
+        master_keys.active().0
+    ))
 }
 
 fn parse_operator_emails(value: Option<String>) -> Result<Vec<String>> {

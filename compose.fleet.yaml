@@ -1,0 +1,75 @@
+name: rustyauth-fleet
+
+services:
+  dashboard:
+    build:
+      context: .
+      dockerfile: Dockerfile.dashboard
+    environment:
+      PORT: 8080
+      RUSTYAUTH_API_UPSTREAM: http://control-plane:8080
+    ports:
+      - "127.0.0.1:${FLEET_DASHBOARD_PORT:-5196}:8080"
+    depends_on:
+      control-plane:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://127.0.0.1:8080/healthz"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+    networks: [private, edge]
+
+  control-plane:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    environment:
+      AUTH_ENV: development
+      AUTH_DEPLOYMENT_ROLE: fleet-control-plane
+      AUTH_TRUSTED_PROXY_HOPS: 1
+      AUTH_ISSUER: http://localhost:${FLEET_DASHBOARD_PORT:-5196}
+      WEBAUTHN_RP_ID: localhost
+      WEBAUTHN_RP_ORIGIN: http://localhost:${FLEET_DASHBOARD_PORT:-5196}
+      WEBAUTHN_RP_NAME: RustyAuth Fleet Local
+      SABLEDB_URL: redis://fleet-sabledb:6379
+      AUTH_MASTER_KEY_HEX: ${FLEET_AUTH_MASTER_KEY_HEX:?set it in the Fleet env file; scripts/local-stack generates one}
+      BOOTSTRAP_TOKEN: ${FLEET_BOOTSTRAP_TOKEN:?set it in the Fleet env file; scripts/local-stack generates one}
+      AUTH_OPERATOR_EMAILS: ${FLEET_OPERATOR_EMAILS:-admin@rustyauth.local}
+      AUTH_TENANT_ID: ${FLEET_TENANT_ID:-fleet-local}
+      PORT: 8080
+      RUST_LOG: ${RUST_LOG:-rustyauth=info,tower_http=info}
+    expose: ["8080"]
+    depends_on:
+      fleet-sabledb:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/rustyauth", "--healthcheck"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+    networks: [private]
+
+  fleet-sabledb:
+    build:
+      context: ./sabledb
+      dockerfile: Dockerfile
+    volumes:
+      - fleet_sabledb_data:/var/lib/sabledb
+    healthcheck:
+      test: ["CMD-SHELL", "timeout 2 bash -c '</dev/tcp/127.0.0.1/6379'"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+    restart: unless-stopped
+    networks: [private]
+
+networks:
+  private:
+    internal: true
+  edge:
+
+volumes:
+  fleet_sabledb_data:

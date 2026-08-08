@@ -6,7 +6,10 @@ use connectrpc::{ConnectError, ErrorCode};
 use http::{HeaderMap, header};
 use uuid::Uuid;
 
-use crate::store::{IdentifierKind, OperatorRecord, OperatorRoleRecord, Store, User};
+use crate::store::{
+    FleetResourceKindRecord, FleetRoleRecord, IdentifierKind, OperatorRecord, OperatorRoleRecord,
+    Store, User,
+};
 
 const SESSION_COOKIE: &str = "passkey_auth_session";
 
@@ -51,6 +54,42 @@ impl OperatorAuthorizer {
         headers: &HeaderMap,
         capability: OperatorCapability,
     ) -> Result<OperatorActor, ConnectError> {
+        let actor = self.authenticate(headers).await?;
+        if !allows(actor.operator.role, capability) {
+            return Err(operator_denied(
+                actor.user.id,
+                OperatorDenial::RoleLacksCapability(actor.operator.role, capability),
+            ));
+        }
+        Ok(actor)
+    }
+
+    pub(crate) async fn authorize_fleet(
+        &self,
+        headers: &HeaderMap,
+        capability: OperatorCapability,
+        resource_kind: FleetResourceKindRecord,
+        resource_id: Uuid,
+    ) -> Result<OperatorActor, ConnectError> {
+        let actor = self.authenticate(headers).await?;
+        if allows(actor.operator.role, capability) {
+            return Ok(actor);
+        }
+        let delegated = self
+            .store
+            .fleet_effective_role(actor.user.id, resource_kind, resource_id)
+            .await
+            .map_err(internal)?;
+        if delegated.is_some_and(|role| fleet_allows(role, capability)) {
+            return Ok(actor);
+        }
+        Err(operator_denied(
+            actor.user.id,
+            OperatorDenial::RoleLacksCapability(actor.operator.role, capability),
+        ))
+    }
+
+    async fn authenticate(&self, headers: &HeaderMap) -> Result<OperatorActor, ConnectError> {
         let origin = headers
             .get(header::ORIGIN)
             .and_then(|value| value.to_str().ok());
@@ -77,12 +116,6 @@ impl OperatorAuthorizer {
         else {
             return Err(operator_denied(user.id, OperatorDenial::NotAnOperator));
         };
-        if !allows(operator.role, capability) {
-            return Err(operator_denied(
-                user.id,
-                OperatorDenial::RoleLacksCapability(operator.role, capability),
-            ));
-        }
         Ok(OperatorActor { user, operator })
     }
 }
@@ -124,6 +157,19 @@ fn allows(role: OperatorRoleRecord, capability: OperatorCapability) -> bool {
             role,
             OperatorRoleRecord::Owner | OperatorRoleRecord::Administrator
         ),
+    }
+}
+
+fn fleet_allows(role: FleetRoleRecord, capability: OperatorCapability) -> bool {
+    match capability {
+        OperatorCapability::Read => true,
+        OperatorCapability::Support => !matches!(role, FleetRoleRecord::Auditor),
+        OperatorCapability::Administer => {
+            matches!(
+                role,
+                FleetRoleRecord::Owner | FleetRoleRecord::Administrator
+            )
+        }
     }
 }
 

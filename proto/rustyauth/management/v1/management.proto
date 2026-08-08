@@ -13,12 +13,6 @@ service RealmManagementService {
   rpc RevokeFleetConnection(RevokeFleetConnectionRequest) returns (FleetConnectionState);
 }
 
-// Carries commands over a realm-initiated authenticated channel. The initial
-// connection uses native gRPC over HTTP/2 with mTLS workload identity.
-service RealmConnectorService {
-  rpc Connect(stream ConnectorFrame) returns (stream ConnectorFrame);
-}
-
 enum RealmServingState {
   REALM_SERVING_STATE_UNSPECIFIED = 0;
   REALM_SERVING_STATE_HEALTHY = 1;
@@ -131,17 +125,4 @@ message FleetConnectionState {
   string realm_id = 2;
   bool revoked = 3;
   string revoked_at = 4;
-}
-
-message ConnectorFrame {
-  string realm_id = 1;
-  string connection_id = 2;
-  string request_id = 3;
-  ConnectorFrameKind kind = 4;
-  string capability = 5;
-  string expires_at = 6;
-  // Nested command or result encoded with its declared Protobuf type.
-  bytes payload = 7;
-  string payload_type = 8;
-  bytes signature = 9;
 }

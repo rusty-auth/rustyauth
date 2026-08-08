@@ -10,15 +10,15 @@
 [Unified Dioxus dashboard and multi-protocol Fleet control plane](decisions/0003-unified-dioxus-fleet-control-plane.md)
 
 This document is the delivery architecture for managing many isolated RustyAuth deployments from one
-dashboard. Work is active, but capabilities remain unshipped until the implementation and security gates in
-this document pass. Existing data-plane releases still support one configured tenant and one organization per
-instance.
+dashboard. The first live web slice is implemented, but Fleet remains pre-release until the production and
+security gates in this document pass. Existing data-plane releases still support one configured tenant and one
+organization per instance.
 
 ## Executive decision
 
 RustyAuth should offer two compatible product modes:
 
-1. **Standalone:** one self-contained RustyAuth deployment, its embedded dashboard and its private identity
+1. **Standalone:** a stateless Dioxus dashboard, one RustyAuth realm backend and its private identity
    database.
 2. **Fleet-managed:** one central dashboard and control-plane API managing many independently deployed
    RustyAuth data planes across projects, environments, regions and cloud providers.
@@ -43,13 +43,13 @@ The current rules remain:
 - give it a private SableDB namespace and independent persistent volume;
 - never point separate tenants at the same current SableDB namespace;
 - do not share master, signing, bootstrap, RPC or backup keys across environments; and
-- keep the embedded dashboard same-origin with the RustyAuth service.
+- keep the browser same-origin with the RustyAuth API through the bounded dashboard gateway.
 
 Fleet work must preserve those properties rather than weakening them for operational convenience.
 
 ## Terminology and resource hierarchy
 
-Future control-plane resources should use explicit names instead of overloading `tenant`:
+Control-plane resources use explicit names instead of overloading `tenant`:
 
 ```text
 Workspace
@@ -83,7 +83,8 @@ The existing template remains the simplest supported deployment:
 
 ```mermaid
 flowchart LR
-    Browser["Operator browser"] -->|"same-origin cookie + ConnectRPC"| Auth["RustyAuth + embedded dashboard"]
+    Browser["Operator browser"] -->|"same-origin cookie + ConnectRPC"| Dashboard["Stateless Dioxus dashboard"]
+    Dashboard -->|"private bounded gateway"| Auth["RustyAuth realm API"]
     User["Application user"] -->|"WebAuthn"| Auth
     Auth -->|"private network"| Sable["Dedicated SableDB + volume"]
     Auth -.->|"encrypted snapshots"| Bucket["Optional backup bucket"]
@@ -92,8 +93,8 @@ flowchart LR
 Standalone mode is appropriate for one application, small estates, air-gapped installations,
 customer-controlled deployments and environments that must not depend on a central management service.
 
-The embedded dashboard talks only to its local RustyAuth API. Rust remains responsible for every authorization
-decision and database mutation.
+The standalone dashboard talks only to its local RustyAuth API. Rust remains responsible for every
+authorization decision and database mutation.
 
 ## Product mode 2: fleet-managed
 
@@ -119,16 +120,16 @@ accounts. They share a versioned management protocol, not a database.
 
 RustyAuth ships one Dioxus dashboard implementation with different deployment roles:
 
-| Surface | Location | Purpose | Current state |
-| --- | --- | --- | --- |
-| Standalone Dioxus web | Separate `rustyauth-dashboard` service targeting one realm backend | Local administration and break-glass access for one realm | Migration in progress |
-| Fleet Dioxus web | Separate `rustyauth-dashboard` service targeting the Fleet control plane | Central organization, project, environment and realm management | Preview shell implemented; live Fleet APIs in progress |
-| Dioxus desktop | Signed package from `console/` | Native Fleet operations with OS-protected device credentials | Feature build implemented; live device flow pending |
-| Dioxus mobile | Package from `console/` | Approvals, health and constrained administration | Shared feature build implemented; platform qualification pending |
+| Surface               | Location                                                                 | Purpose                                                         | Current state                                                           |
+| --------------------- | ------------------------------------------------------------------------ | --------------------------------------------------------------- | ----------------------------------------------------------------------- |
+| Standalone Dioxus web | Separate `rustyauth-dashboard` service targeting one realm backend       | Local administration and break-glass access for one realm       | Service split implemented; live local RPC parity pending                |
+| Fleet Dioxus web      | Separate `rustyauth-dashboard` service targeting the Fleet control plane | Central organization, project, environment and realm management | Live passkeys, hierarchy, audit and public-endpoint pairing implemented |
+| Dioxus desktop        | Signed package from `console/`                                           | Native Fleet operations with OS-protected device credentials    | Feature build implemented; live device flow pending                     |
+| Dioxus mobile         | Package from `console/`                                                  | Approvals, health and constrained administration                | Shared feature build implemented; platform qualification pending        |
 
 The Dioxus console is one Rust UI codebase with platform feature boundaries for web, desktop and mobile. The
-initial clone deliberately consumes the existing dashboard stylesheet and real brand asset so the two clients
-have the same typography, spacing, color, motion, charts and responsive behavior while the fleet information
+initial clone deliberately consumes the existing design stylesheet and real brand assets so the surfaces have
+the same typography, spacing, color, motion, charts and responsive behavior while the fleet information
 architecture is introduced. Platform-specific capabilities such as secure credential storage, deep links,
 notifications and window management belong behind adapters rather than inside shared screens.
 
@@ -309,15 +310,15 @@ must not interrupt authentication.
 ## Management protocol
 
 RustyAuth uses one versioned Protobuf service contract through three compatible transports. The pinned
-`connectrpc` server accepts binary Connect, native gRPC and gRPC-Web, so every protocol reaches the same limits,
-interceptors, authorization checks and audit policy.
+`connectrpc` server accepts binary Connect, native gRPC and gRPC-Web, so every protocol reaches the same
+limits, interceptors, authorization checks and audit policy.
 
-| Channel | Wire protocol | Credential |
-| --- | --- | --- |
-| Browser dashboard to control plane | Same-origin binary Connect through the stateless dashboard gateway | Passkey-backed HttpOnly session cookie |
-| Desktop/mobile dashboard to control plane | Binary Connect or native gRPC | Short-lived device token |
-| Control plane to public realm endpoint | Native gRPC or binary Connect | Revocable environment credential; mTLS where supported |
-| Private realm to connector gateway | Bidirectional native gRPC | mTLS workload identity and signed commands |
+| Channel                                   | Wire protocol                                                      | Credential                                             |
+| ----------------------------------------- | ------------------------------------------------------------------ | ------------------------------------------------------ |
+| Browser dashboard to control plane        | Same-origin binary Connect through the stateless dashboard gateway | Passkey-backed HttpOnly session cookie                 |
+| Desktop/mobile dashboard to control plane | Binary Connect or native gRPC                                      | Short-lived device token                               |
+| Control plane to public realm endpoint    | Native gRPC or binary Connect                                      | Revocable environment credential; mTLS where supported |
+| Private realm to connector gateway        | Bidirectional native gRPC                                          | mTLS workload identity and signed commands             |
 
 Binary encoding improves message size, parsing and contract safety. It does not replace TLS, authentication,
 authorization, replay protection, request limits or audit.
@@ -397,8 +398,8 @@ The first release should be read-only. Later administrative actions should requi
 - complete audit records; and
 - optional approval or break-glass policy for production.
 
-The embedded dashboard remains the local break-glass surface. Fleet registration must not remove a customer's
-ability to administer or disconnect its own deployment.
+The standalone Dioxus dashboard remains the local break-glass surface. Fleet registration must not remove a
+customer's ability to administer or disconnect its own deployment.
 
 ## Availability and failure isolation
 
@@ -411,7 +412,7 @@ If the control plane or connector is unavailable:
 - existing sessions continue under local policy;
 - JWT issuance and verification continue;
 - local events and backups continue;
-- the embedded dashboard remains available where enabled; and
+- the standalone dashboard remains available where enabled; and
 - central views clearly become stale or unavailable.
 
 A failure or compromise in one managed realm must not grant access to any other realm. Credentials, request
@@ -468,9 +469,9 @@ scope. Native clients use a separately exposed API domain and short-lived device
 
 It does not store a second copy of complete realm identity databases. Each realm remains responsible for its
 own encrypted backups. Fleet produces separate encrypted logical snapshots to `fleet-backups`, with encryption
-keys held outside both the database volume and object-storage account. Backup qualification requires retention,
-read-after-write verification and a clean-room restore that rebuilds the control plane without contacting realm
-databases for authority.
+keys held outside both the database volume and object-storage account. Backup qualification requires
+retention, read-after-write verification and a clean-room restore that rebuilds the control plane without
+contacting realm databases for authority.
 
 Browser local storage and desktop/mobile caches are disposable. They are not backup sources and must not hold
 realm credentials, database URLs or Fleet master material.
@@ -537,7 +538,7 @@ Fleet management is now an active delivery program that preserves the single-ten
 
 ### Phase 2: pairing and inventory
 
-- Add one-time pairing from the CLI and embedded dashboard.
+- Add one-time pairing from the realm CLI and standalone dashboard.
 - Add the organization, project, environment and connection registry.
 - Add connection health, version and capability views.
 - Support clean disconnection and credential rotation.
@@ -563,6 +564,27 @@ Fleet management is now an active delivery program that preserves the single-ten
 - Add data-residency, retention and export controls.
 - Add enterprise federation and lifecycle integrations when evidence demands them.
 - Complete an independent fleet threat assessment and recovery exercises.
+
+## Post-Fleet program: Federated Fleet Analytics
+
+Fleet Analytics begins only after the production Fleet program above is fully delivered and the main roadmap's
+M8 exit gate passes. It is not an excuse to expand the Phase 3 bounded read model into a shared raw event lake
+before the Fleet trust, recovery and residency boundaries are qualified.
+
+The planned feature projects bounded metric buckets inside each realm, carries complete idempotent snapshots
+over the authenticated outbound management boundary, stamps hierarchy in the trusted Fleet gateway and serves
+realm, environment, project, organization and authorized fleet aggregates from a private central analytical
+store. Versioned Parquet provides optional customer-owned recovery and backfill; routine dashboard requests do
+not scan every foreign bucket.
+
+The controlling documents are:
+
+- [ADR 0004: Federated Fleet Analytics with trusted rollup ingestion](decisions/0004-federated-fleet-analytics.md)
+- [Federated Fleet Analytics delivery program](FLEET_ANALYTICS.md)
+
+The analytics program preserves every invariant in this document: realms remain authoritative, missing data is
+visibly partial, remote deployments never connect to central databases directly and analytics failure never
+interrupts authentication.
 
 This sequence does not include shared-database multi-tenancy. Consolidating multiple auth realms into one
 runtime or datastore would be a separate architecture decision with its own storage isolation, WebAuthn,

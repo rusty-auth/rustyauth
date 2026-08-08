@@ -16,8 +16,14 @@ const PROJECT_PREFIX: &str = "fleet:project:";
 const PROJECT_SLUG_PREFIX: &str = "fleet:project-slug:";
 const ENVIRONMENT_PREFIX: &str = "fleet:environment:";
 const ENVIRONMENT_SLUG_PREFIX: &str = "fleet:environment-slug:";
+const CONNECTION_ATTEMPT_PREFIX: &str = "fleet:connection-attempt:";
+const CONNECTION_PREFIX: &str = "fleet:connection:";
+const ROLE_BINDING_PREFIX: &str = "fleet:role-binding:";
+const ROLE_BINDING_SUBJECT_PREFIX: &str = "fleet:role-binding-subject:";
 const IDEMPOTENCY_PREFIX: &str = "fleet:idempotency:";
 const AUDIT_PREFIX: &str = "fleet:audit:";
+
+pub const FLEET_CONNECTION_ATTEMPT_SECONDS: u64 = 600;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -33,6 +39,42 @@ pub enum FleetEnvironmentKindRecord {
     Preview,
     Staging,
     Production,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum FleetConnectionModeRecord {
+    PublicEndpoint,
+    OutboundConnector,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum FleetConnectionStateRecord {
+    Pending,
+    Verifying,
+    Healthy,
+    Degraded,
+    Offline,
+    Revoked,
+}
+
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum FleetResourceKindRecord {
+    Organization,
+    Project,
+    Environment,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum FleetRoleRecord {
+    Owner,
+    Administrator,
+    Operator,
+    Support,
+    Auditor,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -76,6 +118,67 @@ pub struct FleetEnvironmentRecord {
     pub created_at: u64,
     pub updated_at: u64,
     pub archived_at: Option<u64>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EncryptedFleetCredential {
+    pub wrapping_key_id: String,
+    pub nonce: String,
+    pub ciphertext: String,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FleetConnectionAttemptRecord {
+    pub id: Uuid,
+    pub organization_id: Uuid,
+    pub project_id: Uuid,
+    pub environment_id: Uuid,
+    pub mode: FleetConnectionModeRecord,
+    pub management_endpoint: String,
+    pub created_by: Uuid,
+    pub created_at: u64,
+    pub expires_at: u64,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FleetConnectionRecord {
+    pub id: Uuid,
+    pub organization_id: Uuid,
+    pub project_id: Uuid,
+    pub environment_id: Uuid,
+    pub realm_id: String,
+    pub display_name: String,
+    pub mode: FleetConnectionModeRecord,
+    pub management_endpoint: String,
+    pub credential: EncryptedFleetCredential,
+    pub credential_hint: String,
+    pub deployment_version: String,
+    pub protocol_version: String,
+    pub capabilities: Vec<(String, u32)>,
+    pub issuer: String,
+    pub rp_id: String,
+    pub state: FleetConnectionStateRecord,
+    pub last_seen_at: Option<u64>,
+    pub created_at: u64,
+    pub updated_at: u64,
+    pub revoked_at: Option<u64>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FleetRoleBindingRecord {
+    pub id: Uuid,
+    pub operator_id: Uuid,
+    pub resource_kind: FleetResourceKindRecord,
+    pub resource_id: Uuid,
+    pub role: FleetRoleRecord,
+    pub created_by: Uuid,
+    pub created_at: u64,
+    pub revoked_by: Option<Uuid>,
+    pub revoked_at: Option<u64>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -717,6 +820,488 @@ impl Store {
         Ok(record)
     }
 
+    pub async fn fleet_connections(
+        &self,
+        organization_id: Option<Uuid>,
+        project_id: Option<Uuid>,
+        environment_id: Option<Uuid>,
+        include_revoked: bool,
+    ) -> Result<Vec<FleetConnectionRecord>> {
+        let ids = self
+            .record_ids(CONNECTION_PREFIX, "scan Fleet connections")
+            .await?;
+        let mut records = Vec::new();
+        for id in ids {
+            if let Some(record) = self.fleet_connection(id).await?
+                && organization_id.is_none_or(|value| record.organization_id == value)
+                && project_id.is_none_or(|value| record.project_id == value)
+                && environment_id.is_none_or(|value| record.environment_id == value)
+                && (include_revoked || record.state != FleetConnectionStateRecord::Revoked)
+            {
+                records.push(record);
+            }
+        }
+        records.sort_unstable_by_key(|record| record.id);
+        Ok(records)
+    }
+
+    pub async fn fleet_connection(&self, id: Uuid) -> Result<Option<FleetConnectionRecord>> {
+        self.get_json(&connection_key(id)).await
+    }
+
+    pub async fn fleet_connection_attempt(
+        &self,
+        id: Uuid,
+    ) -> Result<Option<FleetConnectionAttemptRecord>> {
+        self.get_json(&connection_attempt_key(id)).await
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub async fn create_fleet_connection_attempt(
+        &self,
+        organization_id: Uuid,
+        project_id: Uuid,
+        environment_id: Uuid,
+        mode: FleetConnectionModeRecord,
+        management_endpoint: String,
+        request_id: Uuid,
+        operator_id: Uuid,
+        reason: String,
+    ) -> Result<FleetConnectionAttemptRecord> {
+        let _snapshot = self.snapshot_gate.read().await;
+        let _guard = self.mutation.lock().await;
+        if let Some(resource_id) = self
+            .fleet_idempotent_resource("connection.begin", request_id)
+            .await?
+        {
+            return self
+                .fleet_connection_attempt(resource_id)
+                .await?
+                .filter(|attempt| attempt.expires_at > now())
+                .ok_or_else(|| StorePolicyError::FleetConnectionAttemptExpired.into());
+        }
+        let environment = self
+            .fleet_environment(environment_id)
+            .await?
+            .filter(|record| {
+                record.organization_id == organization_id && record.project_id == project_id
+            })
+            .ok_or(StorePolicyError::FleetResourceMissing)?;
+        if environment.state == FleetResourceStateRecord::Archived {
+            return Err(StorePolicyError::FleetParentArchived.into());
+        }
+        let timestamp = now();
+        let record = FleetConnectionAttemptRecord {
+            id: Uuid::new_v4(),
+            organization_id,
+            project_id,
+            environment_id,
+            mode,
+            management_endpoint,
+            created_by: operator_id,
+            created_at: timestamp,
+            expires_at: timestamp.saturating_add(FLEET_CONNECTION_ATTEMPT_SECONDS),
+        };
+        let audit = FleetAuditRecord {
+            id: Uuid::new_v4(),
+            request_id,
+            operator_id,
+            action: "connection.begin".into(),
+            resource_kind: "connection".into(),
+            resource_id: record.id,
+            organization_id: Some(organization_id),
+            project_id: Some(project_id),
+            environment_id: Some(environment_id),
+            reason,
+            occurred_at: timestamp,
+        };
+        let idempotency = FleetIdempotencyRecord {
+            action: audit.action.clone(),
+            resource_id: record.id,
+        };
+        let mut pipeline = redis::pipe();
+        pipeline
+            .atomic()
+            .set(
+                connection_attempt_key(record.id),
+                serde_json::to_string(&record)?,
+            )
+            .arg("EX")
+            .arg(FLEET_CONNECTION_ATTEMPT_SECONDS)
+            .ignore()
+            .set(
+                idempotency_key(request_id),
+                serde_json::to_string(&idempotency)?,
+            )
+            .ignore()
+            .set(audit_key(audit.id), serde_json::to_string(&audit)?)
+            .ignore();
+        let mut connection = self.redis.clone();
+        let _: () = pipeline
+            .query_async(&mut connection)
+            .await
+            .context("persist Fleet connection attempt")?;
+        Ok(record)
+    }
+
+    pub async fn complete_fleet_connection(
+        &self,
+        attempt_id: Uuid,
+        mut record: FleetConnectionRecord,
+        request_id: Uuid,
+        operator_id: Uuid,
+        reason: String,
+    ) -> Result<FleetConnectionRecord> {
+        let _snapshot = self.snapshot_gate.read().await;
+        let _guard = self.mutation.lock().await;
+        if let Some(resource_id) = self
+            .fleet_idempotent_resource("connection.complete", request_id)
+            .await?
+        {
+            return self
+                .fleet_connection(resource_id)
+                .await?
+                .ok_or_else(|| StorePolicyError::FleetResourceMissing.into());
+        }
+        let attempt = self
+            .fleet_connection_attempt(attempt_id)
+            .await?
+            .filter(|attempt| attempt.expires_at > now())
+            .ok_or(StorePolicyError::FleetConnectionAttemptExpired)?;
+        if record.organization_id != attempt.organization_id
+            || record.project_id != attempt.project_id
+            || record.environment_id != attempt.environment_id
+            || record.mode != attempt.mode
+            || record.management_endpoint != attempt.management_endpoint
+        {
+            return Err(StorePolicyError::FleetResourceMissing.into());
+        }
+        if self
+            .fleet_connections(None, None, Some(record.environment_id), true)
+            .await?
+            .into_iter()
+            .any(|existing| {
+                existing.realm_id == record.realm_id
+                    && existing.state != FleetConnectionStateRecord::Revoked
+            })
+        {
+            return Err(StorePolicyError::FleetConnectionConflict.into());
+        }
+        let timestamp = now();
+        record.created_at = timestamp;
+        record.updated_at = timestamp;
+        let audit = MutationAudit {
+            request_id,
+            operator_id,
+            action: "connection.complete",
+            resource_kind: "connection",
+            resource_id: record.id,
+            organization_id: Some(record.organization_id),
+            project_id: Some(record.project_id),
+            environment_id: Some(record.environment_id),
+            reason: &reason,
+        };
+        self.persist_fleet_mutation_with_delete(
+            &connection_key(record.id),
+            &record,
+            &connection_attempt_key(attempt_id),
+            audit,
+        )
+        .await?;
+        Ok(record)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub async fn revoke_fleet_connection(
+        &self,
+        organization_id: Uuid,
+        project_id: Uuid,
+        environment_id: Uuid,
+        id: Uuid,
+        request_id: Uuid,
+        operator_id: Uuid,
+        reason: String,
+    ) -> Result<FleetConnectionRecord> {
+        let _snapshot = self.snapshot_gate.read().await;
+        let _guard = self.mutation.lock().await;
+        if let Some(resource_id) = self
+            .fleet_idempotent_resource("connection.revoke", request_id)
+            .await?
+        {
+            return self
+                .fleet_connection(resource_id)
+                .await?
+                .ok_or_else(|| StorePolicyError::FleetResourceMissing.into());
+        }
+        let mut record = self
+            .fleet_connection(id)
+            .await?
+            .filter(|record| {
+                record.organization_id == organization_id
+                    && record.project_id == project_id
+                    && record.environment_id == environment_id
+            })
+            .ok_or(StorePolicyError::FleetResourceMissing)?;
+        if record.state != FleetConnectionStateRecord::Revoked {
+            let timestamp = now();
+            record.state = FleetConnectionStateRecord::Revoked;
+            record.updated_at = timestamp;
+            record.revoked_at = Some(timestamp);
+        }
+        self.persist_fleet_mutation(
+            &connection_key(id),
+            &record,
+            None,
+            MutationAudit {
+                request_id,
+                operator_id,
+                action: "connection.revoke",
+                resource_kind: "connection",
+                resource_id: id,
+                organization_id: Some(organization_id),
+                project_id: Some(project_id),
+                environment_id: Some(environment_id),
+                reason: &reason,
+            },
+        )
+        .await?;
+        Ok(record)
+    }
+
+    pub async fn fleet_role_bindings(
+        &self,
+        resource_kind: FleetResourceKindRecord,
+        resource_id: Uuid,
+        include_revoked: bool,
+    ) -> Result<Vec<FleetRoleBindingRecord>> {
+        let ids = self
+            .record_ids(ROLE_BINDING_PREFIX, "scan Fleet role bindings")
+            .await?;
+        let mut records = Vec::new();
+        for id in ids {
+            if let Some(record) = self.fleet_role_binding(id).await?
+                && record.resource_kind == resource_kind
+                && record.resource_id == resource_id
+                && (include_revoked || record.revoked_at.is_none())
+            {
+                records.push(record);
+            }
+        }
+        records.sort_unstable_by_key(|record| record.id);
+        Ok(records)
+    }
+
+    pub async fn fleet_role_binding(&self, id: Uuid) -> Result<Option<FleetRoleBindingRecord>> {
+        self.get_json(&role_binding_key(id)).await
+    }
+
+    pub async fn fleet_role_binding_for_operator(
+        &self,
+        operator_id: Uuid,
+        resource_kind: FleetResourceKindRecord,
+        resource_id: Uuid,
+    ) -> Result<Option<FleetRoleBindingRecord>> {
+        let Some(id) = self
+            .get::<String>(&role_binding_subject_key(
+                operator_id,
+                resource_kind,
+                resource_id,
+            ))
+            .await?
+        else {
+            return Ok(None);
+        };
+        let id = Uuid::parse_str(&id).context("stored Fleet role binding index has invalid id")?;
+        Ok(self
+            .fleet_role_binding(id)
+            .await?
+            .filter(|record| record.revoked_at.is_none()))
+    }
+
+    pub async fn fleet_effective_role(
+        &self,
+        operator_id: Uuid,
+        resource_kind: FleetResourceKindRecord,
+        resource_id: Uuid,
+    ) -> Result<Option<FleetRoleRecord>> {
+        let mut candidates = Vec::new();
+        if let Some(binding) = self
+            .fleet_role_binding_for_operator(operator_id, resource_kind, resource_id)
+            .await?
+        {
+            candidates.push(binding.role);
+        }
+        match resource_kind {
+            FleetResourceKindRecord::Organization => {}
+            FleetResourceKindRecord::Project => {
+                let project = self
+                    .fleet_project(resource_id)
+                    .await?
+                    .ok_or(StorePolicyError::FleetResourceMissing)?;
+                if let Some(binding) = self
+                    .fleet_role_binding_for_operator(
+                        operator_id,
+                        FleetResourceKindRecord::Organization,
+                        project.organization_id,
+                    )
+                    .await?
+                {
+                    candidates.push(binding.role);
+                }
+            }
+            FleetResourceKindRecord::Environment => {
+                let environment = self
+                    .fleet_environment(resource_id)
+                    .await?
+                    .ok_or(StorePolicyError::FleetResourceMissing)?;
+                for (kind, id) in [
+                    (FleetResourceKindRecord::Project, environment.project_id),
+                    (
+                        FleetResourceKindRecord::Organization,
+                        environment.organization_id,
+                    ),
+                ] {
+                    if let Some(binding) = self
+                        .fleet_role_binding_for_operator(operator_id, kind, id)
+                        .await?
+                    {
+                        candidates.push(binding.role);
+                    }
+                }
+            }
+        }
+        Ok(candidates
+            .into_iter()
+            .min_by_key(|role| fleet_role_rank(*role)))
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub async fn upsert_fleet_role_binding(
+        &self,
+        operator_id: Uuid,
+        resource_kind: FleetResourceKindRecord,
+        resource_id: Uuid,
+        role: FleetRoleRecord,
+        request_id: Uuid,
+        actor_id: Uuid,
+        reason: String,
+    ) -> Result<FleetRoleBindingRecord> {
+        let _snapshot = self.snapshot_gate.read().await;
+        let _guard = self.mutation.lock().await;
+        if let Some(resource_id) = self
+            .fleet_idempotent_resource("role-binding.upsert", request_id)
+            .await?
+        {
+            return self
+                .fleet_role_binding(resource_id)
+                .await?
+                .ok_or_else(|| StorePolicyError::FleetResourceMissing.into());
+        }
+        self.ensure_fleet_resource(resource_kind, resource_id)
+            .await?;
+        let index_key = role_binding_subject_key(operator_id, resource_kind, resource_id);
+        let existing = self.get::<String>(&index_key).await?;
+        let timestamp = now();
+        let record = if let Some(id) = existing {
+            let id =
+                Uuid::parse_str(&id).context("stored Fleet role binding index has invalid id")?;
+            let mut record = self
+                .fleet_role_binding(id)
+                .await?
+                .ok_or(StorePolicyError::FleetResourceMissing)?;
+            record.role = role;
+            record.created_by = actor_id;
+            record.created_at = timestamp;
+            record.revoked_by = None;
+            record.revoked_at = None;
+            record
+        } else {
+            FleetRoleBindingRecord {
+                id: Uuid::new_v4(),
+                operator_id,
+                resource_kind,
+                resource_id,
+                role,
+                created_by: actor_id,
+                created_at: timestamp,
+                revoked_by: None,
+                revoked_at: None,
+            }
+        };
+        self.persist_fleet_mutation(
+            &role_binding_key(record.id),
+            &record,
+            Some((index_key, record.id)),
+            MutationAudit {
+                request_id,
+                operator_id: actor_id,
+                action: "role-binding.upsert",
+                resource_kind: "role-binding",
+                resource_id: record.id,
+                organization_id: self
+                    .resource_organization_id(resource_kind, resource_id)
+                    .await?,
+                project_id: self.resource_project_id(resource_kind, resource_id).await?,
+                environment_id: (resource_kind == FleetResourceKindRecord::Environment)
+                    .then_some(resource_id),
+                reason: &reason,
+            },
+        )
+        .await?;
+        Ok(record)
+    }
+
+    pub async fn revoke_fleet_role_binding(
+        &self,
+        id: Uuid,
+        request_id: Uuid,
+        actor_id: Uuid,
+        reason: String,
+    ) -> Result<FleetRoleBindingRecord> {
+        let _snapshot = self.snapshot_gate.read().await;
+        let _guard = self.mutation.lock().await;
+        if let Some(resource_id) = self
+            .fleet_idempotent_resource("role-binding.revoke", request_id)
+            .await?
+        {
+            return self
+                .fleet_role_binding(resource_id)
+                .await?
+                .ok_or_else(|| StorePolicyError::FleetResourceMissing.into());
+        }
+        let mut record = self
+            .fleet_role_binding(id)
+            .await?
+            .ok_or(StorePolicyError::FleetResourceMissing)?;
+        if record.revoked_at.is_none() {
+            record.revoked_by = Some(actor_id);
+            record.revoked_at = Some(now());
+        }
+        self.persist_fleet_mutation(
+            &role_binding_key(id),
+            &record,
+            None,
+            MutationAudit {
+                request_id,
+                operator_id: actor_id,
+                action: "role-binding.revoke",
+                resource_kind: "role-binding",
+                resource_id: id,
+                organization_id: self
+                    .resource_organization_id(record.resource_kind, record.resource_id)
+                    .await?,
+                project_id: self
+                    .resource_project_id(record.resource_kind, record.resource_id)
+                    .await?,
+                environment_id: (record.resource_kind == FleetResourceKindRecord::Environment)
+                    .then_some(record.resource_id),
+                reason: &reason,
+            },
+        )
+        .await?;
+        Ok(record)
+    }
+
     pub async fn fleet_audit_records(&self) -> Result<Vec<FleetAuditRecord>> {
         let ids = self
             .record_ids(AUDIT_PREFIX, "scan Fleet audit records")
@@ -798,6 +1383,105 @@ impl Store {
             .context("persist Fleet mutation and audit")?;
         Ok(())
     }
+
+    async fn persist_fleet_mutation_with_delete<T: Serialize>(
+        &self,
+        resource_key: &str,
+        resource: &T,
+        delete_key: &str,
+        audit: MutationAudit<'_>,
+    ) -> Result<()> {
+        let audit_record = FleetAuditRecord {
+            id: Uuid::new_v4(),
+            request_id: audit.request_id,
+            operator_id: audit.operator_id,
+            action: audit.action.to_owned(),
+            resource_kind: audit.resource_kind.to_owned(),
+            resource_id: audit.resource_id,
+            organization_id: audit.organization_id,
+            project_id: audit.project_id,
+            environment_id: audit.environment_id,
+            reason: audit.reason.to_owned(),
+            occurred_at: now(),
+        };
+        let idempotency = FleetIdempotencyRecord {
+            action: audit.action.to_owned(),
+            resource_id: audit.resource_id,
+        };
+        let mut pipeline = redis::pipe();
+        pipeline
+            .atomic()
+            .del(delete_key)
+            .ignore()
+            .set(resource_key, serde_json::to_string(resource)?)
+            .ignore()
+            .set(
+                idempotency_key(audit.request_id),
+                serde_json::to_string(&idempotency)?,
+            )
+            .ignore()
+            .set(
+                audit_key(audit_record.id),
+                serde_json::to_string(&audit_record)?,
+            )
+            .ignore();
+        let mut connection = self.redis.clone();
+        let _: () = pipeline
+            .query_async(&mut connection)
+            .await
+            .context("persist Fleet mutation, consume attempt and audit")?;
+        Ok(())
+    }
+
+    async fn ensure_fleet_resource(&self, kind: FleetResourceKindRecord, id: Uuid) -> Result<()> {
+        let exists = match kind {
+            FleetResourceKindRecord::Organization => self.fleet_organization(id).await?.is_some(),
+            FleetResourceKindRecord::Project => self.fleet_project(id).await?.is_some(),
+            FleetResourceKindRecord::Environment => self.fleet_environment(id).await?.is_some(),
+        };
+        exists
+            .then_some(())
+            .ok_or_else(|| StorePolicyError::FleetResourceMissing.into())
+    }
+
+    async fn resource_organization_id(
+        &self,
+        kind: FleetResourceKindRecord,
+        id: Uuid,
+    ) -> Result<Option<Uuid>> {
+        Ok(match kind {
+            FleetResourceKindRecord::Organization => Some(id),
+            FleetResourceKindRecord::Project => Some(
+                self.fleet_project(id)
+                    .await?
+                    .ok_or(StorePolicyError::FleetResourceMissing)?
+                    .organization_id,
+            ),
+            FleetResourceKindRecord::Environment => Some(
+                self.fleet_environment(id)
+                    .await?
+                    .ok_or(StorePolicyError::FleetResourceMissing)?
+                    .organization_id,
+            ),
+        })
+    }
+
+    async fn resource_project_id(
+        &self,
+        kind: FleetResourceKindRecord,
+        id: Uuid,
+    ) -> Result<Option<Uuid>> {
+        Ok(match kind {
+            FleetResourceKindRecord::Organization => None,
+            FleetResourceKindRecord::Project => Some(id),
+            FleetResourceKindRecord::Environment => Some(
+                self.fleet_environment(id)
+                    .await?
+                    .ok_or(StorePolicyError::FleetResourceMissing)?
+                    .project_id,
+            ),
+        })
+    }
 }
 
 fn organization_key(id: Uuid) -> String {
@@ -822,6 +1506,41 @@ fn environment_key(id: Uuid) -> String {
 
 fn environment_slug_key(project_id: Uuid, slug: &str) -> String {
     format!("{ENVIRONMENT_SLUG_PREFIX}{project_id}:{slug}")
+}
+
+fn connection_attempt_key(id: Uuid) -> String {
+    format!("{CONNECTION_ATTEMPT_PREFIX}{id}")
+}
+
+fn connection_key(id: Uuid) -> String {
+    format!("{CONNECTION_PREFIX}{id}")
+}
+
+fn role_binding_key(id: Uuid) -> String {
+    format!("{ROLE_BINDING_PREFIX}{id}")
+}
+
+fn role_binding_subject_key(
+    operator_id: Uuid,
+    resource_kind: FleetResourceKindRecord,
+    resource_id: Uuid,
+) -> String {
+    let kind = match resource_kind {
+        FleetResourceKindRecord::Organization => "organization",
+        FleetResourceKindRecord::Project => "project",
+        FleetResourceKindRecord::Environment => "environment",
+    };
+    format!("{ROLE_BINDING_SUBJECT_PREFIX}{operator_id}:{kind}:{resource_id}")
+}
+
+fn fleet_role_rank(role: FleetRoleRecord) -> u8 {
+    match role {
+        FleetRoleRecord::Owner => 0,
+        FleetRoleRecord::Administrator => 1,
+        FleetRoleRecord::Operator => 2,
+        FleetRoleRecord::Support => 3,
+        FleetRoleRecord::Auditor => 4,
+    }
 }
 
 fn idempotency_key(request_id: Uuid) -> String {

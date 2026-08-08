@@ -1,0 +1,24 @@
+syntax = "proto3";
+
+package rustyauth.management.v1;
+
+import "rustyauth/management/v1/management.proto";
+
+// Carries commands over a realm-initiated authenticated channel. The initial
+// connection uses native gRPC over HTTP/2 with mTLS workload identity.
+service RealmConnectorService {
+  rpc Connect(stream ConnectorFrame) returns (stream ConnectorFrame);
+}
+
+message ConnectorFrame {
+  string realm_id = 1;
+  string connection_id = 2;
+  string request_id = 3;
+  ConnectorFrameKind kind = 4;
+  string capability = 5;
+  string expires_at = 6;
+  // Nested command or result encoded with its declared Protobuf type.
+  bytes payload = 7;
+  string payload_type = 8;
+  bytes signature = 9;
+}

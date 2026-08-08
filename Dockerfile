@@ -1,22 +1,5 @@
 # Base images are pinned by digest so a rebuild cannot silently pick up a re-tagged upstream image.
 # Refresh a digest with `docker buildx imagetools inspect <image>:<tag>` and update the tag with it.
-FROM denoland/deno:2.9.3@sha256:6288db6be1c26473bb9d1843f906d9a219c0dda57fd85de4aac90296951cf6ef AS dashboard-build
-
-WORKDIR /src
-# Workspace manifests first: dependency resolution caches until a manifest or the
-# lockfile changes, instead of re-downloading on every source edit.
-COPY deno.json deno.lock ./
-COPY dashboard/deno.json ./dashboard/deno.json
-COPY site/deno.json site/package.json ./site/
-COPY packages/protocol/deno.json ./packages/protocol/deno.json
-COPY packages/connect-solid/deno.json ./packages/connect-solid/deno.json
-COPY packages/client/deno.json ./packages/client/deno.json
-RUN deno install --frozen
-COPY dashboard ./dashboard
-COPY packages ./packages
-COPY site ./site
-RUN deno task dashboard:build
-
 FROM rust:1.94.1-slim-bookworm@sha256:cf9dd0ec73e75f827fe59123fff9dc65af1a1c8363c3c31ee8d7f8ad0b6a5fb2 AS build
 
 RUN apt-get update \
@@ -50,7 +33,6 @@ RUN apt-get update \
   && rm -rf /var/lib/apt/lists/* \
   && useradd --system --uid 10001 --home /nonexistent --shell /usr/sbin/nologin passkey-auth
 COPY --from=build /usr/local/bin/rustyauth /usr/local/bin/rustyauth
-COPY --from=dashboard-build /src/dashboard/dist /usr/share/rustyauth/dashboard
 COPY LICENSE NOTICE THIRD_PARTY_NOTICES.md THIRD_PARTY_LICENSES.html /usr/share/doc/rustyauth/
 USER 10001:10001
 EXPOSE 8080

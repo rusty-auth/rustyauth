@@ -1,7 +1,6 @@
 # Deploying RustyAuth
 
-The current pre-release image still combines the SolidJS dashboard with the Rust/Axum realm backend. The
-accepted target topology ships three standalone services:
+The current pre-release source now builds three standalone services:
 
 - a public, stateless Dioxus dashboard and bounded same-origin Connect gateway;
 - a Rust/Axum authentication realm backend; and
@@ -17,24 +16,21 @@ An optional S3-compatible bucket enables scheduled encrypted logical backups and
 From this directory:
 
 ```sh
-cp .env.example .env
-# The secrets in .env.example are intentionally blank; generate real ones.
-printf 'AUTH_MASTER_KEY_HEX=%s\n'     "$(openssl rand -hex 32)"    >> .env
-printf 'BOOTSTRAP_TOKEN=%s\n'         "$(openssl rand -base64 48)" >> .env
-printf 'AUTH_EVENT_RPC_TOKEN=%s\n'    "$(openssl rand -base64 48)" >> .env
-printf 'AUTH_IDENTITY_RPC_TOKEN=%s\n' "$(openssl rand -base64 48)" >> .env
-docker compose up --build
+scripts/local-stack standalone up
 ```
 
-No secret ships with a value. `.env.example` leaves every one blank and `compose.yaml` refuses to
-substitute a default, so an unpopulated `.env` stops the stack with a named missing variable rather than
-starting on something an attacker could read in the repository. A committed default is a published default,
-and the entropy check in `config.rs` cannot tell a generated key from one that has been published — so
-generating is the only path, including locally.
+No secret ships with a value. `.env.example` leaves every one blank and `compose.yaml` refuses to substitute a
+default, so an unpopulated `.env` stops the stack with a named missing variable rather than starting on
+something an attacker could read in the repository. A committed default is a published default, and the
+entropy check in `config.rs` cannot tell a generated key from one that has been published — so generating is
+the only path, including locally.
 
-The current compatibility Compose topology publishes only `127.0.0.1:8081` for RustyAuth. SableDB joins an
-internal Docker network and has no host port. Its named volume is `sabledb_data`. This remains available while
-the separate Dioxus dashboard service and gateway replace the combined image.
+Compose publishes only the Dioxus gateway at `127.0.0.1:8081`. The Rust API and SableDB share an internal
+network and have no host ports. The named SableDB volume survives service replacement. Override the public
+port with `STANDALONE_DASHBOARD_PORT`; the local issuer and WebAuthn origin follow it automatically.
+
+Use `scripts/local-stack fleet up` for the equivalent dashboard/control-plane/Fleet-SableDB stack on port
+`5196`. Its state and secret file are independent from the standalone realm.
 
 Check both probes:
 
@@ -62,12 +58,12 @@ routine restart or upgrade automation.
 The target standalone template creates three core services in one project and preferred region. An optional
 backup bucket is a project resource rather than a running service:
 
-| Resource | Exposure | Persistent resource |
-| --- | --- | --- |
-| Dashboard | Public HTTPS | None |
-| RustyAuth backend | Private operator API; optional public application API | None |
-| Realm SableDB | Railway private network only, port `6379` | Volume at `/var/lib/sabledb` |
-| AuthBackups | Private credentials only | Optional S3-compatible bucket |
+| Resource          | Exposure                                              | Persistent resource           |
+| ----------------- | ----------------------------------------------------- | ----------------------------- |
+| Dashboard         | Public HTTPS                                          | None                          |
+| RustyAuth backend | Private operator API; optional public application API | None                          |
+| Realm SableDB     | Railway private network only, port `6379`             | Volume at `/var/lib/sabledb`  |
+| AuthBackups       | Private credentials only                              | Optional S3-compatible bucket |
 
 The bucket remains optional, but any deployment claiming recovery must configure it and complete a restore
 drill.
@@ -113,8 +109,8 @@ promotion would receive Owner from your own hand. `operator find` prints every a
 with `claimedAt` and `verified`; promote the id you recognise, and treat an unfamiliar recent claim on an
 operator address as an incident.
 
-Roles are `owner`, `administrator`, `support` and `auditor`. The account must already exist — enrol it
-through the normal bootstrap-token registration flow first.
+Roles are `owner`, `administrator`, `support` and `auditor`. The account must already exist — enrol it through
+the normal bootstrap-token registration flow first.
 
 This deliberately costs shell access to the deployment rather than control of an inbox. Treat the ability to
 run `operator promote` as equivalent to Owner: anyone who can execute in the container can grant themselves
@@ -152,8 +148,8 @@ bucket provider account.
 RustyAuth creates a backup immediately after startup and at `AUTH_BACKUP_INTERVAL_SECONDS`. Each object
 contains the complete server-side workspace: durable users, identifiers, passkeys, sessions, signing state,
 organization/dashboard settings, operator grants, service accounts, credential locators, ordered events and
-Fleet organizations/projects/environments with their slug indexes, idempotency records and audit trail.
-The dashboard has no durable browser-local state; its compiled assets come from the release image. Short-lived
+Fleet organizations/projects/environments with their slug indexes, idempotency records and audit trail. The
+dashboard has no durable browser-local state; its compiled assets come from the release image. Short-lived
 WebAuthn ceremonies, agent handoffs, leases and health counters are deliberately excluded. An unknown future
 durable key family fails snapshot creation rather than silently producing an incomplete workspace backup.
 
@@ -185,18 +181,17 @@ rustyauth operator demote <user-id>
 
 ## Container properties
 
-The current compatibility RustyAuth runtime image:
+The RustyAuth runtime image:
 
 - contains the release binary and CA certificates only;
-- contains the compiled SolidJS dashboard under `/usr/share/rustyauth/dashboard` until the Dioxus retirement
-  gate passes;
+- contains no dashboard or JavaScript runtime;
 - runs as non-root UID/GID `10001`;
 - has no shell-owned writable application directory;
 - exposes port `8080`; and
 - includes project and third-party licence notices.
 
-The target release publishes separate `dashboard`, `control-plane`, `rustyauth` and `sabledb` images. Neither
-Rust API image contains a JavaScript dashboard runtime.
+Tagged releases publish separate `dashboard`, `control-plane`, `rustyauth` and `sabledb` images. Neither Rust
+API image contains a JavaScript dashboard runtime.
 
 The SableDB image runs as non-root UID/GID `10002` and stores data under `/var/lib/sabledb`.
 
@@ -214,19 +209,19 @@ credential or session responses.
 RustyAuth sets these on every response it serves, including dashboard assets. Each is applied only when the
 header is absent, so a proxy that already sets one wins:
 
-| Header | Value | Applies |
-| --- | --- | --- |
-| `Content-Security-Policy` | `default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; frame-ancestors 'none'; form-action 'self'; base-uri 'none'; object-src 'none'` | Always |
-| `X-Frame-Options` | `DENY` | Always |
-| `Cross-Origin-Opener-Policy` | `same-origin` | Always |
-| `Cross-Origin-Resource-Policy` | `same-origin` | Always |
-| `Permissions-Policy` | `geolocation=(), camera=(), microphone=(), payment=()` | Always |
-| `X-Content-Type-Options` | `nosniff` | Always |
-| `Referrer-Policy` | `no-referrer` | Always |
-| `Strict-Transport-Security` | `max-age=63072000; includeSubDomains; preload` | Production only |
+| Header                         | Value                                                                                                                                                                                                                | Applies         |
+| ------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------- |
+| `Content-Security-Policy`      | `default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; frame-ancestors 'none'; form-action 'self'; base-uri 'none'; object-src 'none'` | Always          |
+| `X-Frame-Options`              | `DENY`                                                                                                                                                                                                               | Always          |
+| `Cross-Origin-Opener-Policy`   | `same-origin`                                                                                                                                                                                                        | Always          |
+| `Cross-Origin-Resource-Policy` | `same-origin`                                                                                                                                                                                                        | Always          |
+| `Permissions-Policy`           | `geolocation=(), camera=(), microphone=(), payment=()`                                                                                                                                                               | Always          |
+| `X-Content-Type-Options`       | `nosniff`                                                                                                                                                                                                            | Always          |
+| `Referrer-Policy`              | `no-referrer`                                                                                                                                                                                                        | Always          |
+| `Strict-Transport-Security`    | `max-age=63072000; includeSubDomains; preload`                                                                                                                                                                       | Production only |
 
-HSTS is withheld outside production on purpose. Emitting it from a `http://localhost` development origin
-pins the browser to HTTPS for that host for two years, well past the session that caused it.
+HSTS is withheld outside production on purpose. Emitting it from a `http://localhost` development origin pins
+the browser to HTTPS for that host for two years, well past the session that caused it.
 
 Do not add a proxy-level CSP that loosens these directives to make a third-party script, analytics tag or
 embedded frame work on the dashboard. The dashboard loads no third-party code; the policy is strict so an
@@ -236,12 +231,12 @@ If you front RustyAuth with a proxy that strips unknown response headers, allowl
 
 ### Request limits
 
-| Limit | Value | Behaviour |
-| --- | --- | --- |
-| Request timeout | 30 seconds | Returns `408`. Bounds slow-body clients, which the size limits alone cannot |
-| Request body | 256 KiB | Returns `413`. Applies to the REST handlers |
-| RPC request body | 64 KiB | Applies to Connect, gRPC and gRPC-Web methods |
-| Shutdown grace | 20 seconds | Background signing and backup workers get this long to finish after a shutdown signal, then the process exits regardless |
+| Limit            | Value      | Behaviour                                                                                                                |
+| ---------------- | ---------- | ------------------------------------------------------------------------------------------------------------------------ |
+| Request timeout  | 30 seconds | Returns `408`. Bounds slow-body clients, which the size limits alone cannot                                              |
+| Request body     | 256 KiB    | Returns `413`. Applies to the REST handlers                                                                              |
+| RPC request body | 64 KiB     | Applies to Connect, gRPC and gRPC-Web methods                                                                            |
+| Shutdown grace   | 20 seconds | Background signing and backup workers get this long to finish after a shutdown signal, then the process exits regardless |
 
 Set the platform's own request timeout and drain window above 30 and 20 seconds respectively, so RustyAuth's
 bounded shutdown completes rather than being killed mid-write.
@@ -265,17 +260,16 @@ Run one RustyAuth writer replica in version `0.1.0`. Multi-key operations use Sa
 compound mutations are additionally protected only by a process-local mutex. Cross-replica registration and
 credential mutation have not been qualified.
 
-`railway.json` pins `numReplicas: 1` and `overlapSeconds: 0` so a scale-up or a rolling deploy cannot
-silently start a second writer. This narrows the window rather than removing it: `drainingSeconds`
-(25) is the time the outgoing process has between `SIGTERM` and `SIGKILL`, and for that period the old
-process is still finishing in-flight requests while the new one is live. It stops accepting new work at
-`SIGTERM`, so the overlap covers requests already in progress, not new mutations — but it is not zero.
-Treat a deploy as a short window in which the single-writer invariant is weakest, and avoid deploying
-during a bulk migration.
+`railway.json` pins `numReplicas: 1` and `overlapSeconds: 0` so a scale-up or a rolling deploy cannot silently
+start a second writer. This narrows the window rather than removing it: `drainingSeconds` (25) is the time the
+outgoing process has between `SIGTERM` and `SIGKILL`, and for that period the old process is still finishing
+in-flight requests while the new one is live. It stops accepting new work at `SIGTERM`, so the overlap covers
+requests already in progress, not new mutations — but it is not zero. Treat a deploy as a short window in
+which the single-writer invariant is weakest, and avoid deploying during a bulk migration.
 
 Raising `numReplicas` above 1 is not supported in this version. Nothing in the process detects a second
-writer; the event-sequence counter is read-then-written without a compare-and-set, so a concurrent
-writer silently overwrites audit events.
+writer; the event-sequence counter is read-then-written without a compare-and-set, so a concurrent writer
+silently overwrites audit events.
 
 ## Observability
 
@@ -287,18 +281,18 @@ rustyauth=info,tower_http=info
 
 Never enable body logging for WebAuthn credentials, cookies, JWTs, bootstrap tokens or backup secrets.
 
-RustyAuth marks four headers sensitive before its own tracing layer sees them, so their values never reach
-the structured log:
+RustyAuth marks four headers sensitive before its own tracing layer sees them, so their values never reach the
+structured log:
 
-| Header | Direction | Carries |
-| --- | --- | --- |
-| `Authorization` | Request | RPC bearer credentials and service-account tokens |
-| `Cookie` | Request | The operator and end-user session bearer |
-| `x-bootstrap-token` | Request | The enrolment and event-polling credential |
-| `Set-Cookie` | Response | A newly issued session bearer |
+| Header              | Direction | Carries                                           |
+| ------------------- | --------- | ------------------------------------------------- |
+| `Authorization`     | Request   | RPC bearer credentials and service-account tokens |
+| `Cookie`            | Request   | The operator and end-user session bearer          |
+| `x-bootstrap-token` | Request   | The enrolment and event-polling credential        |
+| `Set-Cookie`        | Response  | A newly issued session bearer                     |
 
-That covers RustyAuth's own logs only. It has no effect on anything upstream or downstream of the process,
-so operators must still redact the same four headers in:
+That covers RustyAuth's own logs only. It has no effect on anything upstream or downstream of the process, so
+operators must still redact the same four headers in:
 
 - reverse proxy, ingress and load-balancer access logs;
 - platform request logs and any HTTP tracing or APM collector;

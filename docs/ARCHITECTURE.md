@@ -309,14 +309,14 @@ downgrade to no check.
 ### First operator
 
 Browser bootstrap requires the passkey account to hold a verified email identifier from
-`AUTH_OPERATOR_EMAILS`. Production never marks a self-service identifier verified, and verifying one is
-itself an administer-capability operator action, so on an empty deployment the two requirements form a cycle:
-no operator can exist until an address is verified, and no address can be verified until an operator exists.
+`AUTH_OPERATOR_EMAILS`. Production never marks a self-service identifier verified, and verifying one is itself
+an administer-capability operator action, so on an empty deployment the two requirements form a cycle: no
+operator can exist until an address is verified, and no address can be verified until an operator exists.
 
-`rustyauth operator promote <user-id> <role>` breaks the cycle from the host. It writes the operator
-record for a named account and nothing else. The cost is deliberate — creating the first Owner requires shell
-access to the deployment rather than control of an inbox, which is a materially harder thing for an attacker
-to obtain than an unclaimed email address.
+`rustyauth operator promote <user-id> <role>` breaks the cycle from the host. It writes the operator record
+for a named account and nothing else. The cost is deliberate — creating the first Owner requires shell access
+to the deployment rather than control of an inbox, which is a materially harder thing for an attacker to
+obtain than an unclaimed email address.
 
 It takes a user id rather than an address because the address is not a safe way to name an account here. Any
 enrolled account can attach an unclaimed identifier to itself through the self-service API, so a command that
@@ -364,10 +364,10 @@ The active roadmap keeps this single-tenant data-plane boundary while adding a
 [fleet control plane](FLEET_CONTROL_PLANE.md) that manages many isolated RustyAuth deployments from one Dioxus
 dashboard. It does not change the data-plane isolation rule or authorize direct dashboard access to databases.
 
-The `console/` Dioxus application is the sole dashboard implementation target for embedded web, separately
-deployed Fleet web, desktop and later mobile. Its current screens and operator sign-in journey still use preview
-fixtures, so they are not an authority and do not imply that pairing or remote management is already shipped.
-The migration and transport decision is recorded in
+The `console/` Dioxus application is the sole dashboard implementation for standalone web, separately deployed
+Fleet web, desktop and later mobile. Fleet web uses live passkey sessions and binary Connect for its durable
+hierarchy, audit and pairing journeys. The local realm operations screens retain preview projections until
+their RPC parity gate is complete. The migration and transport decision is recorded in
 [ADR 0003](decisions/0003-unified-dioxus-fleet-control-plane.md).
 
 ## Concurrency and scaling

@@ -1,5 +1,11 @@
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum NavKey {
+    FleetOverview,
+    Organizations,
+    Projects,
+    Environments,
+    Connections,
+    Audit,
     Overview,
     Users,
     Organization,
@@ -11,6 +17,12 @@ pub enum NavKey {
 impl NavKey {
     pub const fn label(self) -> &'static str {
         match self {
+            Self::FleetOverview => "Fleet overview",
+            Self::Organizations => "Organizations",
+            Self::Projects => "Projects",
+            Self::Environments => "Environments",
+            Self::Connections => "Connections",
+            Self::Audit => "Audit log",
             Self::Overview => "Overview",
             Self::Users => "Users",
             Self::Organization => "Organization",

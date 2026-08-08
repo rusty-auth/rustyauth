@@ -25,7 +25,6 @@ use tower_http::{
     limit::RequestBodyLimitLayer,
     request_id::{MakeRequestUuid, PropagateRequestIdLayer, SetRequestIdLayer},
     sensitive_headers::{SetSensitiveRequestHeadersLayer, SetSensitiveResponseHeadersLayer},
-    services::{ServeDir, ServeFile},
     set_header::SetResponseHeaderLayer,
     timeout::TimeoutLayer,
     trace::TraceLayer,
@@ -158,6 +157,10 @@ async fn serve(
     // Shared with the HTTP handlers so a client cannot spend one budget by
     // switching protocols.
     let rate_limiter = Arc::new(RateLimiter::new(RATE_LIMIT_TRACKING_CAPACITY));
+    let service_instance_id = match config.deployment_role {
+        rustyauth::config::DeploymentRole::Realm => config.realm_id.clone(),
+        rustyauth::config::DeploymentRole::FleetControlPlane => config.tenant_id.clone(),
+    };
     let rpc_service = rpc::service(rpc::RpcServiceConfig {
         store: store.clone(),
         event_token: &config.event_rpc_token,
@@ -168,6 +171,11 @@ async fn serve(
         jwt: jwt.clone(),
         rate_limiter: Arc::clone(&rate_limiter),
         deployment_role: config.deployment_role,
+        environment: config.environment.clone(),
+        master_keys: config.master_keys.clone(),
+        control_plane_instance_id: service_instance_id,
+        issuer: config.issuer.to_string().trim_end_matches('/').to_owned(),
+        rp_id: config.rp_id.clone(),
     });
     config.event_rpc_token.zeroize();
     config.identity_rpc_token.zeroize();
@@ -195,19 +203,10 @@ async fn serve(
     let backup_worker = state.backup.clone();
 
     let request_id = HeaderName::from_static("x-request-id");
-    let dashboard_index = config.dashboard_dir.join("index.html");
-    let dashboard_assets = config.dashboard_dir.join("assets");
-    let dashboard_brand = config.dashboard_dir.join("brand");
-    let dashboard_favicon = config.dashboard_dir.join("favicon.svg");
     let app = Router::new()
         .route("/healthz", get(live))
         .route("/readyz", get(ready))
         .route("/.well-known/passkey-auth", get(metadata))
-        .route_service("/", ServeFile::new(dashboard_index.clone()))
-        .route_service("/dashboard", ServeFile::new(dashboard_index))
-        .nest_service("/assets", ServeDir::new(dashboard_assets))
-        .nest_service("/brand", ServeDir::new(dashboard_brand))
-        .route_service("/favicon.svg", ServeFile::new(dashboard_favicon))
         .merge(auth::routes())
         .with_state(state)
         .fallback_service(rpc_service);

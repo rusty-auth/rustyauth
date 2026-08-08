@@ -1,0 +1,63 @@
+#!/usr/bin/env sh
+set -eu
+
+repo_dir=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+mode=${1:-fleet}
+action=${2:-up}
+
+generate_secret_file() {
+  destination=$1
+  stack=$2
+  if [ -f "$destination" ]; then
+    return
+  fi
+  umask 077
+  if [ "$stack" = "fleet" ]; then
+    printf 'FLEET_AUTH_MASTER_KEY_HEX=%s\nFLEET_BOOTSTRAP_TOKEN=%s\n' \
+      "$(openssl rand -hex 32)" \
+      "$(openssl rand -base64 48 | tr -d '\n')" > "$destination"
+  else
+    printf 'AUTH_MASTER_KEY_HEX=%s\nBOOTSTRAP_TOKEN=%s\nAUTH_EVENT_RPC_TOKEN=%s\nAUTH_IDENTITY_RPC_TOKEN=%s\n' \
+      "$(openssl rand -hex 32)" \
+      "$(openssl rand -base64 48 | tr -d '\n')" \
+      "$(openssl rand -base64 48 | tr -d '\n')" \
+      "$(openssl rand -base64 48 | tr -d '\n')" > "$destination"
+  fi
+  printf 'Created private local secrets in %s\n' "$destination"
+}
+
+case "$mode" in
+  fleet)
+    env_file="$repo_dir/.env.fleet.local"
+    compose_file="$repo_dir/compose.fleet.yaml"
+    ;;
+  standalone)
+    env_file="$repo_dir/.env.standalone.local"
+    compose_file="$repo_dir/compose.yaml"
+    ;;
+  *)
+    printf 'Usage: scripts/local-stack [fleet|standalone] [up|down|logs|ps]\n' >&2
+    exit 2
+    ;;
+esac
+
+generate_secret_file "$env_file" "$mode"
+
+case "$action" in
+  up)
+    exec docker compose --env-file "$env_file" -f "$compose_file" up --build
+    ;;
+  down)
+    exec docker compose --env-file "$env_file" -f "$compose_file" down
+    ;;
+  logs)
+    exec docker compose --env-file "$env_file" -f "$compose_file" logs --follow
+    ;;
+  ps)
+    exec docker compose --env-file "$env_file" -f "$compose_file" ps
+    ;;
+  *)
+    printf 'Usage: scripts/local-stack [fleet|standalone] [up|down|logs|ps]\n' >&2
+    exit 2
+    ;;
+esac

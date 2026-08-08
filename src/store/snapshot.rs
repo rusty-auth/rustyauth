@@ -274,6 +274,9 @@ fn snapshot_key_policy(key: &str) -> Result<SnapshotKeyPolicy> {
         "fleet:project-slug:",
         "fleet:environment:",
         "fleet:environment-slug:",
+        "fleet:connection:",
+        "fleet:role-binding:",
+        "fleet:role-binding-subject:",
         "fleet:idempotency:",
         "fleet:audit:",
     ]
@@ -295,6 +298,8 @@ fn snapshot_key_policy(key: &str) -> Result<SnapshotKeyPolicy> {
         OPERATOR_PREFIX,
         SERVICE_ACCOUNT_PREFIX,
         SERVICE_CREDENTIAL_PREFIX,
+        "auth:fleet-grant:",
+        "auth:fleet-grant-secret:",
     ]
     .iter()
     .any(|prefix| key.starts_with(prefix))
@@ -307,8 +312,10 @@ fn snapshot_key_policy(key: &str) -> Result<SnapshotKeyPolicy> {
             "auth:registration:",
             "auth:authentication:",
             "auth:agent-handoff:",
+            "auth:fleet-pairing:",
             "auth:backup:",
             OPERATOR_SEEN_PREFIX,
+            "fleet:connection-attempt:",
         ]
         .iter()
         .any(|prefix| key.starts_with(prefix))

@@ -14,7 +14,7 @@ use uuid::Uuid;
 
 use crate::{
     backup::BackupStore,
-    config::{Config, Environment},
+    config::{Config, DeploymentRole, Environment},
     jwt::{JwtIssuer, validate_snapshot_keyset},
     store::{IdentifierKind, IdentifierValue, OperatorRoleRecord, Store},
 };
@@ -54,6 +54,10 @@ pub enum ProcessMode {
         email: String,
     },
     OperatorList,
+    FleetPairingCode {
+        control_plane_origin: String,
+        operator_user_id: String,
+    },
     Doctor,
 }
 
@@ -117,6 +121,14 @@ pub fn parse_process_arguments(arguments: Vec<String>) -> Result<ProcessMode> {
         [group, command] if group == "operator" && command == "list" => {
             return Ok(ProcessMode::OperatorList);
         }
+        [group, command, control_plane_origin, operator_user_id]
+            if group == "fleet" && command == "pairing-code" =>
+        {
+            return Ok(ProcessMode::FleetPairingCode {
+                control_plane_origin: control_plane_origin.clone(),
+                operator_user_id: operator_user_id.clone(),
+            });
+        }
         [command] if command == "doctor" => return Ok(ProcessMode::Doctor),
         _ => {}
     }
@@ -157,13 +169,14 @@ Usage:
   rustyauth operator find <email>
   rustyauth operator promote <user-id> <owner|administrator|support|auditor>
   rustyauth operator demote <user-id>
+  rustyauth fleet pairing-code <control-plane-origin> <operator-user-id>
 
 Running without a command starts the HTTP service. Restore requires an empty SableDB namespace and
 invalidates existing sessions unless --preserve-sessions is explicitly supplied.
 
-Operator promotion is the supported way to create the first Owner. Dashboard bootstrap requires an
-operator email that the account has already verified, which nothing can set before an operator
-exists; this command breaks that cycle and requires shell access to the deployment.
+In development, the dashboard setup flow can create the first local Owner with the bootstrap token.
+Production keeps that route closed: operator promotion is the supported first-Owner path and requires
+shell access to the deployment.
 
 Promotion takes a user id, not an address. Any enrolled account can attach an unclaimed address to
 itself, so resolving an address here would promote whoever claimed it first. Run `operator find
@@ -287,11 +300,76 @@ pub async fn run(
             println!("{}", serde_json::to_string_pretty(&operators)?);
             Ok(())
         }
+        ProcessMode::FleetPairingCode {
+            control_plane_origin,
+            operator_user_id,
+        } => {
+            create_fleet_pairing_code(&config, &store, &control_plane_origin, &operator_user_id)
+                .await
+        }
         ProcessMode::Doctor => doctor(&config, redis, &store).await,
         ProcessMode::Serve => unreachable!("serve is dispatched by the process entry point"),
         ProcessMode::Help => unreachable!("help exits before configuration"),
         ProcessMode::Healthcheck => unreachable!("healthcheck exits before configuration"),
     }
+}
+
+async fn create_fleet_pairing_code(
+    config: &Config,
+    store: &Store,
+    control_plane_origin: &str,
+    operator_user_id: &str,
+) -> Result<()> {
+    if config.deployment_role != DeploymentRole::Realm {
+        anyhow::bail!(
+            "Fleet pairing codes are created by realm deployments, not the control plane"
+        );
+    }
+    let origin =
+        url::Url::parse(control_plane_origin).context("control-plane origin is not a valid URL")?;
+    if origin.path() != "/" || origin.query().is_some() || origin.fragment().is_some() {
+        anyhow::bail!("control-plane origin must not contain a path, query or fragment");
+    }
+    if !matches!(origin.scheme(), "http" | "https")
+        || (config.environment == Environment::Production && origin.scheme() != "https")
+    {
+        anyhow::bail!("control-plane origin must use HTTPS in production");
+    }
+    let operator_user_id = Uuid::parse_str(operator_user_id)
+        .context("operator-user-id must be an existing operator UUID")?;
+    let operator = store
+        .operator(operator_user_id)
+        .await?
+        .filter(|record| {
+            record.revoked_at.is_none()
+                && matches!(
+                    record.role,
+                    OperatorRoleRecord::Owner | OperatorRoleRecord::Administrator
+                )
+        })
+        .context("an active owner or administrator must authorize realm pairing")?;
+    let (record, code) = store
+        .create_realm_pairing(
+            config.realm_id.clone(),
+            origin.to_string().trim_end_matches('/').to_owned(),
+            vec![
+                "realm.summary.read".into(),
+                "realm.connection.revoke".into(),
+            ],
+            operator.user_id,
+        )
+        .await?;
+    println!(
+        "{}",
+        serde_json::to_string_pretty(&json!({
+            "pairingCode": code,
+            "realmId": record.realm_id,
+            "controlPlaneOrigin": record.control_plane_origin,
+            "expiresAt": record.expires_at,
+            "requestedScopes": record.requested_scopes,
+        }))?
+    );
+    Ok(())
 }
 
 /// Composes the JWT issuer from configuration and the stored keyset.
@@ -577,6 +655,19 @@ mod tests {
         assert_eq!(
             parse_process_arguments(vec!["keys".into(), "rotate".into()]).unwrap(),
             ProcessMode::KeysRotate
+        );
+        assert_eq!(
+            parse_process_arguments(vec![
+                "fleet".into(),
+                "pairing-code".into(),
+                "https://fleet.example.com".into(),
+                "5c9f24a2-9c62-4ff7-a2af-2adcf904cdf8".into(),
+            ])
+            .unwrap(),
+            ProcessMode::FleetPairingCode {
+                control_plane_origin: "https://fleet.example.com".into(),
+                operator_user_id: "5c9f24a2-9c62-4ff7-a2af-2adcf904cdf8".into(),
+            }
         );
     }
 

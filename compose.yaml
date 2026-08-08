@@ -1,6 +1,26 @@
 name: rustyauth
 
 services:
+  dashboard:
+    build:
+      context: .
+      dockerfile: Dockerfile.dashboard
+    environment:
+      PORT: 8080
+      RUSTYAUTH_API_UPSTREAM: http://auth:8080
+    ports:
+      - "127.0.0.1:${STANDALONE_DASHBOARD_PORT:-8081}:8080"
+    depends_on:
+      auth:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://127.0.0.1:8080/healthz"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+    networks: [private, edge]
+
   auth:
     build:
       context: .
@@ -8,9 +28,9 @@ services:
     environment:
       AUTH_ENV: development
       AUTH_TRUSTED_PROXY_HOPS: ${AUTH_TRUSTED_PROXY_HOPS:-0}
-      AUTH_ISSUER: ${AUTH_ISSUER:-http://localhost:8081}
+      AUTH_ISSUER: ${AUTH_ISSUER:-http://localhost:${STANDALONE_DASHBOARD_PORT:-8081}}
       WEBAUTHN_RP_ID: ${WEBAUTHN_RP_ID:-localhost}
-      WEBAUTHN_RP_ORIGIN: ${WEBAUTHN_RP_ORIGIN:-http://localhost:8081}
+      WEBAUTHN_RP_ORIGIN: ${WEBAUTHN_RP_ORIGIN:-http://localhost:${STANDALONE_DASHBOARD_PORT:-8081}}
       WEBAUTHN_RP_NAME: ${WEBAUTHN_RP_NAME:-RustyAuth Local}
       SABLEDB_URL: redis://sabledb:6379
       # No defaults. A committed default is a published secret, and the entropy check
@@ -22,13 +42,12 @@ services:
       AUTH_EVENT_RPC_TOKEN: ${AUTH_EVENT_RPC_TOKEN:?set it in .env, e.g. openssl rand -base64 48}
       AUTH_IDENTITY_RPC_TOKEN: ${AUTH_IDENTITY_RPC_TOKEN:?set it in .env, e.g. openssl rand -base64 48}
       AUTH_OPERATOR_EMAILS: ${AUTH_OPERATOR_EMAILS:-admin@rustyauth.local}
-      AUTH_DASHBOARD_DIR: ${AUTH_DASHBOARD_DIR:-/usr/share/rustyauth/dashboard}
       SPACETIME_AUDIENCE: ${SPACETIME_AUDIENCE:-vtr-dashboard-v2-local}
       AUTH_TENANT_ID: ${AUTH_TENANT_ID:-vtr}
+      AUTH_REALM_ID: ${AUTH_REALM_ID:-realm-local}
       PORT: 8080
       RUST_LOG: ${RUST_LOG:-rustyauth=info,tower_http=info}
-    ports:
-      - "127.0.0.1:8081:8080"
+    expose: ["8080"]
     depends_on:
       sabledb:
         condition: service_healthy
@@ -38,7 +57,7 @@ services:
       timeout: 3s
       retries: 20
     restart: unless-stopped
-    networks: [private, edge]
+    networks: [private]
 
   sabledb:
     build:

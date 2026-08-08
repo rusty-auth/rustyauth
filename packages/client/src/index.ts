@@ -1,7 +1,8 @@
 /**
  * Framework-agnostic browser client for the RustyAuth public passkey HTTP
  * API — the `/v1/*` JSON surface. The private ConnectRPC services are covered
- * by `@rustyauth/protocol` and `@rustyauth/connect-solid`.
+ * by `@rustyauth/protocol`. The product dashboard now consumes the Rust
+ * Protobuf contract directly through Dioxus.
  */
 
 export { decodeBase64Url, encodeBase64Url } from "./base64url.ts";

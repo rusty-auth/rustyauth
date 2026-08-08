@@ -8,6 +8,7 @@ mod ceremonies;
 mod credentials;
 mod events;
 mod fleet;
+mod management;
 mod organization;
 mod service_accounts;
 mod sessions;
@@ -20,9 +21,13 @@ pub use self::ceremonies::{
 pub use self::credentials::StoredPasskey;
 pub use self::events::{AuthEvent, EventLogIntegrityError};
 pub use self::fleet::{
-    FleetAuditRecord, FleetEnvironmentKindRecord, FleetEnvironmentRecord, FleetOrganizationRecord,
-    FleetProjectRecord, FleetResourceStateRecord,
+    EncryptedFleetCredential, FleetAuditRecord, FleetConnectionAttemptRecord,
+    FleetConnectionModeRecord, FleetConnectionRecord, FleetConnectionStateRecord,
+    FleetEnvironmentKindRecord, FleetEnvironmentRecord, FleetOrganizationRecord,
+    FleetProjectRecord, FleetResourceKindRecord, FleetResourceStateRecord, FleetRoleBindingRecord,
+    FleetRoleRecord,
 };
+pub use self::management::{RealmFleetGrantRecord, RealmPairingRecord, RealmSummaryCounts};
 pub use self::organization::{
     OperatorListing, OperatorRecord, OperatorRoleRecord, OrganizationRecord,
 };
@@ -94,6 +99,14 @@ pub(crate) enum StorePolicyError {
     FleetHasActiveChildren,
     #[error("fleet mutation request id was already used for another action")]
     FleetIdempotencyConflict,
+    #[error("fleet connection attempt has expired or was already consumed")]
+    FleetConnectionAttemptExpired,
+    #[error("fleet connection already exists for this realm and environment")]
+    FleetConnectionConflict,
+    #[error("realm pairing code is invalid, expired or already consumed")]
+    RealmPairingInvalid,
+    #[error("realm Fleet grant is invalid or revoked")]
+    RealmFleetGrantInvalid,
 }
 
 const RESTORE_SENTINEL: &str = "auth:restore:in-progress";
@@ -531,6 +544,91 @@ mod live_store_tests {
         for audit in audits {
             store.delete(&format!("fleet:audit:{}", audit.id)).await?;
         }
+        Ok(())
+    }
+
+    #[tokio::test]
+    #[ignore = "requires the compose.integration.yaml SableDB service"]
+    async fn realm_pairing_is_origin_bound_one_use_and_revocable() -> Result<()> {
+        let store = live_store().await?;
+        let control_plane_origin = "https://fleet.integration.example";
+        let (_, wrong_origin_code) = store
+            .create_realm_pairing(
+                "realm-integration".into(),
+                control_plane_origin.into(),
+                vec!["realm.summary.read".into()],
+                Uuid::new_v4(),
+            )
+            .await?;
+        assert!(
+            store
+                .exchange_realm_pairing(
+                    &wrong_origin_code,
+                    "https://attacker.integration.example",
+                    "fleet-attacker".into(),
+                )
+                .await
+                .is_err()
+        );
+        assert!(
+            store
+                .exchange_realm_pairing(
+                    &wrong_origin_code,
+                    control_plane_origin,
+                    "fleet-integration".into(),
+                )
+                .await
+                .is_err(),
+            "a failed origin check still consumes the one-use code"
+        );
+
+        let (_, code) = store
+            .create_realm_pairing(
+                "realm-integration".into(),
+                control_plane_origin.into(),
+                vec![
+                    "realm.summary.read".into(),
+                    "realm.connection.revoke".into(),
+                ],
+                Uuid::new_v4(),
+            )
+            .await?;
+        let (grant, credential) = store
+            .exchange_realm_pairing(&code, control_plane_origin, "fleet-integration".into())
+            .await?;
+        assert_eq!(grant.control_plane_origin, control_plane_origin);
+        assert_eq!(
+            store
+                .realm_fleet_grant_by_credential(&credential)
+                .await?
+                .context("new credential resolves to its grant")?
+                .connection_id,
+            grant.connection_id
+        );
+        assert!(
+            store
+                .exchange_realm_pairing(&code, control_plane_origin, "fleet-integration".into())
+                .await
+                .is_err(),
+            "a pairing code cannot be replayed"
+        );
+
+        let revoked = store.revoke_realm_fleet_grant(grant.connection_id).await?;
+        assert!(revoked.revoked_at.is_some());
+        assert_eq!(
+            store.realm_fleet_grant_by_credential(&credential).await?,
+            None
+        );
+
+        store
+            .delete(&format!("auth:fleet-grant:{}", grant.connection_id))
+            .await?;
+        store
+            .delete(&format!(
+                "auth:fleet-grant-secret:{}",
+                grant.credential_digest
+            ))
+            .await?;
         Ok(())
     }
 

@@ -1,7 +1,7 @@
 # Railway deployment templates
 
-**Status:** Target topology; the current release still ships the legacy combined backend/dashboard image until
-the Dioxus live-API and regression gates pass.
+**Status:** Implemented deployment topology; production qualification and published Railway template IDs are
+still gated by the release checklist.
 
 RustyAuth uses separate Railway services so the user interface, policy services and stateful stores have
 independent deploy, scaling, health and recovery boundaries. SableDB is always private and always attached to
@@ -23,11 +23,11 @@ without combining the processes. The backend remains the only authorization and 
 `rustyauth-backend` may also have a public application-authentication domain when relying-party applications
 call it directly. The dashboard gateway is for operator browser traffic, not a general-purpose open proxy.
 
-| Service | Image | Public exposure | Persistent state | Initial replicas |
-| --- | --- | --- | --- | --- |
-| `rustyauth-dashboard` | `ghcr.io/rusty-auth/dashboard:v0.1.0` | HTTPS | None | 1 or more |
-| `rustyauth-backend` | `ghcr.io/rusty-auth/rustyauth:v0.1.0` | Optional application API domain | None | 1 |
-| `realm-sabledb` | `ghcr.io/rusty-auth/sabledb:v0.1.0` | None | `/var/lib/sabledb` | 1 stateful service |
+| Service               | Image                                 | Public exposure                 | Persistent state   | Initial replicas   |
+| --------------------- | ------------------------------------- | ------------------------------- | ------------------ | ------------------ |
+| `rustyauth-dashboard` | `ghcr.io/rusty-auth/dashboard:v0.1.0` | HTTPS                           | None               | 1 or more          |
+| `rustyauth-backend`   | `ghcr.io/rusty-auth/rustyauth:v0.1.0` | Optional application API domain | None               | 1                  |
+| `realm-sabledb`       | `ghcr.io/rusty-auth/sabledb:v0.1.0`   | None                            | `/var/lib/sabledb` | 1 stateful service |
 
 ## Template B: Fleet control plane
 
@@ -48,11 +48,11 @@ Desktop and mobile clients require a public native API domain on `rustyauth-cont
 short-lived device credentials, not browser cookies. The browser continues through the same-origin dashboard
 gateway.
 
-| Service | Image | Public exposure | Persistent state | Initial replicas |
-| --- | --- | --- | --- | --- |
-| `rustyauth-dashboard` | `ghcr.io/rusty-auth/dashboard:v0.1.0` | HTTPS | None | 1 or more |
-| `rustyauth-control-plane` | `ghcr.io/rusty-auth/control-plane:v0.1.0` | Optional native API domain | None | 1 |
-| `fleet-sabledb` | `ghcr.io/rusty-auth/sabledb:v0.1.0` | None | `/var/lib/sabledb` | 1 stateful service |
+| Service                   | Image                                     | Public exposure            | Persistent state   | Initial replicas   |
+| ------------------------- | ----------------------------------------- | -------------------------- | ------------------ | ------------------ |
+| `rustyauth-dashboard`     | `ghcr.io/rusty-auth/dashboard:v0.1.0`     | HTTPS                      | None               | 1 or more          |
+| `rustyauth-control-plane` | `ghcr.io/rusty-auth/control-plane:v0.1.0` | Optional native API domain | None               | 1                  |
+| `fleet-sabledb`           | `ghcr.io/rusty-auth/sabledb:v0.1.0`       | None                       | `/var/lib/sabledb` | 1 stateful service |
 
 `fleet-backups` is an encrypted S3-compatible Railway bucket resource rather than a running service. The
 control-plane process schedules backups initially. A separate `fleet-worker` service is added when connector,
@@ -75,14 +75,15 @@ realm-sabledb
 ```
 
 This is five independently deployable services. The dashboard can switch between Fleet and the local realm
-through explicit configured routes. The two SableDB services must remain separate: one holds Fleet metadata and
-Fleet operator state; the other holds the realm's users, passkeys, sessions, signing state and backups.
+through explicit configured routes. The two SableDB services must remain separate: one holds Fleet metadata
+and Fleet operator state; the other holds the realm's users, passkeys, sessions, signing state and backups.
 
 An outbound connector gateway becomes an optional sixth service only when long-lived connection volume needs
 an independent scaling boundary. The first implementation keeps it inside the control-plane service.
 
-The combined template also provisions separate `fleet-backups` and optional realm-backup buckets. Backups never
-cross state boundaries: restoring Fleet does not restore a realm, and restoring a realm does not restore Fleet.
+The combined template also provisions separate `fleet-backups` and optional realm-backup buckets. Backups
+never cross state boundaries: restoring Fleet does not restore a realm, and restoring a realm does not restore
+Fleet.
 
 ## Dashboard gateway contract
 
@@ -101,12 +102,14 @@ validation, rate limiting and auditing.
 
 Suggested dashboard variables:
 
-| Variable | Purpose |
-| --- | --- |
-| `RUSTYAUTH_DASHBOARD_MODE` | `standalone` or `fleet` |
+| Variable                 | Purpose                                              |
+| ------------------------ | ---------------------------------------------------- |
 | `RUSTYAUTH_API_UPSTREAM` | Railway private URL for the backend or control plane |
-| `RUSTYAUTH_PUBLIC_ORIGIN` | Exact public dashboard HTTPS origin |
-| `PORT` | Dashboard service port |
+| `PORT`                   | Dashboard service port                               |
+
+The same stateless image serves standalone and Fleet deployments; the upstream deployment role determines
+which API surface is mounted. Public origin and WebAuthn policy remain backend configuration, not dashboard
+state.
 
 ## Backend variables
 
@@ -141,17 +144,17 @@ only an opaque credential reference.
 
 Fleet logical backups include operator credentials and session metadata, the resource hierarchy, role
 bindings, connection metadata, idempotency state and central audit events. Ephemeral health caches and expired
-pairing attempts may be omitted under an explicit retention policy. Backup encryption keys are escrowed outside
-the Fleet project and outside the bucket provider account.
+pairing attempts may be omitted under an explicit retention policy. Backup encryption keys are escrowed
+outside the Fleet project and outside the bucket provider account.
 
 ## SableDB services
 
 Both SableDB services use the pinned RustyAuth image, have no public domain or TCP proxy, expose port `6379`
 only on Railway private networking, and mount a volume at `/var/lib/sabledb`.
 
-SableDB is a stateful service. “Scale independently” means its CPU, memory, volume and maintenance lifecycle are
-separate; it does not mean increasing a replica slider. Replication or failover requires a separately qualified
-topology.
+SableDB is a stateful service. “Scale independently” means its CPU, memory, volume and maintenance lifecycle
+are separate; it does not mean increasing a replica slider. Replication or failover requires a separately
+qualified topology.
 
 ## Scaling rules
 
@@ -166,12 +169,12 @@ protect correctness; they do not require combining services.
 
 ## Health and routing
 
-| Service | Liveness | Readiness |
-| --- | --- | --- |
-| Dashboard | `/healthz` | `/readyz` verifies the configured private upstream is reachable |
-| Control plane | `/healthz` | `/readyz` requires Fleet SableDB and policy initialization |
-| Realm backend | `/healthz` | `/readyz` requires realm SableDB and signing readiness |
-| SableDB | TCP health check | Durable volume mounted and accepting commands |
+| Service       | Liveness         | Readiness                                                       |
+| ------------- | ---------------- | --------------------------------------------------------------- |
+| Dashboard     | `/healthz`       | `/readyz` verifies the configured private upstream is reachable |
+| Control plane | `/healthz`       | `/readyz` requires Fleet SableDB and policy initialization      |
+| Realm backend | `/healthz`       | `/readyz` requires realm SableDB and signing readiness          |
+| SableDB       | TCP health check | Durable volume mounted and accepting commands                   |
 
 Railway drain and platform timeouts must exceed each service's internal timeout and shutdown grace. A queued
 deployment is not success; template release verification waits for terminal `SUCCESS` and then exercises the

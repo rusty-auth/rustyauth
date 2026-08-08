@@ -14,9 +14,11 @@ use crate::config::KeyRing;
 use crate::{
     jwt::KEYSET_KEY,
     store::{
-        AuthEvent, FleetAuditRecord, FleetEnvironmentRecord, FleetOrganizationRecord,
-        FleetProjectRecord, IdentifierKind, OperatorRecord, OrganizationRecord,
-        ServiceAccountRecord, ServiceCredentialLocator, Session, Store, StoreRecord, User,
+        AuthEvent, FleetAuditRecord, FleetConnectionRecord, FleetEnvironmentRecord,
+        FleetOrganizationRecord, FleetProjectRecord, FleetResourceKindRecord,
+        FleetRoleBindingRecord, IdentifierKind, OperatorRecord, OrganizationRecord,
+        RealmFleetGrantRecord, ServiceAccountRecord, ServiceCredentialLocator, Session, Store,
+        StoreRecord, User,
     },
 };
 
@@ -302,6 +304,32 @@ impl BackupSnapshot {
                         })?;
                     index.service_credentials.push(locator);
                 }
+                "realm-fleet-grant" => {
+                    let value: RealmFleetGrantRecord = serde_json::from_str(&record.value)
+                        .with_context(|| format!("decode realm Fleet grant {}", record.key))?;
+                    if record.key != format!("auth:fleet-grant:{}", value.connection_id) {
+                        bail!("backup realm Fleet grant key does not match its connection id");
+                    }
+                    if index
+                        .realm_fleet_grants
+                        .insert(value.connection_id, value)
+                        .is_some()
+                    {
+                        bail!("backup contains duplicate realm Fleet grants");
+                    }
+                }
+                "realm-fleet-grant-secret" => {
+                    let digest = record.key.trim_start_matches("auth:fleet-grant-secret:");
+                    let id = Uuid::parse_str(&record.value)
+                        .context("backup realm Fleet grant locator has an invalid id")?;
+                    if index
+                        .realm_fleet_grant_secrets
+                        .insert(digest.to_owned(), id)
+                        .is_some()
+                    {
+                        bail!("backup contains duplicate realm Fleet grant locators");
+                    }
+                }
                 "event" => {
                     let sequence = record
                         .key
@@ -396,6 +424,58 @@ impl BackupSnapshot {
                         bail!("backup contains duplicate Fleet environment slug indexes");
                     }
                 }
+                "fleet-connection" => {
+                    let value: FleetConnectionRecord = serde_json::from_str(&record.value)
+                        .with_context(|| {
+                            format!("decode backup Fleet connection {}", record.key)
+                        })?;
+                    if record.key != format!("fleet:connection:{}", value.id) {
+                        bail!("backup Fleet connection key does not match its id");
+                    }
+                    if index.fleet_connections.insert(value.id, value).is_some() {
+                        bail!("backup contains duplicate Fleet connections");
+                    }
+                }
+                "fleet-role-binding" => {
+                    let value: FleetRoleBindingRecord = serde_json::from_str(&record.value)
+                        .with_context(|| {
+                            format!("decode backup Fleet role binding {}", record.key)
+                        })?;
+                    if record.key != format!("fleet:role-binding:{}", value.id) {
+                        bail!("backup Fleet role binding key does not match its id");
+                    }
+                    if index.fleet_role_bindings.insert(value.id, value).is_some() {
+                        bail!("backup contains duplicate Fleet role bindings");
+                    }
+                }
+                "fleet-role-binding-subject" => {
+                    let value = record.key.trim_start_matches("fleet:role-binding-subject:");
+                    let mut parts = value.split(':');
+                    let operator_id = Uuid::parse_str(parts.next().unwrap_or_default())
+                        .context("backup Fleet role binding subject has an invalid operator id")?;
+                    let kind = match parts.next() {
+                        Some("organization") => FleetResourceKindRecord::Organization,
+                        Some("project") => FleetResourceKindRecord::Project,
+                        Some("environment") => FleetResourceKindRecord::Environment,
+                        _ => {
+                            bail!("backup Fleet role binding subject has an invalid resource kind")
+                        }
+                    };
+                    let resource_id = Uuid::parse_str(parts.next().unwrap_or_default())
+                        .context("backup Fleet role binding subject has an invalid resource id")?;
+                    if parts.next().is_some() {
+                        bail!("backup Fleet role binding subject index is malformed");
+                    }
+                    let binding_id = Uuid::parse_str(&record.value)
+                        .context("backup Fleet role binding subject has an invalid binding id")?;
+                    if index
+                        .fleet_role_binding_subjects
+                        .insert((operator_id, kind, resource_id), binding_id)
+                        .is_some()
+                    {
+                        bail!("backup contains duplicate Fleet role binding subject indexes");
+                    }
+                }
                 "fleet-idempotency" => {
                     let request_id =
                         Uuid::parse_str(record.key.trim_start_matches("fleet:idempotency:"))
@@ -463,6 +543,8 @@ struct SnapshotIndex {
     organizations: u8,
     service_accounts: HashMap<Uuid, ServiceAccountRecord>,
     service_credentials: Vec<ServiceCredentialLocator>,
+    realm_fleet_grants: HashMap<Uuid, RealmFleetGrantRecord>,
+    realm_fleet_grant_secrets: HashMap<String, Uuid>,
     event_numbers: BTreeSet<u64>,
     event_sequence_record: Option<u64>,
     keyset_count: u8,
@@ -472,6 +554,9 @@ struct SnapshotIndex {
     fleet_project_slugs: HashMap<(Uuid, String), Uuid>,
     fleet_environments: HashMap<Uuid, FleetEnvironmentRecord>,
     fleet_environment_slugs: HashMap<(Uuid, String), Uuid>,
+    fleet_connections: HashMap<Uuid, FleetConnectionRecord>,
+    fleet_role_bindings: HashMap<Uuid, FleetRoleBindingRecord>,
+    fleet_role_binding_subjects: HashMap<(Uuid, FleetResourceKindRecord, Uuid), Uuid>,
     fleet_idempotency: HashMap<Uuid, FleetIdempotencySnapshot>,
     fleet_audits: HashMap<Uuid, FleetAuditRecord>,
 }
@@ -602,6 +687,32 @@ fn validate_record_ownership(index: &SnapshotIndex) -> Result<()> {
             bail!("backup service credential is absent from its service account");
         }
     }
+    for grant in index.realm_fleet_grants.values() {
+        if grant.revoked_at.is_none()
+            && index
+                .realm_fleet_grant_secrets
+                .get(&grant.credential_digest)
+                != Some(&grant.connection_id)
+        {
+            bail!("backup realm Fleet grant locator is missing or inconsistent");
+        }
+        if grant.revoked_at.is_some()
+            && index
+                .realm_fleet_grant_secrets
+                .contains_key(&grant.credential_digest)
+        {
+            bail!("backup revoked realm Fleet grant still has a live credential locator");
+        }
+    }
+    for (digest, id) in &index.realm_fleet_grant_secrets {
+        let grant = index
+            .realm_fleet_grants
+            .get(id)
+            .context("backup realm Fleet grant locator points to an unknown grant")?;
+        if grant.credential_digest != *digest || grant.revoked_at.is_some() {
+            bail!("backup realm Fleet grant locator does not belong to a live grant");
+        }
+    }
     Ok(())
 }
 
@@ -675,13 +786,73 @@ fn validate_fleet_workspace(index: &SnapshotIndex) -> Result<()> {
             bail!("backup Fleet environment slug does not belong to its record");
         }
     }
+    for connection in index.fleet_connections.values() {
+        let environment = index
+            .fleet_environments
+            .get(&connection.environment_id)
+            .context("backup Fleet connection points to an unknown environment")?;
+        if environment.organization_id != connection.organization_id
+            || environment.project_id != connection.project_id
+        {
+            bail!("backup Fleet connection crosses workspace boundaries");
+        }
+        if connection.credential.wrapping_key_id.is_empty()
+            || connection.credential.nonce.is_empty()
+            || connection.credential.ciphertext.is_empty()
+        {
+            bail!("backup Fleet connection contains an invalid encrypted credential");
+        }
+    }
+    for binding in index.fleet_role_bindings.values() {
+        let resource_exists = match binding.resource_kind {
+            FleetResourceKindRecord::Organization => {
+                index.fleet_organizations.contains_key(&binding.resource_id)
+            }
+            FleetResourceKindRecord::Project => {
+                index.fleet_projects.contains_key(&binding.resource_id)
+            }
+            FleetResourceKindRecord::Environment => {
+                index.fleet_environments.contains_key(&binding.resource_id)
+            }
+        };
+        if !resource_exists {
+            bail!("backup Fleet role binding points to an unknown resource");
+        }
+        if index.fleet_role_binding_subjects.get(&(
+            binding.operator_id,
+            binding.resource_kind,
+            binding.resource_id,
+        )) != Some(&binding.id)
+        {
+            bail!("backup Fleet role binding subject index is missing or inconsistent");
+        }
+    }
+    for ((operator_id, kind, resource_id), binding_id) in &index.fleet_role_binding_subjects {
+        let binding = index
+            .fleet_role_bindings
+            .get(binding_id)
+            .context("backup Fleet role binding subject points to an unknown binding")?;
+        if binding.operator_id != *operator_id
+            || binding.resource_kind != *kind
+            || binding.resource_id != *resource_id
+        {
+            bail!("backup Fleet role binding subject does not belong to its record");
+        }
+    }
     for audit in index.fleet_audits.values() {
         let (action_kind, action) = audit
             .action
             .split_once('.')
             .context("backup Fleet audit action is malformed")?;
-        if action_kind != audit.resource_kind || !matches!(action, "create" | "update" | "archive")
-        {
+        let supported = match action_kind {
+            "organization" | "project" | "environment" => {
+                matches!(action, "create" | "update" | "archive")
+            }
+            "connection" => matches!(action, "begin" | "complete" | "revoke"),
+            "role-binding" => matches!(action, "upsert" | "revoke"),
+            _ => false,
+        };
+        if action_kind != audit.resource_kind || !supported {
             bail!("backup Fleet audit action does not match its resource kind");
         }
         match audit.resource_kind.as_str() {
@@ -719,6 +890,61 @@ fn validate_fleet_workspace(index: &SnapshotIndex) -> Result<()> {
                     || audit.environment_id != Some(environment.id)
                 {
                     bail!("backup Fleet environment audit has inconsistent ownership");
+                }
+            }
+            "connection" if action == "begin" => {
+                if audit.organization_id.is_none()
+                    || audit.project_id.is_none()
+                    || audit.environment_id.is_none()
+                {
+                    bail!("backup Fleet connection attempt audit has inconsistent ownership");
+                }
+            }
+            "connection" => {
+                let connection = index
+                    .fleet_connections
+                    .get(&audit.resource_id)
+                    .context("backup Fleet audit points to an unknown connection")?;
+                if audit.organization_id != Some(connection.organization_id)
+                    || audit.project_id != Some(connection.project_id)
+                    || audit.environment_id != Some(connection.environment_id)
+                {
+                    bail!("backup Fleet connection audit has inconsistent ownership");
+                }
+            }
+            "role-binding" => {
+                let binding = index
+                    .fleet_role_bindings
+                    .get(&audit.resource_id)
+                    .context("backup Fleet audit points to an unknown role binding")?;
+                let (organization_id, project_id, environment_id) = match binding.resource_kind {
+                    FleetResourceKindRecord::Organization => {
+                        (Some(binding.resource_id), None, None)
+                    }
+                    FleetResourceKindRecord::Project => {
+                        let project = index
+                            .fleet_projects
+                            .get(&binding.resource_id)
+                            .context("backup Fleet role binding project is missing")?;
+                        (Some(project.organization_id), Some(project.id), None)
+                    }
+                    FleetResourceKindRecord::Environment => {
+                        let environment = index
+                            .fleet_environments
+                            .get(&binding.resource_id)
+                            .context("backup Fleet role binding environment is missing")?;
+                        (
+                            Some(environment.organization_id),
+                            Some(environment.project_id),
+                            Some(environment.id),
+                        )
+                    }
+                };
+                if audit.organization_id != organization_id
+                    || audit.project_id != project_id
+                    || audit.environment_id != environment_id
+                {
+                    bail!("backup Fleet role binding audit has inconsistent ownership");
                 }
             }
             _ => bail!("backup Fleet audit has an unsupported resource kind"),
@@ -775,12 +1001,17 @@ fn record_family(key: &str) -> Result<String> {
         ("auth:operator:", "operator"),
         ("auth:service-account:", "service-account"),
         ("auth:service-credential:", "service-credential"),
+        ("auth:fleet-grant:", "realm-fleet-grant"),
+        ("auth:fleet-grant-secret:", "realm-fleet-grant-secret"),
         ("fleet:organization:", "fleet-organization"),
         ("fleet:organization-slug:", "fleet-organization-slug"),
         ("fleet:project:", "fleet-project"),
         ("fleet:project-slug:", "fleet-project-slug"),
         ("fleet:environment:", "fleet-environment"),
         ("fleet:environment-slug:", "fleet-environment-slug"),
+        ("fleet:connection:", "fleet-connection"),
+        ("fleet:role-binding:", "fleet-role-binding"),
+        ("fleet:role-binding-subject:", "fleet-role-binding-subject"),
         ("fleet:idempotency:", "fleet-idempotency"),
         ("fleet:audit:", "fleet-audit"),
     ] {

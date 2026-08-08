@@ -3,10 +3,16 @@ use dioxus::prelude::*;
 use dx_icons_tabler::{Icon, TablerIcon};
 
 use crate::fixtures::{
-    AUTH_VOLUME, PREVIEW_METRICS, PREVIEW_OPERATOR, preview_organization, preview_service_accounts,
-    preview_users, preview_webhooks,
+    AUTH_VOLUME, PREVIEW_METRICS, PREVIEW_OPERATOR, preview_fleet_connections,
+    preview_fleet_environments, preview_fleet_organizations, preview_fleet_projects,
+    preview_organization, preview_service_accounts, preview_users, preview_webhooks,
 };
+use crate::fleet_client;
 use crate::models::{NavKey, OrganizationView, ServiceAccountView, UserView, WebhookView};
+use crate::proto::rustyauth::fleet::v1::{
+    AuditEvent, ConnectionState, Environment as FleetEnvironment, EnvironmentKind, FleetOverview,
+    Organization as FleetOrganization, Project as FleetProject, RealmConnection,
+};
 
 const DASHBOARD_STYLES: &str = include_str!("../../dashboard/src/styles.css");
 const BRAND_LOCKUP: &[u8] = include_bytes!("../../site/public/brand/rustyauth-lockup.png");
@@ -19,8 +25,15 @@ const OPERATOR_PAPER: &[u8] = include_bytes!("../../site/public/brand/operator-p
 
 #[derive(Clone, Copy, PartialEq)]
 enum AppView {
-    Preview,
+    Dashboard(DashboardMode),
     SignIn(SignInVariant),
+    Setup,
+}
+
+#[derive(Clone, Copy, PartialEq)]
+enum DashboardMode {
+    Preview,
+    Live,
 }
 
 #[derive(Clone, Copy, PartialEq)]
@@ -33,7 +46,7 @@ enum SignInVariant {
 #[allow(non_snake_case)]
 pub fn App() -> Element {
     let mut view = use_signal(initial_app_view);
-    let mut active = use_signal(|| NavKey::Overview);
+    let mut active = use_signal(|| NavKey::FleetOverview);
     let mut mobile_nav = use_signal(|| false);
     let mut organization = use_signal(preview_organization);
     let accounts = use_signal(preview_service_accounts);
@@ -47,20 +60,44 @@ pub fn App() -> Element {
     );
 
     rsx! {
-        document::Title { "Control plane · RustyAuth" }
         style { dangerous_inner_html: embedded_styles }
         match view() {
             AppView::SignIn(SignInVariant::Classic) => rsx! {
                 SignInScreen {
-                    on_preview: move |_| navigate_to(&mut view, AppView::Preview),
+                    on_authenticated: move |_| {
+                        active.set(NavKey::FleetOverview);
+                        navigate_to(&mut view, AppView::Dashboard(DashboardMode::Live));
+                    },
+                    on_preview: move |_| {
+                        active.set(NavKey::FleetOverview);
+                        navigate_to(&mut view, AppView::Dashboard(DashboardMode::Preview));
+                    },
+                    on_setup: move |_| navigate_to(&mut view, AppView::Setup),
                 }
             },
             AppView::SignIn(SignInVariant::Aperture) => rsx! {
                 ApertureSignInScreen {
-                    on_preview: move |_| navigate_to(&mut view, AppView::Preview),
+                    on_authenticated: move |_| {
+                        active.set(NavKey::FleetOverview);
+                        navigate_to(&mut view, AppView::Dashboard(DashboardMode::Live));
+                    },
+                    on_preview: move |_| {
+                        active.set(NavKey::FleetOverview);
+                        navigate_to(&mut view, AppView::Dashboard(DashboardMode::Preview));
+                    },
+                    on_setup: move |_| navigate_to(&mut view, AppView::Setup),
                 }
             },
-            AppView::Preview => rsx! {
+            AppView::Setup => rsx! {
+                OperatorSetupScreen {
+                    on_registered: move |_| {
+                        active.set(NavKey::FleetOverview);
+                        navigate_to(&mut view, AppView::Dashboard(DashboardMode::Live));
+                    },
+                    on_back: move |_| navigate_to(&mut view, AppView::SignIn(SignInVariant::Classic)),
+                }
+            },
+            AppView::Dashboard(mode) => rsx! {
                 div { class: "app-shell",
                     if mobile_nav() {
                         button {
@@ -72,25 +109,48 @@ pub fn App() -> Element {
                     }
                     Sidebar {
                         active: active(),
+                        preview: mode == DashboardMode::Preview,
                         mobile_open: mobile_nav(),
                         on_navigate: move |key| {
                             active.set(key);
                             mobile_nav.set(false);
                         },
-                        on_sign_out: move |_| navigate_to(&mut view, AppView::SignIn(SignInVariant::Classic)),
+                        on_sign_out: move |_| {
+                            if mode == DashboardMode::Live {
+                                spawn(async move {
+                                    let _ = fleet_client::sign_out().await;
+                                    navigate_to(&mut view, AppView::SignIn(SignInVariant::Classic));
+                                });
+                            } else {
+                                navigate_to(&mut view, AppView::SignIn(SignInVariant::Classic));
+                            }
+                        },
                     }
                     main { class: "main-stage",
                         Topbar {
                             title: active().label(),
                             on_menu: move |_| mobile_nav.toggle(),
                             on_navigate: move |key| active.set(key),
-                            on_sign_out: move |_| navigate_to(&mut view, AppView::SignIn(SignInVariant::Classic)),
+                            on_sign_out: move |_| {
+                                if mode == DashboardMode::Live {
+                                    spawn(async move {
+                                        let _ = fleet_client::sign_out().await;
+                                        navigate_to(&mut view, AppView::SignIn(SignInVariant::Classic));
+                                    });
+                                } else {
+                                    navigate_to(&mut view, AppView::SignIn(SignInVariant::Classic));
+                                }
+                            },
                         }
                         div { class: "page-canvas",
                             PreviewBanner {
+                                preview: mode == DashboardMode::Preview,
                                 on_connect: move |_| navigate_to(&mut view, AppView::SignIn(SignInVariant::Classic)),
                             }
                             match active() {
+                                NavKey::FleetOverview | NavKey::Organizations | NavKey::Projects | NavKey::Environments | NavKey::Connections | NavKey::Audit => rsx! {
+                                    FleetWorkspace { mode, active: active(), on_navigate: move |key| active.set(key) }
+                                },
                                 NavKey::Overview => rsx! {
                                     OverviewPage {
                                         organization: organization(),
@@ -125,10 +185,16 @@ fn initial_app_view() -> AppView {
             .unwrap_or_default();
 
         if search.contains("preview=1") {
-            return AppView::Preview;
+            return AppView::Dashboard(DashboardMode::Preview);
+        }
+        if search.contains("fleet=1") {
+            return AppView::Dashboard(DashboardMode::Live);
         }
         if search.contains("login=aperture") {
             return AppView::SignIn(SignInVariant::Aperture);
+        }
+        if search.contains("setup=1") {
+            return AppView::Setup;
         }
     }
 
@@ -143,9 +209,11 @@ fn navigate_to(view: &mut Signal<AppView>, next: AppView) {
         && let Ok(history) = window.history()
     {
         let path = match next {
-            AppView::Preview => "/?preview=1",
+            AppView::Dashboard(DashboardMode::Preview) => "/?preview=1",
+            AppView::Dashboard(DashboardMode::Live) => "/?fleet=1",
             AppView::SignIn(SignInVariant::Classic) => "/",
             AppView::SignIn(SignInVariant::Aperture) => "/?login=aperture",
+            AppView::Setup => "/?setup=1",
         };
         let _ = history.replace_state_with_url(&wasm_bindgen::JsValue::NULL, "", Some(path));
     }
@@ -159,9 +227,14 @@ fn png_data(bytes: &[u8]) -> String {
 }
 
 #[component]
-fn SignInScreen(on_preview: EventHandler<()>) -> Element {
+fn SignInScreen(
+    on_authenticated: EventHandler<()>,
+    on_preview: EventHandler<()>,
+    on_setup: EventHandler<()>,
+) -> Element {
     let mut email = use_signal(|| "admin@rustyauth.local".to_string());
     let mut error = use_signal(String::new);
+    let mut authenticating = use_signal(|| false);
     let brand_mark = png_data(BRAND_MARK);
 
     rsx! {
@@ -184,7 +257,16 @@ fn SignInScreen(on_preview: EventHandler<()>) -> Element {
                     if email().trim().is_empty() {
                         error.set("Enter the operator email bound to your passkey.".to_string());
                     } else {
-                        error.set("Connect this console to RustyAuth to continue with a registered passkey.".to_string());
+                        authenticating.set(true);
+                        error.set(String::new());
+                        let operator_email = email().trim().to_owned();
+                        spawn(async move {
+                            match fleet_client::authenticate_passkey(&operator_email).await {
+                                Ok(()) => on_authenticated.call(()),
+                                Err(reason) => error.set(reason.0),
+                            }
+                            authenticating.set(false);
+                        });
                     }
                 },
                     label { r#for: "operator-email", "Operator email" }
@@ -205,15 +287,18 @@ fn SignInScreen(on_preview: EventHandler<()>) -> Element {
                             "{error}"
                         }
                     }
-                    button { class: "button primary wide", r#type: "submit",
+                    button { class: "button primary wide", r#type: "submit", disabled: authenticating(),
                         Icon { icon: TablerIcon::ShieldCheck, size: 18 }
-                        "Continue with passkey"
+                        if authenticating() { "Waiting for passkey…" } else { "Continue with passkey" }
                     }
                 }
                 div { class: "auth-divider", span { "Local evaluation" } }
                 button { class: "button secondary wide", r#type: "button", onclick: move |_| on_preview.call(()),
                     "Open populated preview "
                     Icon { icon: TablerIcon::ArrowUpRight, size: 17 }
+                }
+                button { class: "auth-setup-link", r#type: "button", onclick: move |_| on_setup.call(()),
+                    "Set up the first operator passkey"
                 }
                 p { class: "auth-footnote",
                     "Only users listed in " code { "AUTH_OPERATOR_EMAILS" } " can bootstrap operator access."
@@ -225,6 +310,76 @@ fn SignInScreen(on_preview: EventHandler<()>) -> Element {
                     AuthBoundaryItem { icon: TablerIcon::UserCircle, label: "Operator", detail: "Passkey + HttpOnly session" }
                     AuthBoundaryItem { icon: TablerIcon::ShieldCheck, label: "RustyAuth", detail: "Authorization and audit policy", class: "accent" }
                     AuthBoundaryItem { icon: TablerIcon::Database, label: "SableDB", detail: "Private durable state", class: "dark" }
+                }
+            }
+        }
+    }
+}
+
+#[component]
+fn OperatorSetupScreen(on_registered: EventHandler<()>, on_back: EventHandler<()>) -> Element {
+    let mut email = use_signal(|| "admin@rustyauth.local".to_string());
+    let mut display_name = use_signal(|| "Local owner".to_string());
+    let mut bootstrap_token = use_signal(String::new);
+    let mut error = use_signal(String::new);
+    let mut registering = use_signal(|| false);
+    let brand_mark = png_data(BRAND_MARK);
+
+    rsx! {
+        main { class: "auth-stage",
+            section { class: "auth-card setup-card",
+                header { class: "auth-brand",
+                    img { src: brand_mark, width: "48", height: "48", alt: "" }
+                    div { strong { "Rusty" span { "Auth" } } small { "Fleet first-run setup" } }
+                }
+                div { class: "auth-copy",
+                    p { class: "eyebrow", "One-time local enrolment" }
+                    h1 { "Create the first operator." }
+                    p { "Bind the allowlisted owner account to a passkey. The bootstrap token is sent once and never stored by the dashboard." }
+                }
+                form { onsubmit: move |event| {
+                    event.prevent_default();
+                    if email().trim().is_empty() || display_name().trim().is_empty() || bootstrap_token().trim().is_empty() {
+                        error.set("Complete all fields before creating the operator passkey.".into());
+                        return;
+                    }
+                    registering.set(true);
+                    error.set(String::new());
+                    let operator_email = email().trim().to_owned();
+                    let operator_name = display_name().trim().to_owned();
+                    let token = bootstrap_token().trim().to_owned();
+                    bootstrap_token.set(String::new());
+                    spawn(async move {
+                        match fleet_client::register_operator_passkey(&operator_email, &operator_name, &token).await {
+                            Ok(()) => on_registered.call(()),
+                            Err(reason) => error.set(reason.0),
+                        }
+                        registering.set(false);
+                    });
+                },
+                    label { r#for: "setup-name", "Display name" }
+                    input { id: "setup-name", value: display_name(), required: true, autocomplete: "name", oninput: move |event| display_name.set(event.value()) }
+                    label { r#for: "setup-email", "Allowlisted operator email" }
+                    input { id: "setup-email", r#type: "email", value: email(), required: true, autocomplete: "username", oninput: move |event| email.set(event.value()) }
+                    label { r#for: "setup-token", "Bootstrap token" }
+                    input { id: "setup-token", r#type: "password", value: bootstrap_token(), required: true, autocomplete: "off", oninput: move |event| bootstrap_token.set(event.value()) }
+                    if !error().is_empty() {
+                        p { class: "form-error", role: "alert", Icon { icon: TablerIcon::AlertTriangle, size: 16 } "{error}" }
+                    }
+                    button { class: "button primary wide", r#type: "submit", disabled: registering(),
+                        Icon { icon: TablerIcon::ShieldCheck, size: 18 }
+                        if registering() { "Creating passkey…" } else { "Create operator passkey" }
+                    }
+                }
+                button { class: "auth-setup-link", r#type: "button", onclick: move |_| on_back.call(()), "Back to operator sign in" }
+                p { class: "auth-footnote", "Local setup reads the token from " code { ".env.fleet.local" } ". Production should use a reviewed invitation controller." }
+            }
+            aside { class: "auth-aside",
+                p { class: "eyebrow", "Credential path" }
+                div { class: "boundary-stack",
+                    AuthBoundaryItem { icon: TablerIcon::UserCircle, label: "Operator", detail: "User verification on this device" }
+                    AuthBoundaryItem { icon: TablerIcon::ShieldCheck, label: "Passkey", detail: "Bound to the allowlisted identity", class: "accent" }
+                    AuthBoundaryItem { icon: TablerIcon::Database, label: "Control plane", detail: "HttpOnly session and operator policy", class: "dark" }
                 }
             }
         }
@@ -253,9 +408,14 @@ fn AuthBoundaryItem(
 }
 
 #[component]
-fn ApertureSignInScreen(on_preview: EventHandler<()>) -> Element {
+fn ApertureSignInScreen(
+    on_authenticated: EventHandler<()>,
+    on_preview: EventHandler<()>,
+    on_setup: EventHandler<()>,
+) -> Element {
     let mut email = use_signal(|| "admin@rustyauth.local".to_string());
     let mut error = use_signal(String::new);
+    let mut authenticating = use_signal(|| false);
     let brand_lockup = png_data(BRAND_LOCKUP_DARK);
     let emboss_mark = png_data(BRAND_MARK_TRANSPARENT);
 
@@ -292,7 +452,16 @@ fn ApertureSignInScreen(on_preview: EventHandler<()>) -> Element {
                         if email().trim().is_empty() {
                             error.set("Enter the operator email bound to your passkey.".to_string());
                         } else {
-                            error.set("Connect this console to RustyAuth to continue with a registered passkey.".to_string());
+                            authenticating.set(true);
+                            error.set(String::new());
+                            let operator_email = email().trim().to_owned();
+                            spawn(async move {
+                                match fleet_client::authenticate_passkey(&operator_email).await {
+                                    Ok(()) => on_authenticated.call(()),
+                                    Err(reason) => error.set(reason.0),
+                                }
+                                authenticating.set(false);
+                            });
                         }
                     },
                         label { r#for: "aperture-operator-email", "Operator email" }
@@ -313,15 +482,18 @@ fn ApertureSignInScreen(on_preview: EventHandler<()>) -> Element {
                                 "{error}"
                             }
                         }
-                        button { class: "aperture-submit", r#type: "submit",
+                        button { class: "aperture-submit", r#type: "submit", disabled: authenticating(),
                             Icon { icon: TablerIcon::ShieldCheck, size: 19 }
-                            span { "Continue with passkey" }
+                            span { if authenticating() { "Waiting for passkey…" } else { "Continue with passkey" } }
                         }
                     }
                     div { class: "aperture-divider", span { "Local evaluation" } }
                     button { class: "aperture-preview", r#type: "button", onclick: move |_| on_preview.call(()),
                         span { "Open populated preview" }
                         Icon { icon: TablerIcon::ArrowUpRight, size: 18 }
+                    }
+                    button { class: "aperture-setup-link", r#type: "button", onclick: move |_| on_setup.call(()),
+                        "Set up the first operator passkey"
                     }
                     p { class: "aperture-footnote",
                         "Only users listed in " code { "AUTH_OPERATOR_EMAILS" } " can bootstrap operator access."
@@ -350,6 +522,7 @@ fn ApertureBoundaryItem(
 #[component]
 fn Sidebar(
     active: NavKey,
+    preview: bool,
     mobile_open: bool,
     on_navigate: EventHandler<NavKey>,
     on_sign_out: EventHandler<()>,
@@ -382,15 +555,52 @@ fn Sidebar(
                 }
             }
             div { class: "instance-switcher",
-                span { class: "instance-mark", "RL" }
+                span { class: "instance-mark", "FL" }
                 div {
-                    strong { "RustyAuth Local" }
-                    small { "Development instance" }
+                    strong { "RustyAuth Fleet" }
+                    small { if preview { "Sample control plane" } else { "Connected control plane" } }
                 }
                 Icon { icon: TablerIcon::ChevronRight, size: 16 }
             }
             nav { class: "side-nav", aria_label: "Control plane",
                 p { "Workspace" }
+                NavButton {
+                    active: active == NavKey::FleetOverview,
+                    icon: TablerIcon::LayoutDashboard,
+                    label: "Fleet overview",
+                    onclick: move |_| on_navigate.call(NavKey::FleetOverview),
+                }
+                NavButton {
+                    active: active == NavKey::Organizations,
+                    icon: TablerIcon::Building,
+                    label: "Organizations",
+                    onclick: move |_| on_navigate.call(NavKey::Organizations),
+                }
+                NavButton {
+                    active: active == NavKey::Projects,
+                    icon: TablerIcon::LayoutDashboard,
+                    label: "Projects",
+                    onclick: move |_| on_navigate.call(NavKey::Projects),
+                }
+                NavButton {
+                    active: active == NavKey::Environments,
+                    icon: TablerIcon::Database,
+                    label: "Environments",
+                    onclick: move |_| on_navigate.call(NavKey::Environments),
+                }
+                NavButton {
+                    active: active == NavKey::Connections,
+                    icon: TablerIcon::Webhook,
+                    label: "Connections",
+                    onclick: move |_| on_navigate.call(NavKey::Connections),
+                }
+                NavButton {
+                    active: active == NavKey::Audit,
+                    icon: TablerIcon::ChartHistogram,
+                    label: "Audit log",
+                    onclick: move |_| on_navigate.call(NavKey::Audit),
+                }
+                p { "Realm operations" }
                 NavButton {
                     active: active == NavKey::Overview,
                     icon: TablerIcon::LayoutDashboard,
@@ -580,22 +790,24 @@ fn Topbar(
 }
 
 #[component]
-fn PreviewBanner(on_connect: EventHandler<()>) -> Element {
+fn PreviewBanner(preview: bool, on_connect: EventHandler<()>) -> Element {
     rsx! {
         div { class: "preview-context", role: "status",
-            span { class: "preview-context-label", "Preview" }
+            span { class: "preview-context-label", if preview { "Preview" } else { "Live" } }
             div {
-                strong { "Sample data is active" }
-                span { "Changes stay in this browser until you connect the live Rust handlers." }
+                strong { if preview { "Sample Fleet data is active" } else { "Binary control-plane session is active" } }
+                span { if preview { "Changes stay in this browser until you connect the live Rust handlers." } else { "Organization, project, environment and connection changes are persisted in Fleet SableDB." } }
             }
-            a {
-                href: "/",
-                onclick: move |event| {
-                    event.prevent_default();
-                    on_connect.call(());
-                },
-                "Connect live "
-                Icon { icon: TablerIcon::ArrowUpRight, size: 14 }
+            if preview {
+                a {
+                    href: "/",
+                    onclick: move |event| {
+                        event.prevent_default();
+                        on_connect.call(());
+                    },
+                    "Connect live "
+                    Icon { icon: TablerIcon::ArrowUpRight, size: 14 }
+                }
             }
         }
     }
@@ -648,6 +860,908 @@ fn OperatorProfileDrawer(
                 }
             }
         }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum FleetDialogKind {
+    Organization,
+    Project,
+    Environment,
+    Connection,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+enum FleetMutation {
+    Organization {
+        slug: String,
+        name: String,
+    },
+    Project {
+        slug: String,
+        name: String,
+    },
+    Environment {
+        slug: String,
+        name: String,
+    },
+    Connection {
+        endpoint: String,
+        pairing_code: String,
+    },
+}
+
+#[component]
+fn FleetWorkspace(
+    mode: DashboardMode,
+    active: NavKey,
+    on_navigate: EventHandler<NavKey>,
+) -> Element {
+    let preview = mode == DashboardMode::Preview;
+    let mut organizations = use_signal(|| {
+        if preview {
+            preview_fleet_organizations()
+        } else {
+            Vec::new()
+        }
+    });
+    let mut projects = use_signal(|| {
+        if preview {
+            preview_fleet_projects()
+        } else {
+            Vec::new()
+        }
+    });
+    let mut environments = use_signal(|| {
+        if preview {
+            preview_fleet_environments()
+        } else {
+            Vec::new()
+        }
+    });
+    let mut connections = use_signal(|| {
+        if preview {
+            preview_fleet_connections()
+        } else {
+            Vec::new()
+        }
+    });
+    let mut audit_events = use_signal(Vec::<AuditEvent>::new);
+    let mut overview = use_signal(|| FleetOverview {
+        organizations: u64::from(preview),
+        projects: if preview { 2 } else { 0 },
+        environments: if preview { 2 } else { 0 },
+        healthy_connections: u64::from(preview),
+        calculated_at: "2026-08-08T08:30:00Z".into(),
+        ..Default::default()
+    });
+    let mut selected_organization = use_signal(|| {
+        organizations
+            .read()
+            .first()
+            .map(|record| record.id.clone())
+            .unwrap_or_default()
+    });
+    let mut selected_project = use_signal(|| {
+        projects
+            .read()
+            .first()
+            .map(|record| record.id.clone())
+            .unwrap_or_default()
+    });
+    let mut selected_environment = use_signal(|| {
+        environments
+            .read()
+            .first()
+            .map(|record| record.id.clone())
+            .unwrap_or_default()
+    });
+    let mut dialog = use_signal(|| None::<FleetDialogKind>);
+    let mut loading = use_signal(|| !preview);
+    let mut error = use_signal(String::new);
+
+    use_effect(move || {
+        if preview {
+            return;
+        }
+        spawn(async move {
+            loading.set(true);
+            let result = async {
+                let loaded_organizations = fleet_client::organizations().await?;
+                let organization_id = loaded_organizations
+                    .first()
+                    .map(|record| record.id.clone())
+                    .unwrap_or_default();
+                let loaded_projects = if organization_id.is_empty() {
+                    Vec::new()
+                } else {
+                    fleet_client::projects(&organization_id).await?
+                };
+                let project_id = loaded_projects
+                    .first()
+                    .map(|record| record.id.clone())
+                    .unwrap_or_default();
+                let loaded_environments = if project_id.is_empty() {
+                    Vec::new()
+                } else {
+                    fleet_client::environments(&organization_id, &project_id).await?
+                };
+                let environment_id = loaded_environments
+                    .first()
+                    .map(|record| record.id.clone())
+                    .unwrap_or_default();
+                let loaded_connections = if organization_id.is_empty() {
+                    Vec::new()
+                } else {
+                    fleet_client::connections(
+                        &organization_id,
+                        (!project_id.is_empty()).then_some(project_id.as_str()),
+                        (!environment_id.is_empty()).then_some(environment_id.as_str()),
+                    )
+                    .await?
+                };
+                let loaded_overview = fleet_client::overview(None).await?;
+                let loaded_audit = fleet_client::audit_events(None).await?;
+                Ok::<_, fleet_client::ClientError>((
+                    loaded_organizations,
+                    loaded_projects,
+                    loaded_environments,
+                    loaded_connections,
+                    loaded_overview,
+                    loaded_audit,
+                    organization_id,
+                    project_id,
+                    environment_id,
+                ))
+            }
+            .await;
+            match result {
+                Ok((
+                    new_orgs,
+                    new_projects,
+                    new_envs,
+                    new_connections,
+                    new_overview,
+                    new_audit,
+                    org_id,
+                    project_id,
+                    env_id,
+                )) => {
+                    organizations.set(new_orgs);
+                    projects.set(new_projects);
+                    environments.set(new_envs);
+                    connections.set(new_connections);
+                    overview.set(new_overview);
+                    audit_events.set(new_audit);
+                    selected_organization.set(org_id);
+                    selected_project.set(project_id);
+                    selected_environment.set(env_id);
+                    error.set(String::new());
+                }
+                Err(reason) => error.set(reason.0),
+            }
+            loading.set(false);
+        });
+    });
+
+    let mutate = move |mutation: FleetMutation| {
+        dialog.set(None);
+        error.set(String::new());
+        if preview {
+            let stamp = "2026-08-08T08:30:00Z".to_string();
+            match mutation {
+                FleetMutation::Organization { slug, name } => {
+                    let record = FleetOrganization {
+                        id: uuid::Uuid::new_v4().to_string(),
+                        slug,
+                        name,
+                        state: crate::proto::rustyauth::fleet::v1::ResourceState::Active.into(),
+                        created_at: stamp.clone(),
+                        updated_at: stamp,
+                        ..Default::default()
+                    };
+                    selected_organization.set(record.id.clone());
+                    organizations.write().insert(0, record);
+                    overview.write().organizations += 1;
+                }
+                FleetMutation::Project { slug, name } => {
+                    let record = FleetProject {
+                        id: uuid::Uuid::new_v4().to_string(),
+                        organization_id: selected_organization(),
+                        slug,
+                        name,
+                        state: crate::proto::rustyauth::fleet::v1::ResourceState::Active.into(),
+                        created_at: stamp.clone(),
+                        updated_at: stamp,
+                        ..Default::default()
+                    };
+                    selected_project.set(record.id.clone());
+                    projects.write().insert(0, record);
+                    overview.write().projects += 1;
+                }
+                FleetMutation::Environment { slug, name } => {
+                    let record = FleetEnvironment {
+                        id: uuid::Uuid::new_v4().to_string(),
+                        organization_id: selected_organization(),
+                        project_id: selected_project(),
+                        slug,
+                        name,
+                        kind: EnvironmentKind::Development.into(),
+                        provider: "Railway".into(),
+                        region: "Auto".into(),
+                        state: crate::proto::rustyauth::fleet::v1::ResourceState::Active.into(),
+                        created_at: stamp.clone(),
+                        updated_at: stamp,
+                        ..Default::default()
+                    };
+                    selected_environment.set(record.id.clone());
+                    environments.write().insert(0, record);
+                    overview.write().environments += 1;
+                }
+                FleetMutation::Connection { endpoint, .. } => {
+                    let record = RealmConnection {
+                        id: uuid::Uuid::new_v4().to_string(),
+                        organization_id: selected_organization(),
+                        project_id: selected_project(),
+                        environment_id: selected_environment(),
+                        realm_id: "preview-realm".into(),
+                        display_name: "Preview realm".into(),
+                        mode: crate::proto::rustyauth::fleet::v1::ConnectionMode::PublicEndpoint
+                            .into(),
+                        management_endpoint: endpoint,
+                        deployment_version: "0.1.0".into(),
+                        protocol_version: "1".into(),
+                        state: ConnectionState::Healthy.into(),
+                        last_seen_at: stamp.clone(),
+                        created_at: stamp.clone(),
+                        updated_at: stamp,
+                        ..Default::default()
+                    };
+                    connections.write().insert(0, record);
+                    overview.write().healthy_connections += 1;
+                }
+            }
+            return;
+        }
+        spawn(async move {
+            loading.set(true);
+            let result = match mutation {
+                FleetMutation::Organization { slug, name } => {
+                    fleet_client::create_organization(&slug, &name)
+                        .await
+                        .map(|record| {
+                            selected_organization.set(record.id.clone());
+                            organizations.write().insert(0, record);
+                            overview.write().organizations += 1;
+                        })
+                }
+                FleetMutation::Project { slug, name } => {
+                    fleet_client::create_project(&selected_organization(), &slug, &name)
+                        .await
+                        .map(|record| {
+                            selected_project.set(record.id.clone());
+                            projects.write().insert(0, record);
+                            overview.write().projects += 1;
+                        })
+                }
+                FleetMutation::Environment { slug, name } => fleet_client::create_environment(
+                    &selected_organization(),
+                    &selected_project(),
+                    &slug,
+                    &name,
+                    EnvironmentKind::Development,
+                )
+                .await
+                .map(|record| {
+                    selected_environment.set(record.id.clone());
+                    environments.write().insert(0, record);
+                    overview.write().environments += 1;
+                }),
+                FleetMutation::Connection {
+                    endpoint,
+                    pairing_code,
+                } => {
+                    match fleet_client::begin_connection(
+                        &selected_organization(),
+                        &selected_project(),
+                        &selected_environment(),
+                        &endpoint,
+                    )
+                    .await
+                    {
+                        Ok(attempt) => {
+                            fleet_client::complete_connection(&attempt.id, &pairing_code)
+                                .await
+                                .map(|record| {
+                                    connections.write().insert(0, record);
+                                    overview.write().healthy_connections += 1;
+                                })
+                        }
+                        Err(reason) => Err(reason),
+                    }
+                }
+            };
+            if let Err(reason) = result {
+                error.set(reason.0);
+            }
+            loading.set(false);
+        });
+    };
+
+    let select_organization = move |organization_id: String| {
+        selected_organization.set(organization_id.clone());
+        let preview_project = projects
+            .read()
+            .iter()
+            .find(|record| record.organization_id == organization_id)
+            .map(|record| record.id.clone())
+            .unwrap_or_default();
+        selected_project.set(preview_project.clone());
+        let preview_environment = environments
+            .read()
+            .iter()
+            .find(|record| record.project_id == preview_project)
+            .map(|record| record.id.clone())
+            .unwrap_or_default();
+        selected_environment.set(preview_environment);
+        if preview {
+            return;
+        }
+        projects.set(Vec::new());
+        environments.set(Vec::new());
+        connections.set(Vec::new());
+        spawn(async move {
+            loading.set(true);
+            let result = async {
+                let loaded_projects = fleet_client::projects(&organization_id).await?;
+                let project_id = loaded_projects
+                    .first()
+                    .map(|record| record.id.clone())
+                    .unwrap_or_default();
+                let loaded_environments = if project_id.is_empty() {
+                    Vec::new()
+                } else {
+                    fleet_client::environments(&organization_id, &project_id).await?
+                };
+                let environment_id = loaded_environments
+                    .first()
+                    .map(|record| record.id.clone())
+                    .unwrap_or_default();
+                let loaded_connections = if environment_id.is_empty() {
+                    Vec::new()
+                } else {
+                    fleet_client::connections(
+                        &organization_id,
+                        Some(&project_id),
+                        Some(&environment_id),
+                    )
+                    .await?
+                };
+                Ok::<_, fleet_client::ClientError>((
+                    loaded_projects,
+                    loaded_environments,
+                    loaded_connections,
+                    project_id,
+                    environment_id,
+                ))
+            }
+            .await;
+            match result {
+                Ok((
+                    loaded_projects,
+                    loaded_environments,
+                    loaded_connections,
+                    project_id,
+                    environment_id,
+                )) => {
+                    projects.set(loaded_projects);
+                    environments.set(loaded_environments);
+                    connections.set(loaded_connections);
+                    selected_project.set(project_id);
+                    selected_environment.set(environment_id);
+                    error.set(String::new());
+                }
+                Err(reason) => error.set(reason.0),
+            }
+            loading.set(false);
+        });
+    };
+
+    let select_project = move |project_id: String| {
+        selected_project.set(project_id.clone());
+        let preview_environment = environments
+            .read()
+            .iter()
+            .find(|record| record.project_id == project_id)
+            .map(|record| record.id.clone())
+            .unwrap_or_default();
+        selected_environment.set(preview_environment);
+        if preview {
+            return;
+        }
+        environments.set(Vec::new());
+        connections.set(Vec::new());
+        let organization_id = selected_organization();
+        spawn(async move {
+            loading.set(true);
+            let result = async {
+                let loaded_environments =
+                    fleet_client::environments(&organization_id, &project_id).await?;
+                let environment_id = loaded_environments
+                    .first()
+                    .map(|record| record.id.clone())
+                    .unwrap_or_default();
+                let loaded_connections = if environment_id.is_empty() {
+                    Vec::new()
+                } else {
+                    fleet_client::connections(
+                        &organization_id,
+                        Some(&project_id),
+                        Some(&environment_id),
+                    )
+                    .await?
+                };
+                Ok::<_, fleet_client::ClientError>((
+                    loaded_environments,
+                    loaded_connections,
+                    environment_id,
+                ))
+            }
+            .await;
+            match result {
+                Ok((loaded_environments, loaded_connections, environment_id)) => {
+                    environments.set(loaded_environments);
+                    connections.set(loaded_connections);
+                    selected_environment.set(environment_id);
+                    error.set(String::new());
+                }
+                Err(reason) => error.set(reason.0),
+            }
+            loading.set(false);
+        });
+    };
+
+    let select_environment = move |environment_id: String| {
+        selected_environment.set(environment_id.clone());
+        if preview {
+            return;
+        }
+        connections.set(Vec::new());
+        let organization_id = selected_organization();
+        let project_id = selected_project();
+        spawn(async move {
+            loading.set(true);
+            match fleet_client::connections(
+                &organization_id,
+                Some(&project_id),
+                Some(&environment_id),
+            )
+            .await
+            {
+                Ok(loaded_connections) => {
+                    connections.set(loaded_connections);
+                    error.set(String::new());
+                }
+                Err(reason) => error.set(reason.0),
+            }
+            loading.set(false);
+        });
+    };
+
+    rsx! {
+        if !error().is_empty() {
+            div { class: "fleet-alert", role: "alert",
+                Icon { icon: TablerIcon::AlertTriangle, size: 17 }
+                span { "{error}" }
+                button { r#type: "button", onclick: move |_| error.set(String::new()), Icon { icon: TablerIcon::X, size: 15 } }
+            }
+        }
+        if loading() {
+            div { class: "fleet-loading", span {} "Synchronizing Fleet control plane…" }
+        }
+        match active {
+            NavKey::FleetOverview => rsx! {
+                FleetOverviewPage { overview: overview(), connections: connections(), on_navigate }
+            },
+            NavKey::Organizations => rsx! {
+                FleetOrganizationsPage {
+                    organizations: organizations(),
+                    selected_id: selected_organization(),
+                    on_select: select_organization,
+                    on_create: move |_| dialog.set(Some(FleetDialogKind::Organization)),
+                }
+            },
+            NavKey::Projects => rsx! {
+                FleetProjectsPage {
+                    organizations: organizations(),
+                    projects: projects(),
+                    selected_organization: selected_organization(),
+                    selected_id: selected_project(),
+                    on_select: select_project,
+                    on_create: move |_| dialog.set(Some(FleetDialogKind::Project)),
+                }
+            },
+            NavKey::Environments => rsx! {
+                FleetEnvironmentsPage {
+                    projects: projects(),
+                    environments: environments(),
+                    selected_project: selected_project(),
+                    selected_id: selected_environment(),
+                    on_select: select_environment,
+                    on_create: move |_| dialog.set(Some(FleetDialogKind::Environment)),
+                }
+            },
+            NavKey::Connections => rsx! {
+                FleetConnectionsPage {
+                    environments: environments(),
+                    connections: connections(),
+                    selected_environment: selected_environment(),
+                    on_create: move |_| dialog.set(Some(FleetDialogKind::Connection)),
+                }
+            },
+            NavKey::Audit => rsx! { FleetAuditPage { events: audit_events() } },
+            _ => rsx! {},
+        }
+        if let Some(kind) = dialog() {
+            FleetCreateDialog {
+                kind,
+                can_create: match kind {
+                    FleetDialogKind::Organization => true,
+                    FleetDialogKind::Project => !selected_organization().is_empty(),
+                    FleetDialogKind::Environment => !selected_project().is_empty(),
+                    FleetDialogKind::Connection => !selected_environment().is_empty(),
+                },
+                preview,
+                on_close: move |_| dialog.set(None),
+                on_submit: mutate,
+            }
+        }
+    }
+}
+
+#[component]
+fn FleetOverviewPage(
+    overview: FleetOverview,
+    connections: Vec<RealmConnection>,
+    on_navigate: EventHandler<NavKey>,
+) -> Element {
+    rsx! {
+        div { class: "content-stack",
+            section { class: "page-heading",
+                div {
+                    p { class: "eyebrow", "Fleet intelligence" }
+                    h2 { "Every identity boundary. One control plane." }
+                    p { "Central metadata and health, without centralizing customer identity data." }
+                }
+                button { class: "button secondary", r#type: "button", onclick: move |_| on_navigate.call(NavKey::Connections),
+                    "Connect a realm " Icon { icon: TablerIcon::ArrowUpRight, size: 17 }
+                }
+            }
+            section { class: "metric-grid compact",
+                MetricCard { label: "Organizations", value: overview.organizations.to_string(), change: "Isolated tenants", tone: "good" }
+                MetricCard { label: "Projects", value: overview.projects.to_string(), change: "Product boundaries", tone: "good" }
+                MetricCard { label: "Environments", value: overview.environments.to_string(), change: "Independently deployed", tone: "good" }
+                MetricCard { label: "Healthy realms", value: overview.healthy_connections.to_string(), change: format!("{} need attention", overview.degraded_connections + overview.offline_connections), tone: if overview.degraded_connections + overview.offline_connections == 0 { "good" } else { "warn" } }
+            }
+            div { class: "overview-grid",
+                section { class: "panel fleet-map-panel",
+                    PanelHeader { eyebrow: "Topology", title: "Organizations → projects → environments" }
+                    div { class: "fleet-topology",
+                        div { strong { "Fleet control plane" } span { "Metadata, RBAC and audit" } }
+                        i {}
+                        div { strong { "Realm management APIs" } span { "Binary Protobuf over TLS" } }
+                        i {}
+                        div { strong { "Private SableDBs" } span { "Customer identity remains isolated" } }
+                    }
+                }
+                section { class: "panel posture-panel",
+                    PanelHeader { eyebrow: "Realm posture", title: "Connection health" }
+                    if connections.is_empty() {
+                        div { class: "fleet-empty compact", Icon { icon: TablerIcon::Webhook, size: 24 } strong { "No realms connected" } span { "Pair the first environment to start Fleet health monitoring." } }
+                    } else {
+                        for connection in connections.iter().take(4) {
+                            FleetPostureRow {
+                                label: connection.display_name.clone(),
+                                value: connection.management_endpoint.clone(),
+                                good: connection.state == ConnectionState::Healthy,
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[component]
+fn FleetOrganizationsPage(
+    organizations: Vec<FleetOrganization>,
+    selected_id: String,
+    on_select: EventHandler<String>,
+    on_create: EventHandler<()>,
+) -> Element {
+    rsx! {
+        FleetPageHeading { eyebrow: "Tenant boundaries", title: "Organizations", detail: "Keep brands, customers and operator grants isolated.", action: "New organization", on_action: on_create }
+        section { class: "panel fleet-list-panel",
+            PanelHeader { eyebrow: "Fleet registry", title: format!("{} organizations", organizations.len()) }
+            if organizations.is_empty() { FleetEmpty { title: "No organizations", detail: "Create the first tenant boundary to continue." } }
+            for record in organizations {
+                button { r#type: "button", class: if record.id == selected_id { "fleet-row selected" } else { "fleet-row" }, onclick: move |_| on_select.call(record.id.clone()),
+                    span { class: "fleet-row-mark", "{initials(&record.name)}" }
+                    span { strong { "{record.name}" } small { "{record.slug}" } }
+                    span { class: "status-badge good", "Active" }
+                    span { class: "mono-value", "{short_id(&record.id)}" }
+                    Icon { icon: TablerIcon::ChevronRight, size: 17 }
+                }
+            }
+        }
+    }
+}
+
+#[component]
+fn FleetProjectsPage(
+    organizations: Vec<FleetOrganization>,
+    projects: Vec<FleetProject>,
+    selected_organization: String,
+    selected_id: String,
+    on_select: EventHandler<String>,
+    on_create: EventHandler<()>,
+) -> Element {
+    let visible = projects
+        .into_iter()
+        .filter(|record| record.organization_id == selected_organization)
+        .collect::<Vec<_>>();
+    let organization_name = organizations
+        .iter()
+        .find(|record| record.id == selected_organization)
+        .map(|record| record.name.as_str())
+        .unwrap_or("Select an organization");
+    rsx! {
+        FleetPageHeading { eyebrow: "Product boundaries", title: "Projects", detail: "Apps and products under the selected organization.", action: "New project", on_action: on_create }
+        p { class: "fleet-scope-label", "Organization / " strong { "{organization_name}" } }
+        section { class: "panel fleet-list-panel",
+            PanelHeader { eyebrow: "Projects", title: format!("{} registered projects", visible.len()) }
+            if visible.is_empty() { FleetEmpty { title: "No projects", detail: "Create a project inside the selected organization." } }
+            for record in visible {
+                button { r#type: "button", class: if record.id == selected_id { "fleet-row selected" } else { "fleet-row" }, onclick: move |_| on_select.call(record.id.clone()),
+                    span { class: "fleet-row-mark", "{initials(&record.name)}" }
+                    span { strong { "{record.name}" } small { "{record.description}" } }
+                    span { class: "status-badge good", "Active" }
+                    span { class: "mono-value", "{record.slug}" }
+                    Icon { icon: TablerIcon::ChevronRight, size: 17 }
+                }
+            }
+        }
+    }
+}
+
+#[component]
+fn FleetEnvironmentsPage(
+    projects: Vec<FleetProject>,
+    environments: Vec<FleetEnvironment>,
+    selected_project: String,
+    selected_id: String,
+    on_select: EventHandler<String>,
+    on_create: EventHandler<()>,
+) -> Element {
+    let visible = environments
+        .into_iter()
+        .filter(|record| record.project_id == selected_project)
+        .collect::<Vec<_>>();
+    let project_name = projects
+        .iter()
+        .find(|record| record.id == selected_project)
+        .map(|record| record.name.as_str())
+        .unwrap_or("Select a project");
+    rsx! {
+        FleetPageHeading { eyebrow: "Deployment boundaries", title: "Environments", detail: "Scale and recover each realm independently.", action: "New environment", on_action: on_create }
+        p { class: "fleet-scope-label", "Project / " strong { "{project_name}" } }
+        section { class: "panel fleet-list-panel",
+            PanelHeader { eyebrow: "Environments", title: format!("{} deployment targets", visible.len()) }
+            if visible.is_empty() { FleetEmpty { title: "No environments", detail: "Create development, staging or production." } }
+            for record in visible {
+                button { r#type: "button", class: if record.id == selected_id { "fleet-row selected" } else { "fleet-row" }, onclick: move |_| on_select.call(record.id.clone()),
+                    span { class: "fleet-row-mark", "{initials(&record.name)}" }
+                    span { strong { "{record.name}" } small { "{record.provider} · {record.region}" } }
+                    span { class: "status-badge good", "Active" }
+                    span { class: "mono-value", "{environment_label(record.kind)}" }
+                    Icon { icon: TablerIcon::ChevronRight, size: 17 }
+                }
+            }
+        }
+    }
+}
+
+#[component]
+fn FleetConnectionsPage(
+    environments: Vec<FleetEnvironment>,
+    connections: Vec<RealmConnection>,
+    selected_environment: String,
+    on_create: EventHandler<()>,
+) -> Element {
+    let visible = connections
+        .into_iter()
+        .filter(|record| record.environment_id == selected_environment)
+        .collect::<Vec<_>>();
+    let environment_name = environments
+        .iter()
+        .find(|record| record.id == selected_environment)
+        .map(|record| record.name.as_str())
+        .unwrap_or("Select an environment");
+    rsx! {
+        FleetPageHeading { eyebrow: "Trust boundaries", title: "Realm connections", detail: "The dashboard never connects directly to a realm database.", action: "Pair realm", on_action: on_create }
+        p { class: "fleet-scope-label", "Environment / " strong { "{environment_name}" } }
+        section { class: "panel fleet-list-panel",
+            PanelHeader { eyebrow: "Connections", title: format!("{} managed realms", visible.len()) }
+            if visible.is_empty() { FleetEmpty { title: "No realm connected", detail: "Generate a pairing code in the realm, then pair its management endpoint." } }
+            for record in visible {
+                div { class: "fleet-row",
+                    span { class: "fleet-row-mark", Icon { icon: TablerIcon::ShieldCheck, size: 18 } }
+                    span { strong { "{record.display_name}" } small { "{record.management_endpoint}" } }
+                    span { class: if record.state == ConnectionState::Healthy { "status-badge good" } else { "status-badge warn" }, "{connection_label(record.state)}" }
+                    span { class: "mono-value", "v{record.deployment_version}" }
+                    span { "{format_time(&record.last_seen_at)}" }
+                }
+            }
+        }
+    }
+}
+
+#[component]
+fn FleetAuditPage(events: Vec<AuditEvent>) -> Element {
+    rsx! {
+        FleetPageHeading { eyebrow: "Control-plane audit", title: "Audit log", detail: "Every Fleet mutation retains its operator, reason and resource scope." }
+        section { class: "panel fleet-list-panel",
+            PanelHeader { eyebrow: "Events", title: format!("{} retained events", events.len()) }
+            if events.is_empty() { FleetEmpty { title: "No mutation events", detail: "Fleet actions will appear here with their request IDs." } }
+            for event in events.into_iter().rev() {
+                div { class: "fleet-row audit",
+                    span { class: "fleet-row-mark", Icon { icon: TablerIcon::ShieldCheck, size: 18 } }
+                    span { strong { "{event.action}" } small { "{event.reason}" } }
+                    span { class: "status-badge good", "Succeeded" }
+                    span { class: "mono-value", "{short_id(&event.operator_id)}" }
+                    span { "{format_time(&event.occurred_at)}" }
+                }
+            }
+        }
+    }
+}
+
+#[component]
+fn FleetPageHeading(
+    eyebrow: &'static str,
+    title: &'static str,
+    detail: &'static str,
+    #[props(default)] action: Option<&'static str>,
+    #[props(default)] on_action: Option<EventHandler<()>>,
+) -> Element {
+    rsx! {
+        section { class: "page-heading",
+            div { p { class: "eyebrow", "{eyebrow}" } h2 { "{title}" } p { "{detail}" } }
+            if let Some(label) = action {
+                button { class: "button secondary", r#type: "button", onclick: move |_| if let Some(handler) = on_action { handler.call(()) },
+                    Icon { icon: TablerIcon::Plus, size: 17 } "{label}"
+                }
+            }
+        }
+    }
+}
+
+#[component]
+fn FleetEmpty(title: &'static str, detail: &'static str) -> Element {
+    rsx! { div { class: "fleet-empty", Icon { icon: TablerIcon::Database, size: 28 } strong { "{title}" } span { "{detail}" } } }
+}
+
+#[component]
+fn FleetPostureRow(label: String, value: String, good: bool) -> Element {
+    let state_class = if good {
+        "state-icon good"
+    } else {
+        "state-icon"
+    };
+    rsx! {
+        div { class: "posture-row",
+            span { class: state_class,
+                if good { Icon { icon: TablerIcon::Check, size: 15 } }
+                else { Icon { icon: TablerIcon::Refresh, size: 15 } }
+            }
+            strong { "{label}" }
+            small { "{value}" }
+        }
+    }
+}
+
+#[component]
+fn FleetCreateDialog(
+    kind: FleetDialogKind,
+    can_create: bool,
+    preview: bool,
+    on_close: EventHandler<()>,
+    on_submit: EventHandler<FleetMutation>,
+) -> Element {
+    let mut name = use_signal(String::new);
+    let mut slug = use_signal(String::new);
+    let mut endpoint = use_signal(|| "http://127.0.0.1:8080".to_string());
+    let mut pairing_code = use_signal(String::new);
+    let (title, detail) = match kind {
+        FleetDialogKind::Organization => {
+            ("New organization", "Create an isolated tenant boundary.")
+        }
+        FleetDialogKind::Project => ("New project", "Create an app or product boundary."),
+        FleetDialogKind::Environment => (
+            "New environment",
+            "Create an independently deployed realm target.",
+        ),
+        FleetDialogKind::Connection => (
+            "Pair a realm",
+            "Exchange a single-use code directly between servers.",
+        ),
+    };
+    rsx! {
+        div { class: "modal-backdrop", onclick: move |_| on_close.call(()),
+            section { class: "modal fleet-dialog", onclick: move |event| event.stop_propagation(),
+                header { div { p { class: "eyebrow", "Fleet setup" } h3 { "{title}" } } button { class: "icon-button", r#type: "button", onclick: move |_| on_close.call(()), Icon { icon: TablerIcon::X, size: 18 } } }
+                p { class: "fleet-dialog-detail", "{detail}" }
+                if !can_create {
+                    p { class: "form-error", "Select the parent resource before continuing." }
+                }
+                form { onsubmit: move |event| {
+                    event.prevent_default();
+                    if !can_create { return; }
+                    let mutation = match kind {
+                        FleetDialogKind::Organization => FleetMutation::Organization { slug: slug(), name: name() },
+                        FleetDialogKind::Project => FleetMutation::Project { slug: slug(), name: name() },
+                        FleetDialogKind::Environment => FleetMutation::Environment { slug: slug(), name: name() },
+                        FleetDialogKind::Connection => FleetMutation::Connection { endpoint: endpoint(), pairing_code: pairing_code() },
+                    };
+                    on_submit.call(mutation);
+                },
+                    if kind == FleetDialogKind::Connection {
+                        label { "Management endpoint" input { r#type: "url", required: true, value: endpoint(), oninput: move |event| endpoint.set(event.value()) } }
+                        label { "Single-use pairing code" input { r#type: "password", required: !preview, placeholder: if preview { "Optional in preview" } else { "rpair_…" }, value: pairing_code(), oninput: move |event| pairing_code.set(event.value()) } }
+                        p { class: "form-hint", "The code is sent to the control plane once and is never stored by this dashboard." }
+                    } else {
+                        label { "Name" input { required: true, maxlength: 120, value: name(), oninput: move |event| name.set(event.value()) } }
+                        label { "Slug" input { required: true, maxlength: 63, pattern: "[a-z0-9]+(?:-[a-z0-9]+)*", value: slug(), oninput: move |event| slug.set(event.value().to_lowercase().replace(' ', "-")) } }
+                    }
+                    div { class: "form-actions", button { class: "button secondary", r#type: "button", onclick: move |_| on_close.call(()), "Cancel" } button { class: "button primary", r#type: "submit", disabled: !can_create, if kind == FleetDialogKind::Connection { "Pair realm" } else { "Create" } } }
+                }
+            }
+        }
+    }
+}
+
+fn short_id(value: &str) -> String {
+    value.chars().take(8).collect()
+}
+
+fn environment_label(value: buffa::EnumValue<EnvironmentKind>) -> &'static str {
+    match value.as_known().unwrap_or(EnvironmentKind::Unspecified) {
+        EnvironmentKind::Development => "Development",
+        EnvironmentKind::Preview => "Preview",
+        EnvironmentKind::Staging => "Staging",
+        EnvironmentKind::Production => "Production",
+        EnvironmentKind::Unspecified => "Unspecified",
+    }
+}
+
+fn connection_label(value: buffa::EnumValue<ConnectionState>) -> &'static str {
+    match value.as_known().unwrap_or(ConnectionState::Unspecified) {
+        ConnectionState::Healthy => "Healthy",
+        ConnectionState::Degraded => "Degraded",
+        ConnectionState::Offline => "Offline",
+        ConnectionState::Pending => "Pending",
+        ConnectionState::Verifying => "Verifying",
+        ConnectionState::Revoked => "Revoked",
+        ConnectionState::Unspecified => "Unknown",
+    }
+}
+
+fn format_time(value: &str) -> String {
+    if value.is_empty() {
+        "Never".into()
+    } else {
+        value.replace('T', " ").trim_end_matches('Z').to_owned()
     }
 }
 
@@ -726,7 +1840,7 @@ fn OverviewPage(
 }
 
 #[component]
-fn MetricCard(label: &'static str, value: String, change: String, tone: &'static str) -> Element {
+fn MetricCard(label: String, value: String, change: String, tone: String) -> Element {
     let change_class = if tone == "good" {
         "positive"
     } else {

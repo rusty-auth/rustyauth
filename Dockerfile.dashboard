@@ -1,0 +1,27 @@
+# The Dioxus dashboard is a separate, stateless artifact. It receives no
+# datastore or RustyAuth master credentials and proxies only named API paths.
+FROM rust:1.94.1-slim-bookworm@sha256:cf9dd0ec73e75f827fe59123fff9dc65af1a1c8363c3c31ee8d7f8ad0b6a5fb2 AS build
+
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends clang curl libssl-dev pkg-config \
+  && rm -rf /var/lib/apt/lists/* \
+  && rustup target add wasm32-unknown-unknown \
+  && cargo install dioxus-cli --version 0.7.10 --locked
+
+WORKDIR /src
+COPY console/Cargo.toml console/Cargo.lock console/build.rs console/Dioxus.toml ./console/
+COPY proto ./proto
+COPY dashboard/src/styles.css ./dashboard/src/styles.css
+COPY site/public/brand ./site/public/brand
+COPY console/src ./console/src
+WORKDIR /src/console
+RUN dx build --web --release --debug-symbols=false --cargo-args="--locked"
+
+FROM caddy:2.10.2-alpine@sha256:4c6e91c6ed0e2fa03efd5b44747b625fec79bc9cd06ac5235a779726618e530d
+LABEL org.opencontainers.image.title="RustyAuth Dashboard" \
+      org.opencontainers.image.description="Stateless Dioxus web dashboard and bounded same-origin gateway" \
+      org.opencontainers.image.source="https://github.com/rusty-auth/rustyauth" \
+      org.opencontainers.image.licenses="Apache-2.0"
+COPY dashboard/Caddyfile /etc/caddy/Caddyfile
+COPY --from=build /src/console/target/dx/rustyauth-console/release/web/public /srv
+EXPOSE 8080

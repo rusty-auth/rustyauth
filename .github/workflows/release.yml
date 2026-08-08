@@ -56,7 +56,7 @@ jobs:
           arguments: --all-features --locked
 
   container:
-    name: Publish container image
+    name: Publish Rust API container images
     runs-on: ubuntu-latest
     needs: verify
     permissions:
@@ -81,8 +81,37 @@ jobs:
           tags: |
             ghcr.io/${{ github.repository }}:${{ github.ref_name }}
             ghcr.io/${{ github.repository }}:latest
+            ghcr.io/rusty-auth/control-plane:${{ github.ref_name }}
+            ghcr.io/rusty-auth/control-plane:latest
           cache-from: type=gha,scope=rustyauth-image
           cache-to: type=gha,scope=rustyauth-image,mode=max
+
+  dashboard-container:
+    name: Publish Dioxus dashboard container image
+    runs-on: ubuntu-latest
+    needs: verify
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+      - uses: docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567 # v3.3.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          context: .
+          file: Dockerfile.dashboard
+          push: true
+          platforms: linux/amd64
+          tags: |
+            ghcr.io/rusty-auth/dashboard:${{ github.ref_name }}
+            ghcr.io/rusty-auth/dashboard:latest
+          cache-from: type=gha,scope=dashboard-image
+          cache-to: type=gha,scope=dashboard-image,mode=max
 
   sabledb-container:
     name: Publish SableDB container image
@@ -131,10 +160,6 @@ jobs:
         working-directory: packages/protocol
         continue-on-error: true
         run: deno publish
-      - name: Publish @rustyauth/connect-solid
-        working-directory: packages/connect-solid
-        continue-on-error: true
-        run: deno publish
       - name: Publish @rustyauth/client
         working-directory: packages/client
         continue-on-error: true
@@ -143,7 +168,7 @@ jobs:
   github-release:
     name: Create GitHub release
     runs-on: ubuntu-latest
-    needs: [container, sabledb-container, jsr]
+    needs: [container, dashboard-container, sabledb-container, jsr]
     permissions:
       contents: write
     steps:
@@ -155,4 +180,4 @@ jobs:
           gh release create "${GITHUB_REF_NAME}" \
             --title "RustyAuth ${GITHUB_REF_NAME}" \
             --generate-notes \
-            --notes "Full details in [CHANGELOG.md](https://github.com/${GITHUB_REPOSITORY}/blob/${GITHUB_REF_NAME}/CHANGELOG.md). Container image: \`ghcr.io/${GITHUB_REPOSITORY}:${GITHUB_REF_NAME}\`."
+            --notes "Full details in [CHANGELOG.md](https://github.com/${GITHUB_REPOSITORY}/blob/${GITHUB_REF_NAME}/CHANGELOG.md). Images: \`ghcr.io/${GITHUB_REPOSITORY}:${GITHUB_REF_NAME}\`, \`ghcr.io/rusty-auth/control-plane:${GITHUB_REF_NAME}\`, \`ghcr.io/rusty-auth/dashboard:${GITHUB_REF_NAME}\`, and \`ghcr.io/rusty-auth/sabledb:${GITHUB_REF_NAME}\`."

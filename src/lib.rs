@@ -14,6 +14,7 @@ pub mod event_rpc;
 pub mod fleet_rpc;
 pub mod identity_rpc;
 pub mod jwt;
+pub mod management_rpc;
 pub mod operator_auth;
 pub mod organization_rpc;
 pub mod rate_limit;

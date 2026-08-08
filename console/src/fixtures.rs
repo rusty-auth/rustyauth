@@ -2,6 +2,106 @@ use crate::models::{
     MetricView, OperatorView, OrganizationView, ServiceAccountView, ServiceCredentialView,
     UserView, WebhookView,
 };
+use crate::proto::rustyauth::fleet::v1::{
+    ConnectionMode, ConnectionState, Environment, EnvironmentKind, Organization, Project,
+    RealmConnection, ResourceState,
+};
+
+pub fn preview_fleet_organizations() -> Vec<Organization> {
+    vec![Organization {
+        id: "4da8d788-ea8d-4d99-b7db-73567db6f0fb".into(),
+        slug: "rustyauth".into(),
+        name: "RustyAuth".into(),
+        state: ResourceState::Active.into(),
+        created_at: "2026-07-18T09:42:00Z".into(),
+        updated_at: "2026-08-08T08:20:00Z".into(),
+        ..Default::default()
+    }]
+}
+
+pub fn preview_fleet_projects() -> Vec<Project> {
+    let organization_id = preview_fleet_organizations()[0].id.clone();
+    vec![
+        Project {
+            id: "8d46e22a-5a4f-4bf2-a05a-20e81ee5cc49".into(),
+            organization_id: organization_id.clone(),
+            slug: "cloud".into(),
+            name: "RustyAuth Cloud".into(),
+            description: "Hosted authentication realms".into(),
+            state: ResourceState::Active.into(),
+            created_at: "2026-07-19T10:00:00Z".into(),
+            updated_at: "2026-08-08T08:20:00Z".into(),
+            ..Default::default()
+        },
+        Project {
+            id: "2a288fe4-314f-40b0-82e6-1460a264ae53".into(),
+            organization_id,
+            slug: "studio".into(),
+            name: "RustyAuth Studio".into(),
+            description: "Internal product realm".into(),
+            state: ResourceState::Active.into(),
+            created_at: "2026-07-22T12:00:00Z".into(),
+            updated_at: "2026-08-07T16:40:00Z".into(),
+            ..Default::default()
+        },
+    ]
+}
+
+pub fn preview_fleet_environments() -> Vec<Environment> {
+    let project = &preview_fleet_projects()[0];
+    vec![
+        Environment {
+            id: "0c613c1c-5e77-4d48-b20e-c8831279ee6c".into(),
+            organization_id: project.organization_id.clone(),
+            project_id: project.id.clone(),
+            slug: "production".into(),
+            name: "Production".into(),
+            kind: EnvironmentKind::Production.into(),
+            provider: "Railway".into(),
+            region: "europe-west4".into(),
+            state: ResourceState::Active.into(),
+            created_at: "2026-07-20T10:00:00Z".into(),
+            updated_at: "2026-08-08T08:20:00Z".into(),
+            ..Default::default()
+        },
+        Environment {
+            id: "48f26545-271d-4c6c-8db3-7f9a354ba19f".into(),
+            organization_id: project.organization_id.clone(),
+            project_id: project.id.clone(),
+            slug: "staging".into(),
+            name: "Staging".into(),
+            kind: EnvironmentKind::Staging.into(),
+            provider: "Railway".into(),
+            region: "europe-west4".into(),
+            state: ResourceState::Active.into(),
+            created_at: "2026-07-20T10:05:00Z".into(),
+            updated_at: "2026-08-08T08:18:00Z".into(),
+            ..Default::default()
+        },
+    ]
+}
+
+pub fn preview_fleet_connections() -> Vec<RealmConnection> {
+    let environment = &preview_fleet_environments()[0];
+    vec![RealmConnection {
+        id: "dd87912a-ecf6-4516-bf6d-e6c7c93a123f".into(),
+        organization_id: environment.organization_id.clone(),
+        project_id: environment.project_id.clone(),
+        environment_id: environment.id.clone(),
+        realm_id: "realm-production-eu".into(),
+        display_name: "Production EU".into(),
+        mode: ConnectionMode::PublicEndpoint.into(),
+        management_endpoint: "https://auth.example.com".into(),
+        credential_reference: "fleet-credential://dd87912a-ecf6-4516-bf6d-e6c7c93a123f".into(),
+        deployment_version: "0.1.0".into(),
+        protocol_version: "1".into(),
+        state: ConnectionState::Healthy.into(),
+        last_seen_at: "2026-08-08T08:28:00Z".into(),
+        created_at: "2026-08-01T10:00:00Z".into(),
+        updated_at: "2026-08-08T08:28:00Z".into(),
+        ..Default::default()
+    }]
+}
 
 pub const PREVIEW_OPERATOR: OperatorView = OperatorView {
     id: "780a15cd-d5d9-4ebf-82a2-30aff74f06bf",

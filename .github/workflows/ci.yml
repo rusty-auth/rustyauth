@@ -75,18 +75,6 @@ jobs:
       - uses: Swatinem/rust-cache@49a0bdc70d2e1b713ca9e2869b211fcce03d3c1c # v2
       - run: cargo test --locked
 
-  dashboard:
-    name: Dashboard checks
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-      - uses: denoland/setup-deno@22d081ff2d3a40755e97629de92e3bcbfa7cf2ed # v2
-        with:
-          deno-version: 2.9.3
-      - run: deno install --frozen
-      - run: deno task dashboard:check
-      - run: deno task dashboard:build
-
   console:
     name: Dioxus console checks
     runs-on: ubuntu-latest
@@ -185,7 +173,7 @@ jobs:
         run: docker compose -f compose.integration.yaml down --volumes
 
   container:
-    name: Container build
+    name: Rust API container build
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -197,3 +185,29 @@ jobs:
           tags: rustyauth:ci
           cache-from: type=gha,scope=rustyauth-image
           cache-to: type=gha,scope=rustyauth-image,mode=max
+
+  dashboard-container:
+    name: Dioxus dashboard container build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+      - uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          context: .
+          file: Dockerfile.dashboard
+          push: false
+          tags: rustyauth-dashboard:ci
+          cache-from: type=gha,scope=dashboard-image
+          cache-to: type=gha,scope=dashboard-image,mode=max
+      - name: Validate three-service Compose templates
+        env:
+          AUTH_MASTER_KEY_HEX: compose-validation-only
+          BOOTSTRAP_TOKEN: compose-validation-only
+          AUTH_EVENT_RPC_TOKEN: compose-validation-only
+          AUTH_IDENTITY_RPC_TOKEN: compose-validation-only
+          FLEET_AUTH_MASTER_KEY_HEX: compose-validation-only
+          FLEET_BOOTSTRAP_TOKEN: compose-validation-only
+        run: |
+          docker compose -f compose.yaml config --quiet
+          docker compose -f compose.fleet.yaml config --quiet

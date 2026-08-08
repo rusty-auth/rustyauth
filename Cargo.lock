@@ -1009,13 +1009,17 @@ dependencies = [
  "http-body 1.1.0",
  "http-body-util",
  "hyper",
+ "hyper-rustls",
  "hyper-util",
  "percent-encoding",
  "pin-project",
+ "rustls",
+ "rustls-pki-types",
  "serde",
  "serde_json",
  "thiserror 2.0.19",
  "tokio",
+ "tokio-rustls",
  "tokio-util",
  "tower",
  "tracing",
@@ -2826,6 +2830,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0283386ce02abc0151e1761d08802dfe86c173b0b494af5cbc086574e453da06"
 dependencies = [
  "aws-lc-rs",
+ "log",
  "once_cell",
  "rustls-pki-types",
  "rustls-webpki",
@@ -2912,6 +2917,7 @@ dependencies = [
  "url",
  "uuid",
  "webauthn-rs",
+ "webpki-roots",
  "zeroize",
  "zstd",
 ]
@@ -3794,6 +3800,15 @@ dependencies = [
  "serde",
  "serde_json",
  "url",
+]
+
+[[package]]
+name = "webpki-roots"
+version = "1.0.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7dcd9d09a39985f5344844e66b0c530a33843579125f23e21e9f0f220850f22a"
+dependencies = [
+ "rustls-pki-types",
 ]
 
 [[package]]

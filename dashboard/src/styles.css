@@ -1532,6 +1532,38 @@ meter::-moz-meter-bar {
   color: var(--copper-deep);
 }
 
+.auth-setup-link,
+.aperture-setup-link {
+  display: block;
+  width: 100%;
+  margin: 12px 0 0;
+  padding: 3px;
+  border: 0;
+  background: transparent;
+  color: var(--copper-deep);
+  font: 9px/1.5 var(--mono);
+  text-align: center;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.auth-setup-link:hover {
+  color: var(--copper);
+}
+
+.setup-card {
+  padding-top: clamp(28px, 4vw, 42px);
+  padding-bottom: clamp(28px, 4vw, 42px);
+}
+
+.setup-card .auth-copy {
+  margin: 27px 0 21px;
+}
+
+.setup-card .auth-copy h1 {
+  font-size: clamp(31px, 4vw, 43px);
+}
+
 .auth-aside {
   display: grid;
   align-content: center;
@@ -1975,6 +2007,15 @@ meter::-moz-meter-bar {
   background: rgba(255, 255, 255, 0.035);
   color: #fff8ed;
   transform: translateY(-1px);
+}
+
+.aperture-setup-link {
+  color: rgba(225, 105, 43, 0.86);
+  animation: aperture-child-enter 500ms 345ms cubic-bezier(0.2, 0.82, 0.2, 1) both;
+}
+
+.aperture-setup-link:hover {
+  color: #f18a4f;
 }
 
 .aperture-footnote {
@@ -3124,6 +3165,260 @@ legend {
   }
 }
 
+/* Fleet control plane ----------------------------------------------------- */
+
+.fleet-alert,
+.fleet-loading {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 14px;
+  padding: 10px 12px;
+  border: 1px solid rgba(164, 60, 46, 0.35);
+  border-left: 3px solid var(--red);
+  border-radius: 3px;
+  background: rgba(255, 250, 240, 0.82);
+  color: var(--red);
+  font-size: 12px;
+}
+
+.fleet-alert span {
+  flex: 1;
+}
+
+.fleet-alert button {
+  display: grid;
+  padding: 3px;
+  border: 0;
+  background: transparent;
+}
+
+.fleet-loading {
+  border-color: rgba(204, 90, 25, 0.25);
+  border-left-color: var(--copper);
+  color: var(--ink-soft);
+}
+
+.fleet-loading span {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--copper);
+  box-shadow: 0 0 0 0 rgba(204, 90, 25, 0.35);
+  animation: fleet-pulse 1.35s ease-out infinite;
+}
+
+@keyframes fleet-pulse {
+  70% {
+    box-shadow: 0 0 0 7px rgba(204, 90, 25, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(204, 90, 25, 0);
+  }
+}
+
+.fleet-map-panel {
+  min-height: 298px;
+}
+
+.fleet-topology {
+  display: grid;
+  min-height: 216px;
+  grid-template-columns: minmax(0, 1fr) 30px minmax(0, 1fr) 30px minmax(0, 1fr);
+  align-items: center;
+  padding: 25px 20px;
+}
+
+.fleet-topology > div {
+  display: grid;
+  min-height: 108px;
+  align-content: center;
+  gap: 7px;
+  padding: 17px;
+  border: 1px solid var(--line-strong);
+  border-top: 3px solid var(--copper);
+  border-radius: 3px;
+  background: rgba(255, 250, 240, 0.68);
+  box-shadow: 0 8px 20px rgba(37, 35, 33, 0.04);
+}
+
+.fleet-topology strong {
+  font-size: 12px;
+}
+
+.fleet-topology span {
+  color: var(--ink-soft);
+  font: 9px/1.55 var(--mono);
+}
+
+.fleet-topology i {
+  height: 1px;
+  background: var(--line-strong);
+}
+
+.fleet-topology i::after {
+  display: block;
+  width: 5px;
+  height: 5px;
+  margin: -2px 0 0 auto;
+  border-top: 1px solid var(--ink-soft);
+  border-right: 1px solid var(--ink-soft);
+  content: "";
+  transform: rotate(45deg);
+}
+
+.fleet-scope-label {
+  margin: -10px 0 12px;
+  color: var(--ink-soft);
+  font: 9px/1.5 var(--mono);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.fleet-scope-label strong {
+  color: var(--copper-deep);
+  font-weight: 650;
+}
+
+.fleet-list-panel {
+  overflow: hidden;
+}
+
+.fleet-row {
+  display: grid;
+  width: 100%;
+  min-height: 67px;
+  grid-template-columns: 36px minmax(190px, 1.8fr) minmax(92px, 0.6fr) minmax(100px, 0.8fr) auto;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 17px;
+  border: 0;
+  border-top: 1px solid var(--line);
+  background: transparent;
+  text-align: left;
+  transition: background-color 150ms ease, box-shadow 150ms ease;
+}
+
+button.fleet-row:hover,
+button.fleet-row.selected {
+  background: rgba(204, 90, 25, 0.055);
+  box-shadow: inset 3px 0 var(--copper);
+}
+
+.fleet-row > span:nth-child(2) {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.fleet-row strong {
+  overflow: hidden;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fleet-row small {
+  overflow: hidden;
+  color: var(--ink-soft);
+  font: 9px/1.45 var(--mono);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fleet-row-mark {
+  display: grid !important;
+  width: 34px;
+  height: 34px;
+  place-items: center;
+  border: 1px solid rgba(204, 90, 25, 0.2);
+  border-radius: 50%;
+  background: rgba(204, 90, 25, 0.08);
+  color: var(--copper-deep);
+  font: 700 9px var(--mono);
+}
+
+.fleet-row.audit {
+  grid-template-columns: 36px minmax(220px, 1.8fr) 95px 100px 150px;
+}
+
+.fleet-empty {
+  display: grid;
+  min-height: 210px;
+  place-items: center;
+  align-content: center;
+  gap: 7px;
+  padding: 28px;
+  color: var(--ink-soft);
+  text-align: center;
+}
+
+.fleet-empty svg {
+  margin-bottom: 5px;
+  color: var(--copper);
+}
+
+.fleet-empty strong {
+  color: var(--ink);
+  font-size: 13px;
+}
+
+.fleet-empty span {
+  max-width: 390px;
+  font: 9px/1.6 var(--mono);
+}
+
+.fleet-empty.compact {
+  min-height: 216px;
+}
+
+.fleet-dialog {
+  width: min(520px, calc(100vw - 32px));
+}
+
+.fleet-dialog-detail {
+  margin: 0 0 18px;
+  color: var(--ink-soft);
+  font-size: 12px;
+}
+
+.fleet-dialog label {
+  display: grid;
+  gap: 6px;
+  color: var(--ink-soft);
+  font: 8px/1.4 var(--mono);
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+
+.fleet-dialog input {
+  width: 100%;
+  height: 43px;
+  padding: 0 12px;
+  border: 1px solid var(--line-strong);
+  border-radius: 2px;
+  background: rgba(255, 250, 240, 0.8);
+  color: var(--ink);
+  font: 12px var(--sans);
+  text-transform: none;
+}
+
+.fleet-dialog input:focus {
+  border-color: var(--copper);
+  outline: 0;
+  box-shadow: 0 0 0 2px rgba(204, 90, 25, 0.1);
+}
+
+.fleet-dialog .form-hint {
+  margin: 0;
+  color: var(--ink-soft);
+  font: 8px/1.6 var(--mono);
+}
+
+.fleet-dialog .form-actions {
+  margin-top: 8px;
+}
+
 @media (max-width: 1050px) {
   .metric-grid,
   .metrics-full {
@@ -3140,6 +3435,31 @@ legend {
 
   .failure-grid .funnel-row:nth-child(odd) {
     border-right: 0;
+  }
+
+  .fleet-topology {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+
+  .fleet-topology i {
+    width: 1px;
+    height: 18px;
+    margin: 0 auto;
+  }
+
+  .fleet-topology i::after {
+    margin: auto 0 -1px -2px;
+    transform: rotate(135deg);
+  }
+
+  .fleet-row {
+    grid-template-columns: 36px minmax(160px, 1fr) auto;
+  }
+
+  .fleet-row > :nth-child(4),
+  .fleet-row > :nth-child(5) {
+    display: none;
   }
 }
 

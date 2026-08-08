@@ -30,7 +30,7 @@ aws-sdk-s3 = { version = "1.141", default-features = false, features = [
 axum = "0.8"
 base64 = "0.22"
 buffa = "0.8.1"
-connectrpc = { version = "0.8.1", features = ["axum"] }
+connectrpc = { version = "0.8.1", features = ["axum", "client", "client-tls"] }
 futures = "0.3"
 hex = "0.4"
 http = "1"
@@ -53,6 +53,7 @@ tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 url = { version = "2", features = ["serde"] }
 uuid = { version = "1", features = ["serde", "v4"] }
 webauthn-rs = { version = "=0.5.5", default-features = false, features = ["danger-allow-state-serialisation", "danger-credential-internals"] }
+webpki-roots = "1"
 zeroize = "1"
 zstd = "0.13"
 
