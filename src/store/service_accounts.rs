@@ -355,6 +355,9 @@ impl Store {
                 .query_async(&mut connection)
                 .await
                 .context("scan RustyAuth service account credential locators")?;
+            // The keys actually returned, not the COUNT hint, which SCAN treats as
+            // advisory and commonly undershoots.
+            scanned = scanned.saturating_add(batch.len());
             for key in batch {
                 // A locator that will not decode is skipped rather than propagated.
                 // Failing here would let one unreadable value block revocation of
@@ -370,7 +373,6 @@ impl Store {
                     }
                 }
             }
-            scanned = scanned.saturating_add(500);
             if scanned > MAX_SNAPSHOT_KEYS {
                 bail!("RustyAuth service credential namespace exceeds the safety limit");
             }

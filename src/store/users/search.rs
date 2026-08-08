@@ -172,21 +172,20 @@ impl Store {
                 .query_async(&mut connection)
                 .await
                 .context("scan RustyAuth users")?;
+            // Counting the keys actually returned, not the COUNT hint. SCAN treats
+            // COUNT as advisory and commonly returns fewer, so assuming 500 per
+            // iteration overcounts and trips the safety limit on a namespace far
+            // smaller than a million — which would break search rather than
+            // protect it.
+            scanned = scanned.saturating_add(batch.len());
+            let mut parsed = Vec::with_capacity(batch.len());
             for key in batch {
                 let id = key
                     .strip_prefix("auth:user:")
                     .context("user scan returned an invalid key")?;
-                let id = Uuid::parse_str(id).context("stored user key has an invalid id")?;
-                if after.is_some_and(|cursor| id <= cursor) {
-                    continue;
-                }
-                ids.insert(id);
-                if ids.len() > limit {
-                    let highest = *ids.iter().next_back().expect("just inserted");
-                    ids.remove(&highest);
-                }
+                parsed.push(Uuid::parse_str(id).context("stored user key has an invalid id")?);
             }
-            scanned = scanned.saturating_add(500);
+            ids = accumulate_candidates(ids.into_iter().chain(parsed), after, limit);
             if scanned > MAX_SNAPSHOT_KEYS {
                 bail!("RustyAuth user namespace exceeds the one-million-key safety limit");
             }
@@ -197,6 +196,32 @@ impl Store {
         }
         Ok(ids.into_iter().collect())
     }
+}
+
+/// The `limit` smallest ids strictly greater than `after`, from an arbitrary
+/// arrival order.
+///
+/// Factored out of the SCAN loop so the paging invariant can be tested without a
+/// datastore: SCAN returns keys in arbitrary order, so this ordered, bounded
+/// accumulation is what makes paging safe while keeping memory proportional to a
+/// page rather than to the account namespace.
+fn accumulate_candidates<I: IntoIterator<Item = Uuid>>(
+    ids: I,
+    after: Option<Uuid>,
+    limit: usize,
+) -> BTreeSet<Uuid> {
+    let mut kept: BTreeSet<Uuid> = BTreeSet::new();
+    for id in ids {
+        if after.is_some_and(|cursor| id <= cursor) {
+            continue;
+        }
+        kept.insert(id);
+        if kept.len() > limit {
+            let highest = *kept.iter().next_back().expect("just inserted");
+            kept.remove(&highest);
+        }
+    }
+    kept
 }
 
 /// Chooses the cursor a search page hands back.
@@ -224,6 +249,64 @@ fn search_page_cursor(
 mod tests {
     use super::*;
     use crate::store::{AccountIdentifier, AccountProfile, IdentifierKind};
+
+    /// Paging must neither skip nor repeat an account.
+    ///
+    /// SCAN returns keys in arbitrary order and the accumulator keeps only a
+    /// page's worth, so this is the invariant that makes those two facts safe
+    /// together: walking the pages in order must reproduce every id exactly once,
+    /// in ascending order, whatever order the scan produced them in.
+    #[test]
+    fn paging_covers_every_account_exactly_once() {
+        let mut all: Vec<Uuid> = (0..50).map(|_| Uuid::new_v4()).collect();
+        // An arrival order deliberately unrelated to sort order.
+        all.sort_by_key(|id| std::cmp::Reverse(id.as_u128()));
+        let arrival = all.clone();
+
+        let mut sorted = all.clone();
+        sorted.sort();
+
+        let page = 7_usize;
+        let mut seen: Vec<Uuid> = Vec::new();
+        let mut after: Option<Uuid> = None;
+        for _ in 0..(sorted.len() / page + 2) {
+            let batch: Vec<Uuid> = accumulate_candidates(arrival.iter().copied(), after, page)
+                .into_iter()
+                .collect();
+            if batch.is_empty() {
+                break;
+            }
+            assert!(
+                batch.windows(2).all(|pair| pair[0] < pair[1]),
+                "a page must be ascending"
+            );
+            after = batch.last().copied();
+            seen.extend(batch);
+        }
+        assert_eq!(seen, sorted, "paging must reproduce every id exactly once");
+    }
+
+    #[test]
+    fn the_accumulator_keeps_the_smallest_ids_above_the_cursor() {
+        let ids: Vec<Uuid> = (0..20).map(|_| Uuid::new_v4()).collect();
+        let mut sorted = ids.clone();
+        sorted.sort();
+
+        let kept: Vec<Uuid> = accumulate_candidates(ids.iter().copied(), None, 5)
+            .into_iter()
+            .collect();
+        assert_eq!(kept, sorted[..5], "must keep the five smallest");
+
+        // Everything at or below the cursor is excluded, never merely reordered.
+        let cursor = sorted[9];
+        let after: Vec<Uuid> = accumulate_candidates(ids.iter().copied(), Some(cursor), 5)
+            .into_iter()
+            .collect();
+        assert_eq!(after, sorted[10..15]);
+
+        // A limit of zero yields nothing rather than panicking on the eviction.
+        assert!(accumulate_candidates(ids.iter().copied(), None, 0).is_empty());
+    }
 
     fn account(id: Uuid, session_version: u64) -> User {
         User {
