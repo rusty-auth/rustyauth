@@ -169,7 +169,7 @@ async fn release_maintenance_lock(mut redis: redis::aio::ConnectionManager, toke
         // SABLEDB_URL also accepts a plain Valkey or Redis endpoint, which has no
         // DELIFEQ. The scripted form is the same compare-and-delete; without it a
         // held lock would block rotation until its TTL lapsed.
-        Err(_) => {
+        Err(error) if is_unknown_command(&error) => {
             let mut command = redis::cmd("EVAL");
             command
                 .arg(COMPARE_AND_DELETE)
@@ -178,6 +178,7 @@ async fn release_maintenance_lock(mut redis: redis::aio::ConnectionManager, toke
                 .arg(token);
             command.query_async::<i64>(&mut redis).await
         }
+        Err(error) => Err(error),
     };
     match released {
         Ok(1) => {}
@@ -292,6 +293,17 @@ fn log_transitions(before: &StoredKeySet, after: &StoredKeySet) {
     {
         info!(kid = %after.active.kid, wrapping_key_id = %after.active.encrypted_private_key.wrapping_key_id, "signing key rewrapped");
     }
+}
+
+/// Whether a datastore error means "this command does not exist here".
+///
+/// Only an unknown-command error justifies retrying with the scripted form. A
+/// timeout or a dropped connection means the command may well have run, and
+/// retrying it against a datastore that has no EVAL just produces a second
+/// failure that hides the first.
+fn is_unknown_command(error: &redis::RedisError) -> bool {
+    let text = error.to_string().to_ascii_lowercase();
+    text.contains("unknown command") || text.contains("unsupported command")
 }
 
 #[cfg(test)]

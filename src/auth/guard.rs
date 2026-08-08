@@ -28,17 +28,8 @@ pub(super) fn require_rate_limit(
     class: RateLimitClass,
     subject: Option<&str>,
 ) -> Result<(), ApiError> {
-    // Every X-Forwarded-For line is joined, not just the first. A proxy may append
-    // a second header rather than extending the first, which would otherwise leave
-    // a client-supplied line in front and let the caller choose its own bucket.
-    let forwarded = headers
-        .get_all("x-forwarded-for")
-        .iter()
-        .filter_map(|value| value.to_str().ok())
-        .collect::<Vec<_>>()
-        .join(",");
-    let forwarded = (!forwarded.is_empty()).then_some(forwarded.as_str());
-    let address = client_address(peer.ip(), forwarded, state.trusted_proxy_hops);
+    let forwarded = joined_forwarded_for(headers);
+    let address = client_address(peer.ip(), forwarded.as_deref(), state.trusted_proxy_hops);
     let mut decisions = vec![state.rate_limiter.check(class, &format!("addr:{address}"))];
     if let Some(subject) = subject {
         decisions.push(state.rate_limiter.check(class, &format!("subj:{subject}")));
@@ -47,6 +38,22 @@ pub(super) fn require_rate_limit(
         Some(refused) => Err(ApiError::too_many_requests(refused.retry_after_seconds)),
         None => Ok(()),
     }
+}
+
+/// Joins every `X-Forwarded-For` header line into one comma-separated value.
+///
+/// A proxy may append a second header rather than extending the first. Reading
+/// only the first line would then leave a client-supplied value in front, and the
+/// caller could choose its own rate-limit bucket — which is the whole thing
+/// `AUTH_TRUSTED_PROXY_HOPS` exists to prevent.
+fn joined_forwarded_for(headers: &HeaderMap) -> Option<String> {
+    let joined = headers
+        .get_all("x-forwarded-for")
+        .iter()
+        .filter_map(|value| value.to_str().ok())
+        .collect::<Vec<_>>()
+        .join(",");
+    (!joined.is_empty()).then_some(joined)
 }
 
 pub(super) fn require_origin(state: &AppState, headers: &HeaderMap) -> Result<(), ApiError> {
@@ -122,10 +129,36 @@ pub(super) async fn authenticated<'a>(
 mod tests {
     use uuid::Uuid;
 
+    use http::HeaderMap;
+
     use super::{
-        CEREMONY_SECONDS, bootstrap_token_matches, require_passkey_session, require_recent_passkey,
+        CEREMONY_SECONDS, bootstrap_token_matches, joined_forwarded_for, require_passkey_session,
+        require_recent_passkey,
     };
     use crate::store::{Session, now};
+
+    /// A proxy may append a second header line rather than extending the first.
+    ///
+    /// Reading only the first would leave a client-supplied value in front, and
+    /// `client_address` would then select from the caller's own list — letting the
+    /// caller choose its rate-limit bucket, which is exactly what the trusted-hop
+    /// setting exists to prevent. The rate_limit tests pass a pre-joined string and
+    /// so cannot see this; only the header read can.
+    #[test]
+    fn every_forwarded_for_line_is_joined_in_order() {
+        let mut headers = HeaderMap::new();
+        assert_eq!(joined_forwarded_for(&headers), None);
+
+        headers.append("x-forwarded-for", "9.9.9.9".parse().unwrap());
+        assert_eq!(joined_forwarded_for(&headers).as_deref(), Some("9.9.9.9"));
+
+        // The proxy's own line arrives as a separate header and must come last.
+        headers.append("x-forwarded-for", "198.51.100.7".parse().unwrap());
+        assert_eq!(
+            joined_forwarded_for(&headers).as_deref(),
+            Some("9.9.9.9,198.51.100.7")
+        );
+    }
 
     #[test]
     fn bootstrap_enrolment_rejects_every_token_but_the_configured_one() {

@@ -202,11 +202,22 @@ impl Config {
             86_400,
         )?;
         let maintenance_seconds = integer("AUTH_KEY_MAINTENANCE_SECONDS", 30, 5, 3_600)?;
-        // Defaults to zero so X-Forwarded-For is ignored until an operator states
-        // how many proxies they actually run. Trusting the header by default would
-        // let any client pick its own rate-limit bucket by forging one.
+        // Zero means X-Forwarded-For is ignored and the TCP peer identifies the
+        // client. Trusting the header by default would let any client forge its own
+        // rate-limit bucket — but leaving it at zero behind a proxy is just as
+        // broken in the other direction: every client then shares the edge's
+        // address, so one abuser exhausts the budget for everyone and no attacker
+        // can be isolated. Production must state its topology rather than inherit
+        // either failure silently.
         let trusted_proxy_hops =
             usize::try_from(integer("AUTH_TRUSTED_PROXY_HOPS", 0, 0, 8)?).unwrap_or(0);
+        if environment == Environment::Production && optional("AUTH_TRUSTED_PROXY_HOPS").is_none() {
+            bail!(
+                "AUTH_TRUSTED_PROXY_HOPS must be set explicitly in production: use the number of \
+                 reverse proxies in front of this service (1 when the platform terminates TLS), or \
+                 0 only when clients connect to this process directly"
+            );
+        }
 
         validate_origin(&environment, "AUTH_ISSUER", &issuer)?;
         validate_origin(&environment, "WEBAUTHN_RP_ORIGIN", &rp_origin)?;
@@ -220,6 +231,8 @@ impl Config {
             bail!("BOOTSTRAP_TOKEN must contain at least 32 characters in production");
         }
         validate_rpc_tokens(&bootstrap_token, &event_rpc_token, &identity_rpc_token)?;
+
+        let backup = BackupConfig::from_env(&environment)?;
 
         Ok(Self {
             environment,
@@ -248,7 +261,7 @@ impl Config {
                 maintenance_seconds,
             },
             trusted_proxy_hops,
-            backup: BackupConfig::from_env()?,
+            backup,
         })
     }
 }
@@ -273,7 +286,7 @@ fn parse_operator_emails(value: Option<String>) -> Result<Vec<String>> {
 }
 
 impl BackupConfig {
-    fn from_env() -> Result<Option<Self>> {
+    fn from_env(environment: &Environment) -> Result<Option<Self>> {
         let names = [
             "AUTH_BACKUP_ENDPOINT",
             "AUTH_BACKUP_REGION",
@@ -310,8 +323,16 @@ impl BackupConfig {
             _ => bail!("AUTH_BACKUP_URL_STYLE must be virtual or path"),
         };
 
+        let endpoint = parse_url("AUTH_BACKUP_ENDPOINT")?;
+        // The only URL that was never scheme-checked. Snapshots carry every account
+        // and the wrapped signing keys, and the SigV4 Authorization header carries
+        // the access key id, so a cleartext endpoint exposes both on the wire — and
+        // lets an on-path attacker answer a restore with an older genuine snapshot,
+        // rolling identity state back past a revocation.
+        validate_backup_endpoint(environment, &endpoint)?;
+
         Ok(Some(Self {
-            endpoint: parse_url("AUTH_BACKUP_ENDPOINT")?,
+            endpoint,
             region: required("AUTH_BACKUP_REGION")?,
             bucket: required("AUTH_BACKUP_BUCKET")?,
             access_key_id: SecretString::from(required("AUTH_BACKUP_ACCESS_KEY_ID")?),
@@ -419,6 +440,18 @@ fn validate_rp(rp_id: &str, origin: &Url) -> Result<()> {
     Ok(())
 }
 
+/// Backups must not cross the network in the clear in production, and the scheme
+/// must be one the S3 client can actually speak.
+fn validate_backup_endpoint(environment: &Environment, value: &Url) -> Result<()> {
+    if !matches!(value.scheme(), "http" | "https") {
+        bail!("AUTH_BACKUP_ENDPOINT must use HTTP or HTTPS");
+    }
+    if environment == &Environment::Production && value.scheme() != "https" {
+        bail!("AUTH_BACKUP_ENDPOINT must use HTTPS in production");
+    }
+    Ok(())
+}
+
 fn validate_sable_url(environment: &Environment, value: &SecretString) -> Result<()> {
     let url = Url::parse(value.expose_secret()).context("SABLEDB_URL is invalid")?;
     // `rediss` is accepted so a deployment can encrypt datastore traffic. Rejecting
@@ -483,6 +516,22 @@ mod tests {
         let origin = Url::parse("https://auth.example.com").unwrap();
         assert!(validate_rp("auth.example.com", &origin).is_ok());
         assert!(validate_rp("example.com", &origin).is_err());
+    }
+
+    #[test]
+    fn backup_endpoints_must_be_https_in_production() {
+        let plaintext = Url::parse("http://objects.internal:9000").unwrap();
+        let secure = Url::parse("https://objects.example.com").unwrap();
+        let other = Url::parse("ftp://objects.example.com").unwrap();
+
+        // Snapshots carry every account and the wrapped signing keys, and the
+        // SigV4 header carries the access key id, so cleartext exposes both.
+        assert!(validate_backup_endpoint(&Environment::Production, &plaintext).is_err());
+        assert!(validate_backup_endpoint(&Environment::Production, &secure).is_ok());
+        // A loopback MinIO is the documented development sink.
+        assert!(validate_backup_endpoint(&Environment::Development, &plaintext).is_ok());
+        // A scheme the client cannot speak should fail at startup, not first upload.
+        assert!(validate_backup_endpoint(&Environment::Development, &other).is_err());
     }
 
     #[test]

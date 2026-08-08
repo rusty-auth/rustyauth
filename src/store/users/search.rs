@@ -110,10 +110,7 @@ impl Store {
         let mut users = Vec::with_capacity(page_size.saturating_add(1));
         let mut examined = 0_usize;
         let mut last_examined = None;
-        for id in self.user_ids().await? {
-            if after.is_some_and(|cursor| id <= cursor) {
-                continue;
-            }
+        for id in self.candidate_ids(after, MAX_SEARCH_CANDIDATES).await? {
             if examined == MAX_SEARCH_CANDIDATES {
                 break;
             }
@@ -148,9 +145,22 @@ impl Store {
         Ok(UserSearchPage { users, next_after })
     }
 
-    async fn user_ids(&self) -> Result<Vec<Uuid>> {
+    /// The next candidate ids after `after`, in ascending order, at most `limit`.
+    ///
+    /// SCAN returns keys in arbitrary order, so ordered paging needs the whole
+    /// namespace considered — but not held. Only the smallest `limit` ids above
+    /// the cursor are kept, and larger ones are dropped as they arrive, so memory
+    /// is bounded by the page budget rather than by the number of accounts. On a
+    /// million-account tenant the previous version materialised every id per
+    /// request; this keeps a few thousand.
+    ///
+    /// The walk itself remains proportional to the namespace. That is inherent to
+    /// a search no index can answer, and it is why the caller charges a budget:
+    /// SCAN is cheap per key, the per-account reads it gates are not.
+    async fn candidate_ids(&self, after: Option<Uuid>, limit: usize) -> Result<Vec<Uuid>> {
         let mut cursor = 0_u64;
-        let mut ids = BTreeSet::new();
+        let mut ids: BTreeSet<Uuid> = BTreeSet::new();
+        let mut scanned = 0_usize;
         loop {
             let mut connection = self.redis.clone();
             let (next, batch): (u64, Vec<String>) = redis::cmd("SCAN")
@@ -166,9 +176,18 @@ impl Store {
                 let id = key
                     .strip_prefix("auth:user:")
                     .context("user scan returned an invalid key")?;
-                ids.insert(Uuid::parse_str(id).context("stored user key has an invalid id")?);
+                let id = Uuid::parse_str(id).context("stored user key has an invalid id")?;
+                if after.is_some_and(|cursor| id <= cursor) {
+                    continue;
+                }
+                ids.insert(id);
+                if ids.len() > limit {
+                    let highest = *ids.iter().next_back().expect("just inserted");
+                    ids.remove(&highest);
+                }
             }
-            if ids.len() > MAX_SNAPSHOT_KEYS {
+            scanned = scanned.saturating_add(500);
+            if scanned > MAX_SNAPSHOT_KEYS {
                 bail!("RustyAuth user namespace exceeds the one-million-key safety limit");
             }
             cursor = next;

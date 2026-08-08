@@ -18,6 +18,7 @@ listener. Missing or invalid required values stop startup.
 | `AUTH_EVENT_RPC_TOKEN` | high-entropy secret | Bearer credential for `rustyauth.events.v1`; always at least 32 characters |
 | `AUTH_IDENTITY_RPC_TOKEN` | high-entropy secret | Bearer credential for `rustyauth.identity.v1`; always at least 32 characters |
 | `AUTH_OPERATOR_EMAILS` | `admin@example.com` | Comma-separated canonical emails permitted to bootstrap the first owner operator **through the browser**, and only when the account has already verified that address. Not sufficient on its own — see [First operator](#first-operator) |
+| `AUTH_TRUSTED_PROXY_HOPS` | `1` | Reverse proxies in front of this service. Required in production. `1` when the platform terminates TLS; `0` only when clients reach this process directly |
 | `SPACETIME_AUDIENCE` | `example-dashboard` | Exact `aud` written into access tokens |
 
 ### Why `AUTH_ENV` has no default
@@ -137,14 +138,23 @@ production never marks a self-service identifier verified. Nothing can verify on
 exists to do it, so the first Owner is created from the host:
 
 ```sh
-rustyauth operator promote <email> owner
+rustyauth operator promote <user-id> owner
 rustyauth operator list
 ```
 
-`operator promote` resolves the canonical email to an existing account, writes the operator record,
-and marks that address verified so the same account can subsequently bootstrap through the browser.
+`operator promote` takes a **user id**, not an address, and it does not mark anything verified. Both
+are deliberate. Any enrolled account can attach an unclaimed address to itself through the
+self-service API, so resolving an address here would promote whichever account claimed it first —
+handing Owner to an attacker by the administrator's own hand. Run `operator find <email>` first: it
+prints every account holding that address with `claimedAt` and `verified`, so an address claimed
+recently by an account nobody recognises is visible before anything is granted.
+
 The account must already exist — promotion does not create one. The cost of this path is deliberate:
 it requires shell access to the deployment rather than control of an inbox.
+
+`operator demote <user-id>` removes a grant. Taking an address out of `AUTH_OPERATOR_EMAILS` does
+**not** revoke anything, because a stored operator record is honoured before the allowlist is
+consulted; demotion is the only way to withdraw one.
 
 Keep `AUTH_OPERATOR_EMAILS` set anyway. It is what allows a replacement operator to bootstrap from
 the browser once their address is verified, and an empty value only disables that browser path —
@@ -218,7 +228,7 @@ RUST_LOG=rustyauth=info,tower_http=info
 
 Add the six required backup variables to enable scheduled snapshots. Run `rustyauth
 doctor` after deploying to validate SableDB, signing material and the bucket connection, then
-`rustyauth operator promote <email> owner` once the first account has enrolled.
+`rustyauth operator promote <user-id> owner` once the first account has enrolled.
 
 ## Transport limits
 

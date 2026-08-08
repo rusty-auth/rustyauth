@@ -187,11 +187,12 @@ impl Store {
             // no DELIFEQ. Falling back to the equivalent Lua keeps the release
             // atomic there; without it the lease would sit for its full hour and
             // every backup in that window would be refused as already running.
-            Err(_) => {
+            Err(error) if is_unknown_command(&error) => {
                 compare_and_delete_command(BACKUP_LEASE_KEY, token)
                     .query_async::<i64>(&mut connection)
                     .await
             }
+            Err(error) => Err(error),
         };
         match released {
             Ok(1) => {}
@@ -297,6 +298,17 @@ fn snapshot_key_policy(key: &str) -> Result<SnapshotKeyPolicy> {
         return Ok(SnapshotKeyPolicy::Exclude);
     }
     bail!("unknown RustyAuth key family in snapshot: {key}")
+}
+
+/// Whether a datastore error means "this command does not exist here".
+///
+/// Only an unknown-command error justifies retrying with the scripted form. A
+/// timeout or a dropped connection means the command may well have run, and
+/// retrying it against a datastore that has no EVAL just produces a second
+/// failure that hides the first.
+fn is_unknown_command(error: &redis::RedisError) -> bool {
+    let text = error.to_string().to_ascii_lowercase();
+    text.contains("unknown command") || text.contains("unsupported command")
 }
 
 #[cfg(test)]

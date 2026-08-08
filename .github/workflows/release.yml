@@ -25,7 +25,35 @@ jobs:
         with:
           toolchain: 1.94.1
       - uses: Swatinem/rust-cache@49a0bdc70d2e1b713ca9e2869b211fcce03d3c1c # v2
+      - run: cargo fmt --check
+      - run: cargo clippy --locked --all-targets --all-features -- -D warnings
       - run: cargo test --locked
+      # The tagged artefact is what operators actually run, so it gets the same
+      # supply-chain gate as a pull request. Without this a release could ship an
+      # advisory that CI would have refused to merge.
+      - name: Every advisory ignore is dated and unexpired
+        run: |
+          test -f deny.toml || { echo "::error::deny.toml is missing"; exit 1; }
+          ignores="$(grep -c '{ *id *= *"RUSTSEC' deny.toml || true)"
+          dated="$(grep -c '# expires: [0-9]\{4\}-[0-9]\{2\}-[0-9]\{2\}' deny.toml || true)"
+          if [[ "${ignores}" -ne "${dated}" ]]; then
+            echo "::error file=deny.toml::${ignores} advisory ignores but ${dated} '# expires:' comments; every ignore needs one"
+            exit 1
+          fi
+          today="$(date -u +%F)"
+          status=0
+          for expiry in $(sed -n 's/.*# expires: \([0-9]\{4\}-[0-9]\{2\}-[0-9]\{2\}\).*/\1/p' deny.toml); do
+            if [[ "${expiry}" < "${today}" ]]; then
+              echo "::error file=deny.toml::an advisory ignore expired on ${expiry}"
+              status=1
+            fi
+          done
+          exit "${status}"
+      - uses: EmbarkStudios/cargo-deny-action@3c6349835b2b7b196a839186cb8b78e02f7b5f25 # v2.1.1
+        with:
+          rust-version: 1.94.1
+          command: check advisories bans licenses sources
+          arguments: --all-features --locked
 
   container:
     name: Publish container image

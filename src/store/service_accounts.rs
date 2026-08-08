@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use super::{
-    SERVICE_ACCOUNT_PREFIX, SERVICE_CREDENTIAL_PREFIX, Store, StorePolicyError,
+    MAX_SNAPSHOT_KEYS, SERVICE_ACCOUNT_PREFIX, SERVICE_CREDENTIAL_PREFIX, Store, StorePolicyError,
     events::queue_events, now, service_credential_key,
 };
 
@@ -342,6 +342,7 @@ impl Store {
     /// have to be scanned for.
     async fn service_credential_locator_keys(&self, credential_id: Uuid) -> Result<Vec<String>> {
         let mut cursor = 0_u64;
+        let mut scanned = 0_usize;
         let mut keys = Vec::new();
         loop {
             let mut connection = self.redis.clone();
@@ -368,6 +369,10 @@ impl Store {
                         tracing::warn!(key = %key, error = %error, "skipping undecodable service credential locator");
                     }
                 }
+            }
+            scanned = scanned.saturating_add(500);
+            if scanned > MAX_SNAPSHOT_KEYS {
+                bail!("RustyAuth service credential namespace exceeds the safety limit");
             }
             cursor = next;
             if cursor == 0 {

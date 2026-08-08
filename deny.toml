@@ -10,6 +10,11 @@ all-features = true
 feature-depth = 1
 
 [advisories]
+# A yanked or unsound crate is a supply-chain signal in its own right; at the
+# permissive default both pass silently, which makes this check narrower than the
+# job name suggests.
+yanked = "deny"
+unsound = "all"
 # Every unignored advisory is an error in cargo-deny 0.20; there is no lint level to soften.
 #
 # cargo-deny 0.20 has no `expires` key on an ignore entry, so each entry carries a machine-readable
