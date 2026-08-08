@@ -1,6 +1,6 @@
 module github.com/rusty-auth/rustyauth/infra/cloudflare
 
-go 1.25.0
+go 1.25.12
 
 require (
 	github.com/pulumi/pulumi-cloudflare/sdk/v6 v6.13.0
