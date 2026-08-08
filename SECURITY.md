@@ -134,13 +134,22 @@ These are explicit reasons RustyAuth is pre-release:
   already in flight when the credential is revoked completes.
 - Anyone who can execute a shell in the deployed container can grant themselves the Owner role with
   `operator promote`. Container exec is an operator-equivalent privilege and must be restricted as
-  such.
+  such. `operator demote` withdraws a grant; removing an address from `AUTH_OPERATOR_EMAILS` does
+  not, because a stored operator record is honoured before the allowlist is consulted.
 - Credential removal uses session-creation recency rather than a dedicated fresh step-up ceremony.
 - HTTP event polling still uses the bootstrap credential; private event streaming and identity RPCs
   use separate static bearer credentials rather than workload identity or mTLS.
 - Stored keys are one configured tenant per instance rather than tenant-prefixed.
 - Compound-mutation coordination is process-local; multiple writer replicas are unqualified.
-- Automated dependency auditing, protocol fuzzing and an independent assessment are not complete.
+- Protocol fuzzing and an independent assessment are not complete. Dependency auditing is
+  automated: `cargo-deny` gates every push and every tagged release on advisories, licences,
+  bans and sources, and each advisory ignore carries an expiry date that CI enforces.
+- An operator can act on another operator. `RevokePasskey`, `RemoveIdentifier` and
+  `SetPrimaryIdentifier` take a target account and are gated at Support, with no comparison
+  between the actor's role and the target's, so a Support operator can disrupt an Owner's
+  access. The final passkey and final identifier are both protected, so this is disruption
+  rather than permanent lockout, but operator-on-operator action is not a boundary this
+  version expresses.
 
 ## Safe verification
 
