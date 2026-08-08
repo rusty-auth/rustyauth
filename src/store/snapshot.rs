@@ -26,7 +26,7 @@ impl Store {
     pub async fn export_records(&self) -> Result<(u64, Vec<StoreRecord>)> {
         let _snapshot = self.snapshot_gate.write().await;
         let captured_at = now();
-        let keys = self.auth_keys().await?;
+        let keys = self.managed_keys().await?;
         let mut records = Vec::with_capacity(keys.len());
         for key in keys {
             match snapshot_key_policy(&key)? {
@@ -70,7 +70,7 @@ impl Store {
         preserve_sessions: bool,
     ) -> Result<usize> {
         let _snapshot = self.snapshot_gate.write().await;
-        if !self.auth_keys().await?.is_empty() {
+        if !self.managed_keys().await?.is_empty() {
             bail!("restore destination is not empty; use a new SableDB volume");
         }
         if records.len() > MAX_SNAPSHOT_KEYS
@@ -203,27 +203,29 @@ impl Store {
         }
     }
 
-    async fn auth_keys(&self) -> Result<Vec<String>> {
-        let mut cursor = 0_u64;
+    async fn managed_keys(&self) -> Result<Vec<String>> {
         let mut keys = BTreeSet::new();
-        loop {
-            let mut connection = self.redis.clone();
-            let (next, batch): (u64, Vec<String>) = redis::cmd("SCAN")
-                .arg(cursor)
-                .arg("MATCH")
-                .arg("auth:*")
-                .arg("COUNT")
-                .arg(500_u16)
-                .query_async(&mut connection)
-                .await
-                .context("scan RustyAuth records")?;
-            keys.extend(batch);
-            if keys.len() > MAX_SNAPSHOT_KEYS {
-                bail!("RustyAuth namespace exceeds the one-million-key safety limit");
-            }
-            cursor = next;
-            if cursor == 0 {
-                break;
+        for pattern in ["auth:*", "fleet:*"] {
+            let mut cursor = 0_u64;
+            loop {
+                let mut connection = self.redis.clone();
+                let (next, batch): (u64, Vec<String>) = redis::cmd("SCAN")
+                    .arg(cursor)
+                    .arg("MATCH")
+                    .arg(pattern)
+                    .arg("COUNT")
+                    .arg(500_u16)
+                    .query_async(&mut connection)
+                    .await
+                    .context("scan RustyAuth managed records")?;
+                keys.extend(batch);
+                if keys.len() > MAX_SNAPSHOT_KEYS {
+                    bail!("RustyAuth namespace exceeds the one-million-key safety limit");
+                }
+                cursor = next;
+                if cursor == 0 {
+                    break;
+                }
             }
         }
         Ok(keys.into_iter().collect())
@@ -265,6 +267,21 @@ enum SnapshotKeyPolicy {
 }
 
 fn snapshot_key_policy(key: &str) -> Result<SnapshotKeyPolicy> {
+    if [
+        "fleet:organization:",
+        "fleet:organization-slug:",
+        "fleet:project:",
+        "fleet:project-slug:",
+        "fleet:environment:",
+        "fleet:environment-slug:",
+        "fleet:idempotency:",
+        "fleet:audit:",
+    ]
+    .iter()
+    .any(|prefix| key.starts_with(prefix) && key.len() > prefix.len())
+    {
+        return Ok(SnapshotKeyPolicy::Include);
+    }
     if matches!(
         key,
         "auth:event-sequence" | "auth:jwt:keyset:v1" | ORGANIZATION_KEY
@@ -335,6 +352,11 @@ mod tests {
             SnapshotKeyPolicy::Exclude
         );
         assert!(snapshot_key_policy("auth:future-state:123").is_err());
+        assert_eq!(
+            snapshot_key_policy("fleet:environment:123").unwrap(),
+            SnapshotKeyPolicy::Include
+        );
+        assert!(snapshot_key_policy("fleet:future-state:123").is_err());
     }
 
     #[test]

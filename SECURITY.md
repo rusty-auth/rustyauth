@@ -113,8 +113,9 @@ identity projections.
 - JWT private key bytes are encrypted at rest under a deployment-provided AES-256 key.
 - A replacement signing key is published before activation; retired public keys remain available
   for at least the maximum access-token lifetime plus the JWKS cache allowance.
-- Backups use a versioned, authenticated AES-256-GCM envelope, a content manifest and tenant-bound
-  object paths; every upload is read back and verified.
+- Backups use compact versioned binary encoding, Zstandard compression, an authenticated AES-256-GCM
+  envelope, a content manifest and tenant-bound object paths. Every new upload is read back and must prove
+  bucket versioning, compliance-mode retention, configured server-side encryption and content validity.
 - Restore accepts only an empty target and invalidates durable sessions by default. An incomplete
   restore marker prevents the service from starting.
 - SableDB is private and volume-backed.
@@ -176,7 +177,7 @@ The recovery path also has a real-service integration drill:
 ```sh
 docker compose -f compose.integration.yaml up -d --wait source-sabledb destination-sabledb minio
 docker compose -f compose.integration.yaml run --rm minio-init
-cargo test --locked integration_tests::clean_room_backup_restore_and_rotation -- --ignored --exact
+cargo test --locked --test integration_tests clean_room_backup_restore_and_rotation -- --ignored --exact
 docker compose -f compose.integration.yaml down --volumes
 ```
 

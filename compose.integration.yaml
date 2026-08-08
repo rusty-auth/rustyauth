@@ -52,4 +52,5 @@ services:
     command:
       - >-
         mc alias set local http://minio:9000 rustyauth-test rustyauth-test-secret
-        && mc mb --ignore-existing local/rustyauth-integration
+        && mc mb --ignore-existing --with-lock local/rustyauth-integration
+        && mc retention set --default compliance 90d local/rustyauth-integration

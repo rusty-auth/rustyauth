@@ -33,6 +33,7 @@ pub enum ProcessMode {
     LocalAgent(LocalAgentRequest),
     BackupCreate,
     BackupList,
+    BackupStatus,
     BackupVerify {
         object_key: String,
     },
@@ -68,6 +69,9 @@ pub fn parse_process_arguments(arguments: Vec<String>) -> Result<ProcessMode> {
         }
         [group, command] if group == "backup" && command == "list" => {
             return Ok(ProcessMode::BackupList);
+        }
+        [group, command] if group == "backup" && command == "status" => {
+            return Ok(ProcessMode::BackupStatus);
         }
         [group, command, object_key] if group == "backup" && command == "verify" => {
             return Ok(ProcessMode::BackupVerify {
@@ -144,6 +148,7 @@ Usage:
   rustyauth doctor
   rustyauth backup create
   rustyauth backup list
+  rustyauth backup status
   rustyauth backup verify <object-key>
   rustyauth backup restore <object-key> [--preserve-sessions]
   rustyauth keys status
@@ -194,6 +199,17 @@ pub async fn run(
                 "{}",
                 serde_json::to_string_pretty(&backup.list(&config.tenant_id).await?)?
             );
+            Ok(())
+        }
+        ProcessMode::BackupStatus => {
+            let backup = configured_backup(&config).await?;
+            let status = backup.persisted_status(&store).await?;
+            println!("{}", serde_json::to_string_pretty(&status)?);
+            if status.alerting {
+                anyhow::bail!(
+                    "backup health is alerting: recovery point overdue or failure threshold reached"
+                );
+            }
             Ok(())
         }
         ProcessMode::BackupVerify { object_key } => {
@@ -324,11 +340,13 @@ async fn doctor(
     // whether backups exist and whether they are currently failing tells an
     // attacker how recoverable the deployment is before they try anything
     // destructive. `doctor` runs on the host, for an operator who already knows.
+    let mut backup_alerting = false;
     let backup = match &config.backup {
         Some(_) => {
             let backup = configured_backup(config).await?;
             let count = backup.list(&config.tenant_id).await?.len();
-            let status = backup.status().await;
+            let status = backup.persisted_status(store).await?;
+            backup_alerting = status.alerting;
             json!({
                 "configured": true,
                 "reachable": true,
@@ -336,6 +354,10 @@ async fn doctor(
                 "lastAttemptAt": status.last_attempt_at,
                 "lastSuccessAt": status.last_success_at,
                 "consecutiveFailures": status.consecutive_failures,
+                "rpoSeconds": status.rpo_seconds,
+                "retentionDays": status.retention_days,
+                "overdue": status.overdue,
+                "alerting": status.alerting,
             })
         }
         None => json!({ "configured": false }),
@@ -343,12 +365,17 @@ async fn doctor(
     println!(
         "{}",
         serde_json::to_string_pretty(&json!({
-            "status": "ok",
+            "status": if backup_alerting { "degraded" } else { "ok" },
             "sabledb": "ready",
             "signingKeys": jwt.stored_status().await?,
             "backups": backup,
         }))?
     );
+    if backup_alerting {
+        anyhow::bail!(
+            "backup health is alerting: recovery point overdue or failure threshold reached"
+        );
+    }
     Ok(())
 }
 

@@ -1,0 +1,8 @@
+[application]
+name = "RustyAuth Console"
+
+[web.app]
+title = "Control plane · RustyAuth"
+
+[web.watcher]
+watch_path = ["src", "../dashboard/src/styles.css"]

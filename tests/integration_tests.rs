@@ -22,7 +22,7 @@ use rustyauth::{
     app_state::AppState,
     auth,
     backup::BackupStore,
-    config::{BackupConfig, KeyRing, SigningRotationConfig},
+    config::{BackupConfig, BackupServerSideEncryption, KeyRing, SigningRotationConfig},
     jwt::{JwtIssuer, validate_snapshot_keyset},
     rate_limit::RateLimiter,
     store::{
@@ -543,6 +543,11 @@ fn backup_config(active: [u8; 32], previous: Vec<[u8; 32]>) -> Result<BackupConf
         encryption_keys: KeyRing::new("backup", active, previous)?,
         force_path_style: true,
         interval_seconds: 21_600,
+        rpo_seconds: 21_600,
+        retention_days: 90,
+        alert_after_failures: 2,
+        server_side_encryption: BackupServerSideEncryption::Provider,
+        sse_kms_key_id: None,
     })
 }
 

@@ -109,7 +109,12 @@ async fn main() -> Result<()> {
     }
     init_tracing();
     let config = Config::from_env().context("invalid auth service configuration")?;
-    info!(environment = ?config.environment, issuer = %config.issuer, "configuration accepted");
+    info!(
+        environment = ?config.environment,
+        deployment_role = ?config.deployment_role,
+        issuer = %config.issuer,
+        "configuration accepted"
+    );
 
     let redis_client = redis::Client::open(config.sabledb_url.expose_secret().to_owned())
         .context("create SableDB client")?;
@@ -162,6 +167,7 @@ async fn serve(
         operator_emails: config.operator_emails.clone(),
         jwt: jwt.clone(),
         rate_limiter: Arc::clone(&rate_limiter),
+        deployment_role: config.deployment_role,
     });
     config.event_rpc_token.zeroize();
     config.identity_rpc_token.zeroize();

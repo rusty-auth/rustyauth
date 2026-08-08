@@ -23,7 +23,7 @@ Do not call RustyAuth production-ready until the README's production gates are c
 - Never write `Rusty Auth`, `RustyAUTH`, `Rust Auth` or `Rusty-Auth` in product copy.
 
 Internal protocol identifiers such as `passkey_auth_session` and
-the versioned `application/vnd.rustyauth.backup.v2` content type change only through an explicit
+the versioned `application/vnd.rustyauth.backup.v3` content type change only through an explicit
 compatibility plan. Branding is not a reason to break stored data or clients.
 
 ## Voice

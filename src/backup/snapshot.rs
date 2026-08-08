@@ -14,12 +14,37 @@ use crate::config::KeyRing;
 use crate::{
     jwt::KEYSET_KEY,
     store::{
-        AuthEvent, IdentifierKind, OperatorRecord, OrganizationRecord, ServiceAccountRecord,
-        ServiceCredentialLocator, Session, Store, StoreRecord, User,
+        AuthEvent, FleetAuditRecord, FleetEnvironmentRecord, FleetOrganizationRecord,
+        FleetProjectRecord, IdentifierKind, OperatorRecord, OrganizationRecord,
+        ServiceAccountRecord, ServiceCredentialLocator, Session, Store, StoreRecord, User,
     },
 };
 
 const SNAPSHOT_VERSION: u8 = 2;
+
+/// Stable compact representation carried by the `RAUTHBK3` envelope.
+///
+/// This is deliberately separate from [`BackupSnapshot`]. Adding a serde field to
+/// the in-memory model must not silently change the bytes needed to recover an old
+/// backup; a future incompatible representation gets a new envelope magic and DTO.
+#[derive(Serialize, Deserialize)]
+struct BinarySnapshotV3 {
+    snapshot_id: [u8; 16],
+    tenant_id: String,
+    captured_at: u64,
+    records: Vec<StoreRecord>,
+    record_count: u64,
+    content_sha256: [u8; 32],
+    key_families: BTreeMap<String, u64>,
+    event_sequence: u64,
+}
+
+#[derive(Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct FleetIdempotencySnapshot {
+    action: String,
+    resource_id: Uuid,
+}
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -110,6 +135,43 @@ impl BackupSnapshot {
             .context("snapshot does not contain a signing keyset")
     }
 
+    pub(super) fn encode_binary_v3(&self) -> Result<Vec<u8>> {
+        let digest = hex::decode(&self.manifest.content_sha256)
+            .context("backup manifest digest is not hexadecimal")?;
+        let content_sha256: [u8; 32] = digest
+            .try_into()
+            .map_err(|_| anyhow::anyhow!("backup manifest digest is not 32 bytes"))?;
+        postcard::to_allocvec(&BinarySnapshotV3 {
+            snapshot_id: *self.snapshot_id.as_bytes(),
+            tenant_id: self.tenant_id.clone(),
+            captured_at: self.captured_at,
+            records: self.records.clone(),
+            record_count: self.manifest.record_count,
+            content_sha256,
+            key_families: self.manifest.key_families.clone(),
+            event_sequence: self.manifest.event_sequence,
+        })
+        .context("serialize compact binary backup snapshot")
+    }
+
+    pub(super) fn decode_binary_v3(bytes: &[u8]) -> Result<Self> {
+        let binary: BinarySnapshotV3 =
+            postcard::from_bytes(bytes).context("decode compact binary backup snapshot")?;
+        Ok(Self {
+            format_version: SNAPSHOT_VERSION,
+            snapshot_id: Uuid::from_bytes(binary.snapshot_id),
+            tenant_id: binary.tenant_id,
+            captured_at: binary.captured_at,
+            records: binary.records,
+            manifest: SnapshotManifest {
+                record_count: binary.record_count,
+                content_sha256: hex::encode(binary.content_sha256),
+                key_families: binary.key_families,
+                event_sequence: binary.event_sequence,
+            },
+        })
+    }
+
     pub(super) fn validate(&self, expected_tenant: &str) -> Result<()> {
         self.validate_format(expected_tenant)?;
         let index = self.index_records()?;
@@ -117,7 +179,8 @@ impl BackupSnapshot {
         self.validate_event_sequence(&index)?;
         validate_user_indexes(&index)?;
         validate_index_ownership(&index)?;
-        validate_record_ownership(&index)
+        validate_record_ownership(&index)?;
+        validate_fleet_workspace(&index)
     }
 
     fn validate_format(&self, expected_tenant: &str) -> Result<()> {
@@ -261,6 +324,100 @@ impl BackupSnapshot {
                             .context("backup event sequence record is invalid")?,
                     );
                 }
+                "fleet-organization" => {
+                    let value: FleetOrganizationRecord = serde_json::from_str(&record.value)
+                        .with_context(|| {
+                            format!("decode backup Fleet organization {}", record.key)
+                        })?;
+                    if record.key != format!("fleet:organization:{}", value.id) {
+                        bail!("backup Fleet organization key does not match its id");
+                    }
+                    if index.fleet_organizations.insert(value.id, value).is_some() {
+                        bail!("backup contains duplicate Fleet organizations");
+                    }
+                }
+                "fleet-organization-slug" => {
+                    let slug = record.key.trim_start_matches("fleet:organization-slug:");
+                    let id = Uuid::parse_str(&record.value)
+                        .context("backup Fleet organization slug index has an invalid id")?;
+                    if index
+                        .fleet_organization_slugs
+                        .insert(slug.to_owned(), id)
+                        .is_some()
+                    {
+                        bail!("backup contains duplicate Fleet organization slug indexes");
+                    }
+                }
+                "fleet-project" => {
+                    let value: FleetProjectRecord = serde_json::from_str(&record.value)
+                        .with_context(|| format!("decode backup Fleet project {}", record.key))?;
+                    if record.key != format!("fleet:project:{}", value.id) {
+                        bail!("backup Fleet project key does not match its id");
+                    }
+                    if index.fleet_projects.insert(value.id, value).is_some() {
+                        bail!("backup contains duplicate Fleet projects");
+                    }
+                }
+                "fleet-project-slug" => {
+                    let key = record.key.trim_start_matches("fleet:project-slug:");
+                    let (organization_id, slug) = parse_parent_slug(key, "Fleet project")?;
+                    let id = Uuid::parse_str(&record.value)
+                        .context("backup Fleet project slug index has an invalid id")?;
+                    if index
+                        .fleet_project_slugs
+                        .insert((organization_id, slug.to_owned()), id)
+                        .is_some()
+                    {
+                        bail!("backup contains duplicate Fleet project slug indexes");
+                    }
+                }
+                "fleet-environment" => {
+                    let value: FleetEnvironmentRecord = serde_json::from_str(&record.value)
+                        .with_context(|| {
+                            format!("decode backup Fleet environment {}", record.key)
+                        })?;
+                    if record.key != format!("fleet:environment:{}", value.id) {
+                        bail!("backup Fleet environment key does not match its id");
+                    }
+                    if index.fleet_environments.insert(value.id, value).is_some() {
+                        bail!("backup contains duplicate Fleet environments");
+                    }
+                }
+                "fleet-environment-slug" => {
+                    let key = record.key.trim_start_matches("fleet:environment-slug:");
+                    let (project_id, slug) = parse_parent_slug(key, "Fleet environment")?;
+                    let id = Uuid::parse_str(&record.value)
+                        .context("backup Fleet environment slug index has an invalid id")?;
+                    if index
+                        .fleet_environment_slugs
+                        .insert((project_id, slug.to_owned()), id)
+                        .is_some()
+                    {
+                        bail!("backup contains duplicate Fleet environment slug indexes");
+                    }
+                }
+                "fleet-idempotency" => {
+                    let request_id =
+                        Uuid::parse_str(record.key.trim_start_matches("fleet:idempotency:"))
+                            .context("backup Fleet idempotency key has an invalid request id")?;
+                    let value: FleetIdempotencySnapshot = serde_json::from_str(&record.value)
+                        .with_context(|| {
+                            format!("decode backup Fleet idempotency {}", record.key)
+                        })?;
+                    if index.fleet_idempotency.insert(request_id, value).is_some() {
+                        bail!("backup contains duplicate Fleet idempotency records");
+                    }
+                }
+                "fleet-audit" => {
+                    let value: FleetAuditRecord = serde_json::from_str(&record.value)
+                        .with_context(|| format!("decode backup Fleet audit {}", record.key))?;
+                    if record.key != format!("fleet:audit:{}", value.id) {
+                        bail!("backup Fleet audit key does not match its id");
+                    }
+                    if index.fleet_audits.insert(value.id, value).is_some() {
+                        bail!("backup contains duplicate Fleet audit records");
+                    }
+                }
                 _ => unreachable!("record_family returns known families"),
             }
         }
@@ -309,6 +466,28 @@ struct SnapshotIndex {
     event_numbers: BTreeSet<u64>,
     event_sequence_record: Option<u64>,
     keyset_count: u8,
+    fleet_organizations: HashMap<Uuid, FleetOrganizationRecord>,
+    fleet_organization_slugs: HashMap<String, Uuid>,
+    fleet_projects: HashMap<Uuid, FleetProjectRecord>,
+    fleet_project_slugs: HashMap<(Uuid, String), Uuid>,
+    fleet_environments: HashMap<Uuid, FleetEnvironmentRecord>,
+    fleet_environment_slugs: HashMap<(Uuid, String), Uuid>,
+    fleet_idempotency: HashMap<Uuid, FleetIdempotencySnapshot>,
+    fleet_audits: HashMap<Uuid, FleetAuditRecord>,
+}
+
+fn parse_parent_slug<'a>(value: &'a str, label: &str) -> Result<(Uuid, &'a str)> {
+    let (parent, slug) = value
+        .split_once(':')
+        .with_context(|| format!("backup {label} slug index is malformed"))?;
+    if slug.is_empty() {
+        bail!("backup {label} slug index has an empty slug");
+    }
+    Ok((
+        Uuid::parse_str(parent)
+            .with_context(|| format!("backup {label} slug parent is invalid"))?,
+        slug,
+    ))
 }
 
 fn validate_user_indexes(index: &SnapshotIndex) -> Result<()> {
@@ -426,6 +605,144 @@ fn validate_record_ownership(index: &SnapshotIndex) -> Result<()> {
     Ok(())
 }
 
+fn validate_fleet_workspace(index: &SnapshotIndex) -> Result<()> {
+    for organization in index.fleet_organizations.values() {
+        if index.fleet_organization_slugs.get(&organization.slug) != Some(&organization.id) {
+            bail!("backup Fleet organization slug index is missing or inconsistent");
+        }
+    }
+    for (slug, id) in &index.fleet_organization_slugs {
+        let organization = index
+            .fleet_organizations
+            .get(id)
+            .context("backup Fleet organization slug points to an unknown organization")?;
+        if organization.slug != *slug {
+            bail!("backup Fleet organization slug does not belong to its record");
+        }
+    }
+    for project in index.fleet_projects.values() {
+        if !index
+            .fleet_organizations
+            .contains_key(&project.organization_id)
+        {
+            bail!("backup Fleet project points to an unknown organization");
+        }
+        if index
+            .fleet_project_slugs
+            .get(&(project.organization_id, project.slug.clone()))
+            != Some(&project.id)
+        {
+            bail!("backup Fleet project slug index is missing or inconsistent");
+        }
+    }
+    for ((organization_id, slug), id) in &index.fleet_project_slugs {
+        let project = index
+            .fleet_projects
+            .get(id)
+            .context("backup Fleet project slug points to an unknown project")?;
+        if project.organization_id != *organization_id || project.slug != *slug {
+            bail!("backup Fleet project slug does not belong to its record");
+        }
+    }
+    for environment in index.fleet_environments.values() {
+        if !index
+            .fleet_organizations
+            .contains_key(&environment.organization_id)
+        {
+            bail!("backup Fleet environment points to an unknown organization");
+        }
+        let project = index
+            .fleet_projects
+            .get(&environment.project_id)
+            .context("backup Fleet environment points to an unknown project")?;
+        if project.organization_id != environment.organization_id {
+            bail!("backup Fleet environment crosses organization boundaries");
+        }
+        if index
+            .fleet_environment_slugs
+            .get(&(environment.project_id, environment.slug.clone()))
+            != Some(&environment.id)
+        {
+            bail!("backup Fleet environment slug index is missing or inconsistent");
+        }
+    }
+    for ((project_id, slug), id) in &index.fleet_environment_slugs {
+        let environment = index
+            .fleet_environments
+            .get(id)
+            .context("backup Fleet environment slug points to an unknown environment")?;
+        if environment.project_id != *project_id || environment.slug != *slug {
+            bail!("backup Fleet environment slug does not belong to its record");
+        }
+    }
+    for audit in index.fleet_audits.values() {
+        let (action_kind, action) = audit
+            .action
+            .split_once('.')
+            .context("backup Fleet audit action is malformed")?;
+        if action_kind != audit.resource_kind || !matches!(action, "create" | "update" | "archive")
+        {
+            bail!("backup Fleet audit action does not match its resource kind");
+        }
+        match audit.resource_kind.as_str() {
+            "organization" => {
+                let organization = index
+                    .fleet_organizations
+                    .get(&audit.resource_id)
+                    .context("backup Fleet audit points to an unknown organization")?;
+                if audit.organization_id != Some(organization.id)
+                    || audit.project_id.is_some()
+                    || audit.environment_id.is_some()
+                {
+                    bail!("backup Fleet organization audit has inconsistent ownership");
+                }
+            }
+            "project" => {
+                let project = index
+                    .fleet_projects
+                    .get(&audit.resource_id)
+                    .context("backup Fleet audit points to an unknown project")?;
+                if audit.organization_id != Some(project.organization_id)
+                    || audit.project_id != Some(project.id)
+                    || audit.environment_id.is_some()
+                {
+                    bail!("backup Fleet project audit has inconsistent ownership");
+                }
+            }
+            "environment" => {
+                let environment = index
+                    .fleet_environments
+                    .get(&audit.resource_id)
+                    .context("backup Fleet audit points to an unknown environment")?;
+                if audit.organization_id != Some(environment.organization_id)
+                    || audit.project_id != Some(environment.project_id)
+                    || audit.environment_id != Some(environment.id)
+                {
+                    bail!("backup Fleet environment audit has inconsistent ownership");
+                }
+            }
+            _ => bail!("backup Fleet audit has an unsupported resource kind"),
+        }
+        let idempotency = index
+            .fleet_idempotency
+            .get(&audit.request_id)
+            .context("backup Fleet audit has no idempotency record")?;
+        if idempotency.action != audit.action || idempotency.resource_id != audit.resource_id {
+            bail!("backup Fleet audit and idempotency record disagree");
+        }
+    }
+    for (request_id, idempotency) in &index.fleet_idempotency {
+        if !index.fleet_audits.values().any(|audit| {
+            audit.request_id == *request_id
+                && audit.action == idempotency.action
+                && audit.resource_id == idempotency.resource_id
+        }) {
+            bail!("backup Fleet idempotency record has no matching audit");
+        }
+    }
+    Ok(())
+}
+
 impl Drop for BackupSnapshot {
     fn drop(&mut self) {
         for record in &mut self.records {
@@ -458,6 +775,14 @@ fn record_family(key: &str) -> Result<String> {
         ("auth:operator:", "operator"),
         ("auth:service-account:", "service-account"),
         ("auth:service-credential:", "service-credential"),
+        ("fleet:organization:", "fleet-organization"),
+        ("fleet:organization-slug:", "fleet-organization-slug"),
+        ("fleet:project:", "fleet-project"),
+        ("fleet:project-slug:", "fleet-project-slug"),
+        ("fleet:environment:", "fleet-environment"),
+        ("fleet:environment-slug:", "fleet-environment-slug"),
+        ("fleet:idempotency:", "fleet-idempotency"),
+        ("fleet:audit:", "fleet-audit"),
     ] {
         if key.starts_with(prefix) && key.len() > prefix.len() {
             return Ok(family.into());
@@ -539,8 +864,96 @@ fn identity_snapshot() -> BackupSnapshot {
 }
 
 #[cfg(test)]
+fn fleet_snapshot() -> BackupSnapshot {
+    use crate::store::FleetResourceStateRecord;
+
+    let organization_id = Uuid::new_v4();
+    let request_id = Uuid::new_v4();
+    let audit_id = Uuid::new_v4();
+    let operator_id = Uuid::new_v4();
+    let organization = FleetOrganizationRecord {
+        id: organization_id,
+        slug: "acme".into(),
+        name: "Acme".into(),
+        state: FleetResourceStateRecord::Active,
+        created_at: 1_000,
+        updated_at: 1_000,
+        archived_at: None,
+    };
+    let audit = FleetAuditRecord {
+        id: audit_id,
+        request_id,
+        operator_id,
+        action: "organization.create".into(),
+        resource_kind: "organization".into(),
+        resource_id: organization_id,
+        organization_id: Some(organization_id),
+        project_id: None,
+        environment_id: None,
+        reason: "initial setup".into(),
+        occurred_at: 1_000,
+    };
+    let idempotency = FleetIdempotencySnapshot {
+        action: audit.action.clone(),
+        resource_id: organization_id,
+    };
+    let mut records = vec![
+        StoreRecord {
+            key: KEYSET_KEY.into(),
+            value: keyset_value(),
+            expires_at: None,
+        },
+        StoreRecord {
+            key: format!("fleet:audit:{audit_id}"),
+            value: serde_json::to_string(&audit).unwrap(),
+            expires_at: None,
+        },
+        StoreRecord {
+            key: format!("fleet:idempotency:{request_id}"),
+            value: serde_json::to_string(&idempotency).unwrap(),
+            expires_at: None,
+        },
+        StoreRecord {
+            key: format!("fleet:organization:{organization_id}"),
+            value: serde_json::to_string(&organization).unwrap(),
+            expires_at: None,
+        },
+        StoreRecord {
+            key: "fleet:organization-slug:acme".into(),
+            value: organization_id.to_string(),
+            expires_at: None,
+        },
+    ];
+    records.sort_unstable_by(|left, right| left.key.cmp(&right.key));
+    BackupSnapshot::from_records("fleet-control-plane", 1_000, records).unwrap()
+}
+
+#[cfg(test)]
+fn rehash(snapshot: &mut BackupSnapshot) {
+    snapshot.manifest.content_sha256 = hex::encode(Sha256::digest(
+        canonical_records(&snapshot.records).unwrap(),
+    ));
+}
+
+#[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn compact_binary_snapshot_round_trips_without_json_field_names() {
+        let keys = KeyRing::new("backup", [19; 32], Vec::new()).unwrap();
+        let snapshot = minimal_snapshot(&keys);
+        let encoded = snapshot.encode_binary_v3().unwrap();
+        assert!(
+            !encoded
+                .windows(b"contentSha256".len())
+                .any(|window| window == b"contentSha256")
+        );
+        assert_eq!(
+            BackupSnapshot::decode_binary_v3(&encoded).unwrap(),
+            snapshot
+        );
+    }
 
     #[test]
     fn manifests_detect_record_tampering_and_duplicates() {
@@ -607,5 +1020,48 @@ mod tests {
         let identity = identity_snapshot();
         identity.validate("tenant-a").unwrap();
         assert!(identity.validate("").is_err());
+    }
+
+    #[test]
+    fn fleet_snapshot_requires_owned_slug_audit_and_idempotency_indexes() {
+        let snapshot = fleet_snapshot();
+        snapshot.validate("fleet-control-plane").unwrap();
+
+        let mut missing_slug = fleet_snapshot();
+        missing_slug
+            .records
+            .retain(|record| !record.key.starts_with("fleet:organization-slug:"));
+        missing_slug.manifest.record_count -= 1;
+        *missing_slug
+            .manifest
+            .key_families
+            .get_mut("fleet-organization-slug")
+            .unwrap() -= 1;
+        rehash(&mut missing_slug);
+        assert!(missing_slug.validate("fleet-control-plane").is_err());
+
+        let mut mismatched_audit = fleet_snapshot();
+        let audit = mismatched_audit
+            .records
+            .iter_mut()
+            .find(|record| record.key.starts_with("fleet:audit:"))
+            .unwrap();
+        let mut value: FleetAuditRecord = serde_json::from_str(&audit.value).unwrap();
+        value.organization_id = Some(Uuid::new_v4());
+        audit.value = serde_json::to_string(&value).unwrap();
+        rehash(&mut mismatched_audit);
+        assert!(mismatched_audit.validate("fleet-control-plane").is_err());
+
+        let mut mismatched_action = fleet_snapshot();
+        let audit = mismatched_action
+            .records
+            .iter_mut()
+            .find(|record| record.key.starts_with("fleet:audit:"))
+            .unwrap();
+        let mut value: FleetAuditRecord = serde_json::from_str(&audit.value).unwrap();
+        value.resource_kind = "project".into();
+        audit.value = serde_json::to_string(&value).unwrap();
+        rehash(&mut mismatched_action);
+        assert!(mismatched_action.validate("fleet-control-plane").is_err());
     }
 }

@@ -16,6 +16,12 @@ pub enum Environment {
     Production,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum DeploymentRole {
+    Realm,
+    FleetControlPlane,
+}
+
 #[derive(Clone, Debug)]
 pub struct BackupConfig {
     pub endpoint: Url,
@@ -26,6 +32,30 @@ pub struct BackupConfig {
     pub encryption_keys: KeyRing,
     pub force_path_style: bool,
     pub interval_seconds: u64,
+    pub rpo_seconds: u64,
+    pub retention_days: u64,
+    pub alert_after_failures: u64,
+    pub server_side_encryption: BackupServerSideEncryption,
+    pub sse_kms_key_id: Option<String>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum BackupServerSideEncryption {
+    /// The compatible provider owns its at-rest encryption policy. Application
+    /// encryption and Object Lock/versioning are still mandatory.
+    Provider,
+    Aes256,
+    AwsKms,
+}
+
+impl BackupServerSideEncryption {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Provider => "provider",
+            Self::Aes256 => "AES256",
+            Self::AwsKms => "aws:kms",
+        }
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -121,6 +151,7 @@ impl KeyRing {
 #[derive(Clone, Debug)]
 pub struct Config {
     pub environment: Environment,
+    pub deployment_role: DeploymentRole,
     pub bind: IpAddr,
     pub port: u16,
     pub issuer: Url,
@@ -154,6 +185,13 @@ impl Config {
             Some("production") => Environment::Production,
             Some(other) => bail!("AUTH_ENV must be development or production, got {other}"),
             None => bail!("AUTH_ENV must be set explicitly to development or production"),
+        };
+        let deployment_role = match optional("AUTH_DEPLOYMENT_ROLE").as_deref() {
+            None | Some("realm") => DeploymentRole::Realm,
+            Some("fleet-control-plane") => DeploymentRole::FleetControlPlane,
+            Some(other) => {
+                bail!("AUTH_DEPLOYMENT_ROLE must be realm or fleet-control-plane, got {other}")
+            }
         };
 
         let bind = IpAddr::from_str(optional("BIND_ADDRESS").as_deref().unwrap_or("0.0.0.0"))
@@ -236,6 +274,7 @@ impl Config {
 
         Ok(Self {
             environment,
+            deployment_role,
             bind,
             port,
             issuer,
@@ -299,6 +338,11 @@ impl BackupConfig {
         let optional_backup_names = [
             "AUTH_BACKUP_PREVIOUS_KEYS_HEX",
             "AUTH_BACKUP_INTERVAL_SECONDS",
+            "AUTH_BACKUP_RPO_SECONDS",
+            "AUTH_BACKUP_RETENTION_DAYS",
+            "AUTH_BACKUP_ALERT_AFTER_FAILURES",
+            "AUTH_BACKUP_SSE",
+            "AUTH_BACKUP_SSE_KMS_KEY_ID",
             "AUTH_BACKUP_URL_STYLE",
         ];
         if present == 0 {
@@ -331,6 +375,26 @@ impl BackupConfig {
         // rolling identity state back past a revocation.
         validate_backup_endpoint(environment, &endpoint)?;
 
+        let interval_seconds = integer("AUTH_BACKUP_INTERVAL_SECONDS", 21_600, 300, 604_800)?;
+        let rpo_seconds = integer(
+            "AUTH_BACKUP_RPO_SECONDS",
+            interval_seconds,
+            interval_seconds,
+            2_592_000,
+        )?;
+        let server_side_encryption =
+            match optional("AUTH_BACKUP_SSE").as_deref().unwrap_or("aws:kms") {
+                "provider" => BackupServerSideEncryption::Provider,
+                "AES256" | "aes256" => BackupServerSideEncryption::Aes256,
+                "aws:kms" => BackupServerSideEncryption::AwsKms,
+                other => bail!("AUTH_BACKUP_SSE must be provider, AES256 or aws:kms, got {other}"),
+            };
+        let sse_kms_key_id = optional("AUTH_BACKUP_SSE_KMS_KEY_ID");
+        if sse_kms_key_id.is_some() && server_side_encryption != BackupServerSideEncryption::AwsKms
+        {
+            bail!("AUTH_BACKUP_SSE_KMS_KEY_ID requires AUTH_BACKUP_SSE=aws:kms");
+        }
+
         Ok(Some(Self {
             endpoint,
             region: required("AUTH_BACKUP_REGION")?,
@@ -343,7 +407,12 @@ impl BackupConfig {
                 "backup",
             )?,
             force_path_style,
-            interval_seconds: integer("AUTH_BACKUP_INTERVAL_SECONDS", 21_600, 300, 604_800)?,
+            interval_seconds,
+            rpo_seconds,
+            retention_days: integer("AUTH_BACKUP_RETENTION_DAYS", 90, 1, 3_650)?,
+            alert_after_failures: integer("AUTH_BACKUP_ALERT_AFTER_FAILURES", 2, 1, 100)?,
+            server_side_encryption,
+            sse_kms_key_id,
         }))
     }
 }

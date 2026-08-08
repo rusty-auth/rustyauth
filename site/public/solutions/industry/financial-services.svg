@@ -1,0 +1,72 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 840 630">
+  <defs>
+    <radialGradient id="glow" cx="0.72" cy="0.38" r="0.55">
+      <stop offset="0" stop-color="#cc5a19" stop-opacity="0.16"/>
+      <stop offset="1" stop-color="#cc5a19" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <rect width="840" height="630" fill="#22211f"/>
+  <rect width="840" height="630" fill="url(#glow)"/>
+
+  <g transform="matrix(.866,.5,-.866,.5,530,282)">
+    <rect x="-215" y="-150" width="430" height="300" rx="24" fill="#171614"/>
+  </g>
+  <g transform="matrix(.866,.5,-.866,.5,530,270)">
+    <rect x="-215" y="-150" width="430" height="300" rx="24" fill="#2c2b28" stroke="#f5f1e9" stroke-opacity="0.16" vector-effect="non-scaling-stroke"/>
+    <g stroke="#f5f1e9" stroke-opacity="0.07" vector-effect="non-scaling-stroke">
+      <line x1="-160" y1="-140" x2="-160" y2="140"/><line x1="-104" y1="-140" x2="-104" y2="140"/>
+      <line x1="-48" y1="-140" x2="-48" y2="140"/><line x1="8" y1="-140" x2="8" y2="140"/>
+      <line x1="64" y1="-140" x2="64" y2="140"/><line x1="120" y1="-140" x2="120" y2="140"/>
+      <line x1="176" y1="-140" x2="176" y2="140"/>
+      <line x1="-200" y1="-96" x2="200" y2="-96"/><line x1="-200" y1="-48" x2="200" y2="-48"/>
+      <line x1="-200" y1="0" x2="200" y2="0"/><line x1="-200" y1="48" x2="200" y2="48"/>
+      <line x1="-200" y1="96" x2="200" y2="96"/>
+    </g>
+  </g>
+
+  <!-- allocation wedge chip -->
+  <g transform="matrix(.866,.5,-.866,.5,530,268)"><circle cx="-136" cy="44" r="42" fill="#171614"/></g>
+  <g transform="matrix(.866,.5,-.866,.5,530,256)">
+    <circle cx="-136" cy="44" r="40" fill="#f5f1e9" stroke="#252321" stroke-opacity="0.5" vector-effect="non-scaling-stroke"/>
+  </g>
+  <g transform="matrix(.866,.5,-.866,.5,530,254)">
+    <path d="M -136 44 L -136 4 A 40 40 0 0 1 -96 44 Z" fill="#cc5a19"/>
+    <path d="M -136 44 L -108 72 A 40 40 0 0 1 -136 84 Z" fill="#e89b6d"/>
+  </g>
+
+  <!-- trace from wedge chip to chart -->
+  <g transform="matrix(.866,.5,-.866,.5,530,266)" fill="none">
+    <path d="M -136 90 L -136 118 L -20 118 L -20 96" stroke="#e89b6d" stroke-opacity="0.75" vector-effect="non-scaling-stroke"/>
+    <circle cx="-20" cy="96" r="5" fill="#cc5a19" stroke="none"/>
+  </g>
+
+  <!-- candlestick chart plate -->
+  <g transform="matrix(.866,.5,-.866,.5,530,268)"><rect x="-60" y="-110" width="300" height="220" rx="16" fill="#171614"/></g>
+  <g transform="matrix(.866,.5,-.866,.5,530,254)">
+    <rect x="-60" y="-110" width="300" height="220" rx="16" fill="#f5f1e9" stroke="#252321" stroke-opacity="0.55" vector-effect="non-scaling-stroke"/>
+  </g>
+  <g transform="matrix(.866,.5,-.866,.5,530,252)">
+    <g stroke="#252321" stroke-opacity="0.14" vector-effect="non-scaling-stroke">
+      <line x1="-44" y1="-62" x2="224" y2="-62"/>
+      <line x1="-44" y1="-14" x2="224" y2="-14"/>
+      <line x1="-44" y1="34" x2="224" y2="34"/>
+      <line x1="-44" y1="82" x2="224" y2="82"/>
+    </g>
+    <g stroke="#67615b" stroke-width="3">
+      <line x1="-17" y1="16" x2="-17" y2="74"/>
+      <line x1="21" y1="-4" x2="21" y2="60"/>
+      <line x1="59" y1="10" x2="59" y2="64"/>
+      <line x1="97" y1="-28" x2="97" y2="42"/>
+      <line x1="135" y1="-46" x2="135" y2="18"/>
+      <line x1="173" y1="-78" x2="173" y2="0"/>
+    </g>
+    <rect x="-28" y="28" width="22" height="34" fill="#8a837c"/>
+    <rect x="10" y="8" width="22" height="40" fill="#cc5a19"/>
+    <rect x="48" y="22" width="22" height="30" fill="#8a837c"/>
+    <rect x="86" y="-16" width="22" height="46" fill="#cc5a19"/>
+    <rect x="124" y="-34" width="22" height="40" fill="#cc5a19"/>
+    <rect x="162" y="-64" width="22" height="52" fill="#cc5a19"/>
+    <path d="M -24 44 L 16 18 L 54 34 L 92 -6 L 130 -22 L 178 -68" fill="none" stroke="#252321" stroke-width="4" stroke-linejoin="round"/>
+    <path d="M 178 -68 l -18 0 l 12 -13 z" fill="#252321"/>
+  </g>
+</svg>

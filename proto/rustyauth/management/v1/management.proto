@@ -1,0 +1,147 @@
+syntax = "proto3";
+
+package rustyauth.management.v1;
+
+// Exposes one realm's versioned management boundary. Every authenticated
+// connection is permanently bound to one realm by the server.
+service RealmManagementService {
+  rpc GetDiscovery(GetDiscoveryRequest) returns (RealmDiscovery);
+  rpc GetHealth(GetHealthRequest) returns (RealmHealth);
+  rpc GetSummary(GetSummaryRequest) returns (RealmSummary);
+  rpc CreatePairingCode(CreatePairingCodeRequest) returns (PairingCode);
+  rpc ExchangePairingCode(ExchangePairingCodeRequest) returns (PairingGrant);
+  rpc RevokeFleetConnection(RevokeFleetConnectionRequest) returns (FleetConnectionState);
+}
+
+// Carries commands over a realm-initiated authenticated channel. The initial
+// connection uses native gRPC over HTTP/2 with mTLS workload identity.
+service RealmConnectorService {
+  rpc Connect(stream ConnectorFrame) returns (stream ConnectorFrame);
+}
+
+enum RealmServingState {
+  REALM_SERVING_STATE_UNSPECIFIED = 0;
+  REALM_SERVING_STATE_HEALTHY = 1;
+  REALM_SERVING_STATE_DEGRADED = 2;
+  REALM_SERVING_STATE_UNAVAILABLE = 3;
+}
+
+enum PairingState {
+  PAIRING_STATE_UNSPECIFIED = 0;
+  PAIRING_STATE_PENDING = 1;
+  PAIRING_STATE_CONSUMED = 2;
+  PAIRING_STATE_EXPIRED = 3;
+  PAIRING_STATE_REVOKED = 4;
+}
+
+enum ConnectorFrameKind {
+  CONNECTOR_FRAME_KIND_UNSPECIFIED = 0;
+  CONNECTOR_FRAME_KIND_HELLO = 1;
+  CONNECTOR_FRAME_KIND_HEARTBEAT = 2;
+  CONNECTOR_FRAME_KIND_COMMAND = 3;
+  CONNECTOR_FRAME_KIND_RESULT = 4;
+  CONNECTOR_FRAME_KIND_ERROR = 5;
+  CONNECTOR_FRAME_KIND_GOODBYE = 6;
+}
+
+message ManagementCapability {
+  string name = 1;
+  uint32 version = 2;
+}
+
+message RealmDiscovery {
+  string realm_id = 1;
+  string deployment_version = 2;
+  string management_protocol_version = 3;
+  string issuer = 4;
+  string rp_id = 5;
+  repeated string rpc_protocols = 6;
+  repeated ManagementCapability capabilities = 7;
+  bool pairing_supported = 8;
+  bool outbound_connector_supported = 9;
+}
+
+message RealmHealth {
+  string realm_id = 1;
+  RealmServingState state = 2;
+  uint64 datastore_latency_milliseconds = 3;
+  string checked_at = 4;
+}
+
+message RealmSummary {
+  string realm_id = 1;
+  uint64 users = 2;
+  uint64 passkeys = 3;
+  uint64 active_sessions = 4;
+  uint64 service_accounts = 5;
+  string latest_backup_at = 6;
+  string signing_key_state = 7;
+  string calculated_at = 8;
+}
+
+message GetDiscoveryRequest {}
+
+message GetHealthRequest {}
+
+message GetSummaryRequest {}
+
+message CreatePairingCodeRequest {
+  string control_plane_origin = 1;
+  repeated string requested_scopes = 2;
+  string request_id = 3;
+}
+
+message PairingCode {
+  string id = 1;
+  // Returned once and never logged or stored in plaintext.
+  string code = 2;
+  string realm_id = 3;
+  string control_plane_origin = 4;
+  repeated string requested_scopes = 5;
+  PairingState state = 6;
+  string expires_at = 7;
+}
+
+message ExchangePairingCodeRequest {
+  string code = 1;
+  string control_plane_origin = 2;
+  string control_plane_instance_id = 3;
+  string request_id = 4;
+}
+
+message PairingGrant {
+  string connection_id = 1;
+  string realm_id = 2;
+  // Returned once to the server-side control plane, never to a dashboard client.
+  string credential = 3;
+  string credential_hint = 4;
+  repeated string granted_scopes = 5;
+  string created_at = 6;
+  string expires_at = 7;
+}
+
+message RevokeFleetConnectionRequest {
+  string connection_id = 1;
+  string request_id = 2;
+  string reason = 3;
+}
+
+message FleetConnectionState {
+  string connection_id = 1;
+  string realm_id = 2;
+  bool revoked = 3;
+  string revoked_at = 4;
+}
+
+message ConnectorFrame {
+  string realm_id = 1;
+  string connection_id = 2;
+  string request_id = 3;
+  ConnectorFrameKind kind = 4;
+  string capability = 5;
+  string expires_at = 6;
+  // Nested command or result encoded with its declared Protobuf type.
+  bytes payload = 7;
+  string payload_type = 8;
+  bytes signature = 9;
+}

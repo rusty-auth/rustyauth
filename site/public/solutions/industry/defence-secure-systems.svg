@@ -1,0 +1,64 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 840 630">
+  <defs>
+    <radialGradient id="glow" cx="0.72" cy="0.38" r="0.55">
+      <stop offset="0" stop-color="#cc5a19" stop-opacity="0.16"/>
+      <stop offset="1" stop-color="#cc5a19" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <rect width="840" height="630" fill="#22211f"/>
+  <rect width="840" height="630" fill="url(#glow)"/>
+
+  <g transform="matrix(.866,.5,-.866,.5,530,282)">
+    <rect x="-215" y="-150" width="430" height="300" rx="24" fill="#171614"/>
+  </g>
+  <g transform="matrix(.866,.5,-.866,.5,530,270)">
+    <rect x="-215" y="-150" width="430" height="300" rx="24" fill="#2c2b28" stroke="#f5f1e9" stroke-opacity="0.16" vector-effect="non-scaling-stroke"/>
+    <g stroke="#f5f1e9" stroke-opacity="0.07" vector-effect="non-scaling-stroke">
+      <line x1="-160" y1="-140" x2="-160" y2="140"/><line x1="-104" y1="-140" x2="-104" y2="140"/>
+      <line x1="-48" y1="-140" x2="-48" y2="140"/><line x1="8" y1="-140" x2="8" y2="140"/>
+      <line x1="64" y1="-140" x2="64" y2="140"/><line x1="120" y1="-140" x2="120" y2="140"/>
+      <line x1="176" y1="-140" x2="176" y2="140"/>
+      <line x1="-200" y1="-96" x2="200" y2="-96"/><line x1="-200" y1="-48" x2="200" y2="-48"/>
+      <line x1="-200" y1="0" x2="200" y2="0"/><line x1="-200" y1="48" x2="200" y2="48"/>
+      <line x1="-200" y1="96" x2="200" y2="96"/>
+    </g>
+  </g>
+
+  <!-- secured perimeter -->
+  <g transform="matrix(.866,.5,-.866,.5,530,266)">
+    <rect x="-104" y="-140" width="268" height="264" rx="30" fill="none" stroke="#e89b6d" stroke-opacity="0.5" stroke-dasharray="14 10" vector-effect="non-scaling-stroke"/>
+  </g>
+
+  <!-- radar -->
+  <g transform="matrix(.866,.5,-.866,.5,530,268)"><circle cx="30" cy="-8" r="120" fill="#171614"/></g>
+  <g transform="matrix(.866,.5,-.866,.5,530,254)">
+    <circle cx="30" cy="-8" r="118" fill="#262523" stroke="#f5f1e9" stroke-opacity="0.3" vector-effect="non-scaling-stroke"/>
+  </g>
+  <g transform="matrix(.866,.5,-.866,.5,530,252)">
+    <g fill="none" stroke="#f5f1e9" stroke-opacity="0.22" vector-effect="non-scaling-stroke">
+      <circle cx="30" cy="-8" r="92"/>
+      <circle cx="30" cy="-8" r="64"/>
+      <circle cx="30" cy="-8" r="36"/>
+      <line x1="-88" y1="-8" x2="148" y2="-8"/>
+      <line x1="30" y1="-126" x2="30" y2="110"/>
+    </g>
+    <path d="M 30 -8 L 141 -48 A 118 118 0 0 1 120 68 Z" fill="#cc5a19" fill-opacity="0.25"/>
+    <line x1="30" y1="-8" x2="141" y2="-48" stroke="#cc5a19" stroke-opacity="0.85" stroke-width="3"/>
+    <circle cx="95" cy="-40" r="6" fill="#cc5a19"/>
+    <circle cx="95" cy="-40" r="15" fill="none" stroke="#cc5a19" stroke-opacity="0.5" vector-effect="non-scaling-stroke"/>
+    <circle cx="-20" cy="40" r="6" fill="#e89b6d"/>
+  </g>
+
+  <!-- shield -->
+  <g transform="matrix(.866,.5,-.866,.5,530,268)">
+    <path d="M -196 24 Q -148 6 -100 24 L -100 78 Q -100 122 -148 142 Q -196 122 -196 78 Z" fill="#171614"/>
+  </g>
+  <g transform="matrix(.866,.5,-.866,.5,530,252)">
+    <path d="M -196 24 Q -148 6 -100 24 L -100 78 Q -100 122 -148 142 Q -196 122 -196 78 Z"
+      fill="#f5f1e9" stroke="#252321" stroke-opacity="0.55" vector-effect="non-scaling-stroke"/>
+  </g>
+  <g transform="matrix(.866,.5,-.866,.5,530,250)" fill="#252321">
+    <circle cx="-148" cy="66" r="15"/>
+    <rect x="-154" y="76" width="12" height="28" rx="5"/>
+  </g>
+</svg>

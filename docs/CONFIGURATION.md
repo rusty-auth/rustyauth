@@ -82,11 +82,31 @@ Optional backup controls:
 | Variable | Default | Meaning |
 | --- | --- | --- |
 | `AUTH_BACKUP_INTERVAL_SECONDS` | `21600` | Automatic backup interval; 300–604,800 seconds |
+| `AUTH_BACKUP_RPO_SECONDS` | backup interval | Maximum acceptable age of the last successful recovery point; cannot be shorter than the interval |
+| `AUTH_BACKUP_RETENTION_DAYS` | `90` | Minimum compliance-mode Object Lock duration required on every new object; 1–3,650 days |
+| `AUTH_BACKUP_ALERT_AFTER_FAILURES` | `2` | Consecutive failures that put backup health into alerting state; 1–100 |
+| `AUTH_BACKUP_SSE` | `aws:kms` | Required provider-side encryption reported for new objects: `aws:kms`, `AES256`, or `provider` for a compatible service that owns encryption policy |
+| `AUTH_BACKUP_SSE_KMS_KEY_ID` | empty | Exact customer-managed KMS key ARN expected on every new object; requires `AUTH_BACKUP_SSE=aws:kms` |
 | `AUTH_BACKUP_PREVIOUS_KEYS_HEX` | empty | Comma-separated previous 32-byte backup keys, each encoded as 64 hex characters |
 
 When backup configuration is present, RustyAuth creates a verified logical backup at process start
-and then at the configured interval. Key IDs are derived automatically; operators never configure
-or synchronize separate IDs.
+and then at the configured interval. New v3 objects contain a compact Postcard binary snapshot,
+Zstandard compression and an authenticated AES-256-GCM envelope. Upload succeeds only when the
+read-back proves a version ID, compliance-mode Object Lock for at least the configured retention,
+the configured provider-side encryption, successful decryption and a valid content manifest. Existing
+v2 compressed-JSON envelopes remain restorable. Key IDs are derived automatically; operators never
+configure or synchronize separate IDs.
+
+The bucket must have Versioning and a default compliance-mode Object Lock rule before RustyAuth writes
+to it. On AWS, use the checked-in `infra/aws/backup-bucket.yaml` stack, which also configures bucket-default
+SSE-KMS and blocks application deletion. The RustyAuth principal needs only `s3:ListBucket`,
+`s3:GetObject` and `s3:PutObject`; do not grant delete, retention changes or governance bypass.
+
+Scheduler status survives process restarts in an excluded operational SableDB key. Run `rustyauth backup
+status` or `rustyauth doctor` from the host: both exit non-zero when the RPO is overdue or the failure
+threshold is reached, so the platform check must page the operator. The scheduler also emits the structured
+log field `backup_health_alert=true`, but the exit-status check is the required alert path rather than relying
+on log collection alone.
 
 Backup configuration is all-or-nothing in both directions. Supplying some of the six required values
 fails startup, and so does supplying any of the optional controls above — including
@@ -107,7 +127,9 @@ openssl rand -hex 32       # AUTH_BACKUP_ENCRYPTION_KEY_HEX
 ```
 
 Do not reuse keys across purposes, tenants or environments. Keep backup encryption keys outside the
-bucket and its provider account; losing that key makes encrypted snapshots unrecoverable.
+bucket and its provider account; losing that key makes encrypted snapshots unrecoverable. Escrow the active
+and retained previous keys in a separately administered recovery vault, and test access to that escrow during
+every clean-room drill. The S3 KMS key is defence in depth and cannot replace the portable application key.
 
 ### Placeholder keys are rejected
 

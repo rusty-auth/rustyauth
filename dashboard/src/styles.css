@@ -1554,7 +1554,7 @@ meter::-moz-meter-bar {
 
 .aperture-atmosphere {
   position: absolute;
-  z-index: -2;
+  z-index: -3;
   inset: -5%;
   background-image: url("/brand/operator-paper-v1.webp");
   background-position: center;
@@ -1571,10 +1571,49 @@ meter::-moz-meter-bar {
   background-position: 18% 55%;
   background-size: 132% auto;
   content: "";
+  filter: brightness(1.08) contrast(0.96);
   mix-blend-mode: screen;
-  opacity: 0.13;
+  opacity: 0.1;
   pointer-events: none;
-  animation: aperture-shimmer-drift 15s ease-in-out infinite alternate;
+  animation: aperture-shimmer-drift 12s ease-in-out infinite alternate;
+}
+
+.aperture-watermark {
+  position: absolute;
+  z-index: -2;
+  top: 50%;
+  left: 76%;
+  width: clamp(650px, 52vw, 900px);
+  aspect-ratio: 1;
+  opacity: 0.15;
+  pointer-events: none;
+  transform: translate3d(-50%, -50%, 0) rotate(-7deg) scale(0.985);
+  transform-origin: center;
+  animation: aperture-watermark-drift 18s ease-in-out infinite alternate;
+}
+
+.aperture-watermark img {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.aperture-watermark-shadow {
+  filter: grayscale(1) sepia(0.48) saturate(0.42) brightness(0.5) contrast(0.74) blur(0.35px);
+  mix-blend-mode: multiply;
+  opacity: 0.28;
+  transform: translate3d(4px, 5px, 0);
+}
+
+.aperture-watermark-highlight {
+  filter: grayscale(1) sepia(0.12) saturate(0.28) brightness(1.9) contrast(0.36);
+  mix-blend-mode: screen;
+  opacity: 0.82;
+  transform: translate3d(-3px, -3px, 0);
+  animation: aperture-watermark-shimmer 8.5s ease-in-out infinite alternate;
 }
 
 .aperture-console {
@@ -1617,12 +1656,15 @@ meter::-moz-meter-bar {
 .aperture-trust-rail {
   display: grid;
   grid-template-rows: auto 1fr;
+  overflow: hidden;
   padding: 52px 42px 48px 49px;
   border-right: 1px solid rgba(237, 226, 210, 0.16);
+  transform-origin: left center;
+  animation: aperture-trust-rail-enter 760ms 70ms cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
 .aperture-brand {
-  animation: aperture-child-enter 500ms 90ms cubic-bezier(0.2, 0.82, 0.2, 1) both;
+  animation: aperture-child-enter 520ms 220ms cubic-bezier(0.2, 0.82, 0.2, 1) both;
 }
 
 .aperture-brand img {
@@ -1643,7 +1685,10 @@ meter::-moz-meter-bar {
 .aperture-boundary {
   align-self: center;
   margin-top: 22px;
-  animation: aperture-child-enter 500ms 170ms cubic-bezier(0.2, 0.82, 0.2, 1) both;
+}
+
+.aperture-boundary > .aperture-kicker {
+  animation: aperture-trust-label-enter 440ms 360ms cubic-bezier(0.2, 0.82, 0.2, 1) both;
 }
 
 .aperture-kicker {
@@ -1669,6 +1714,20 @@ meter::-moz-meter-bar {
   grid-template-columns: 48px 1fr;
   align-items: start;
   gap: 13px;
+  opacity: 0;
+  animation: aperture-trust-node-enter 600ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.aperture-boundary li:nth-child(1) {
+  animation-delay: 440ms;
+}
+
+.aperture-boundary li:nth-child(2) {
+  animation-delay: 760ms;
+}
+
+.aperture-boundary li:nth-child(3) {
+  animation-delay: 1080ms;
 }
 
 .aperture-boundary li:not(:last-child)::after {
@@ -1679,6 +1738,17 @@ meter::-moz-meter-bar {
   width: 1px;
   background: rgba(238, 233, 224, 0.52);
   content: "";
+  transform: scaleY(0);
+  transform-origin: center top;
+  animation: aperture-trust-path-draw 500ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.aperture-boundary li:nth-child(1)::after {
+  animation-delay: 680ms;
+}
+
+.aperture-boundary li:nth-child(2)::after {
+  animation-delay: 1000ms;
 }
 
 .aperture-boundary-icon {
@@ -1689,12 +1759,29 @@ meter::-moz-meter-bar {
   border: 1px solid rgba(238, 233, 224, 0.48);
   border-radius: 50%;
   color: rgba(238, 233, 224, 0.86);
+  transform-origin: center;
+  animation: aperture-trust-icon-enter 520ms cubic-bezier(0.16, 1.2, 0.3, 1) both;
+}
+
+.aperture-boundary li:nth-child(1) .aperture-boundary-icon {
+  animation-delay: 480ms;
+}
+
+.aperture-boundary li:nth-child(2) .aperture-boundary-icon {
+  animation-delay: 800ms;
+}
+
+.aperture-boundary li:nth-child(3) .aperture-boundary-icon {
+  animation-delay: 1120ms;
 }
 
 .aperture-boundary li.active .aperture-boundary-icon {
   border-color: #c85b22;
   color: #e36b2a;
   box-shadow: inset 0 0 18px rgba(200, 91, 34, 0.1);
+  animation:
+    aperture-trust-icon-enter 520ms 800ms cubic-bezier(0.16, 1.2, 0.3, 1) both,
+    aperture-trust-active-pulse 3.8s 1.45s ease-out infinite;
 }
 
 .aperture-boundary li > span:last-child {
@@ -2006,6 +2093,89 @@ meter::-moz-meter-bar {
   }
 }
 
+@keyframes aperture-trust-rail-enter {
+  from {
+    clip-path: inset(0 100% 0 0);
+    opacity: 0;
+    transform: translateX(-18px);
+  }
+  to {
+    clip-path: inset(0 0 0 0);
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes aperture-trust-label-enter {
+  from {
+    opacity: 0;
+    transform: translateX(-9px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes aperture-trust-node-enter {
+  from {
+    filter: blur(4px);
+    opacity: 0;
+    transform: translate3d(-14px, 6px, 0) scale(0.985);
+  }
+  to {
+    filter: blur(0);
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+}
+
+@keyframes aperture-trust-icon-enter {
+  from {
+    opacity: 0;
+    transform: scale(0.38) rotate(-24deg);
+  }
+  72% {
+    opacity: 1;
+    transform: scale(1.08) rotate(2deg);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) rotate(0);
+  }
+}
+
+@keyframes aperture-trust-path-draw {
+  from {
+    opacity: 0;
+    transform: scaleY(0);
+  }
+  to {
+    opacity: 1;
+    transform: scaleY(1);
+  }
+}
+
+@keyframes aperture-trust-active-pulse {
+  0%,
+  72%,
+  100% {
+    box-shadow:
+      0 0 0 0 rgba(227, 107, 42, 0),
+      inset 0 0 18px rgba(200, 91, 34, 0.1);
+  }
+  8% {
+    box-shadow:
+      0 0 0 0 rgba(227, 107, 42, 0.38),
+      inset 0 0 24px rgba(200, 91, 34, 0.2);
+  }
+  28% {
+    box-shadow:
+      0 0 0 9px rgba(227, 107, 42, 0),
+      inset 0 0 18px rgba(200, 91, 34, 0.1);
+  }
+}
+
 @keyframes aperture-atmosphere-drift {
   from {
     background-position: 47% 48%;
@@ -2017,16 +2187,38 @@ meter::-moz-meter-bar {
   }
 }
 
-@keyframes aperture-shimmer-drift {
+@keyframes aperture-watermark-drift {
   from {
-    background-position: 8% 46%;
-    opacity: 0.06;
-    transform: translate3d(-2%, 0, 0) scale(1.01);
+    opacity: 0.12;
+    transform: translate3d(-50.8%, -49.4%, 0) rotate(-7.5deg) scale(0.98);
   }
   to {
-    background-position: 34% 58%;
-    opacity: 0.17;
-    transform: translate3d(2%, -0.5%, 0) scale(1.035);
+    opacity: 0.19;
+    transform: translate3d(-48.8%, -50.7%, 0) rotate(-6.4deg) scale(1.02);
+  }
+}
+
+@keyframes aperture-watermark-shimmer {
+  from {
+    opacity: 0.68;
+    transform: translate3d(-3px, -2px, 0);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(2px, 1px, 0);
+  }
+}
+
+@keyframes aperture-shimmer-drift {
+  from {
+    background-position: 4% 44%;
+    opacity: 0.055;
+    transform: translate3d(-3%, 0.2%, 0) scale(1.01);
+  }
+  to {
+    background-position: 42% 60%;
+    opacity: 0.19;
+    transform: translate3d(3%, -0.7%, 0) scale(1.04);
   }
 }
 
@@ -2810,6 +3002,13 @@ legend {
     padding: 18px;
   }
 
+  .aperture-watermark {
+    top: 34%;
+    left: 83%;
+    width: min(142vw, 720px);
+    opacity: 0.1;
+  }
+
   .aperture-console {
     width: 100%;
     min-width: 0;
@@ -2874,6 +3073,12 @@ legend {
 @media (max-width: 440px) {
   .aperture-auth-stage {
     padding: 12px;
+  }
+
+  .aperture-watermark {
+    top: 29%;
+    left: 88%;
+    width: 156vw;
   }
 
   .aperture-trust-rail {
@@ -3136,8 +3341,10 @@ legend {
   *::before,
   *::after {
     scroll-behavior: auto !important;
+    animation-delay: 0ms !important;
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
+    transition-delay: 0ms !important;
     transition-duration: 0.01ms !important;
   }
 }

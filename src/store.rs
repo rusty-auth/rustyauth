@@ -7,6 +7,7 @@
 mod ceremonies;
 mod credentials;
 mod events;
+mod fleet;
 mod organization;
 mod service_accounts;
 mod sessions;
@@ -18,6 +19,10 @@ pub use self::ceremonies::{
 };
 pub use self::credentials::StoredPasskey;
 pub use self::events::{AuthEvent, EventLogIntegrityError};
+pub use self::fleet::{
+    FleetAuditRecord, FleetEnvironmentKindRecord, FleetEnvironmentRecord, FleetOrganizationRecord,
+    FleetProjectRecord, FleetResourceStateRecord,
+};
 pub use self::organization::{
     OperatorListing, OperatorRecord, OperatorRoleRecord, OrganizationRecord,
 };
@@ -79,6 +84,16 @@ pub(crate) enum StorePolicyError {
     InvalidServiceCredential,
     #[error("requested scopes exceed the service account grant")]
     ServiceScopeDenied,
+    #[error("fleet resource is missing")]
+    FleetResourceMissing,
+    #[error("fleet resource slug is already in use")]
+    FleetSlugConflict,
+    #[error("fleet resource parent is archived")]
+    FleetParentArchived,
+    #[error("fleet resource still has active children")]
+    FleetHasActiveChildren,
+    #[error("fleet mutation request id was already used for another action")]
+    FleetIdempotencyConflict,
 }
 
 const RESTORE_SENTINEL: &str = "auth:restore:in-progress";
@@ -351,6 +366,171 @@ mod live_store_tests {
         store
             .delete(&format!("{SERVICE_ACCOUNT_PREFIX}{}", account.id))
             .await?;
+        Ok(())
+    }
+
+    #[tokio::test]
+    #[ignore = "requires the compose.integration.yaml SableDB service"]
+    async fn fleet_hierarchy_is_idempotent_audited_and_archived_bottom_up() -> Result<()> {
+        let store = live_store().await?;
+        let suffix = Uuid::new_v4().simple().to_string();
+        let slug = format!("fleet-{}", &suffix[..12]);
+        let operator_id = Uuid::new_v4();
+        let organization_request = Uuid::new_v4();
+        let project_request = Uuid::new_v4();
+        let environment_request = Uuid::new_v4();
+        let environment_archive_request = Uuid::new_v4();
+        let project_archive_request = Uuid::new_v4();
+        let organization_archive_request = Uuid::new_v4();
+
+        let organization = store
+            .create_fleet_organization(
+                slug.clone(),
+                "Fleet test organization".into(),
+                organization_request,
+                operator_id,
+                "integration test".into(),
+            )
+            .await?;
+        let replayed = store
+            .create_fleet_organization(
+                slug.clone(),
+                "ignored on replay".into(),
+                organization_request,
+                operator_id,
+                "integration test replay".into(),
+            )
+            .await?;
+        assert_eq!(replayed.id, organization.id);
+        assert!(
+            store
+                .update_fleet_organization(
+                    organization.id,
+                    "conflicting action".into(),
+                    organization_request,
+                    operator_id,
+                    "must fail".into(),
+                )
+                .await
+                .is_err()
+        );
+
+        let project = store
+            .create_fleet_project(
+                organization.id,
+                slug.clone(),
+                "Fleet test project".into(),
+                "Hierarchy integration coverage".into(),
+                project_request,
+                operator_id,
+                "integration test".into(),
+            )
+            .await?;
+        let environment = store
+            .create_fleet_environment(
+                organization.id,
+                project.id,
+                slug.clone(),
+                "Production".into(),
+                FleetEnvironmentKindRecord::Production,
+                "railway".into(),
+                "eu-west".into(),
+                environment_request,
+                operator_id,
+                "integration test".into(),
+            )
+            .await?;
+
+        assert!(
+            store
+                .archive_fleet_organization(
+                    organization.id,
+                    organization_archive_request,
+                    operator_id,
+                    "must archive children first".into(),
+                )
+                .await
+                .is_err()
+        );
+        assert!(
+            store
+                .archive_fleet_project(
+                    organization.id,
+                    project.id,
+                    project_archive_request,
+                    operator_id,
+                    "must archive children first".into(),
+                )
+                .await
+                .is_err()
+        );
+        store
+            .archive_fleet_environment(
+                organization.id,
+                project.id,
+                environment.id,
+                environment_archive_request,
+                operator_id,
+                "bottom-up archive".into(),
+            )
+            .await?;
+        store
+            .archive_fleet_project(
+                organization.id,
+                project.id,
+                project_archive_request,
+                operator_id,
+                "bottom-up archive".into(),
+            )
+            .await?;
+        store
+            .archive_fleet_organization(
+                organization.id,
+                organization_archive_request,
+                operator_id,
+                "bottom-up archive".into(),
+            )
+            .await?;
+
+        let audits: Vec<_> = store
+            .fleet_audit_records()
+            .await?
+            .into_iter()
+            .filter(|audit| audit.operator_id == operator_id)
+            .collect();
+        assert_eq!(audits.len(), 6, "one audit per successful mutation");
+        let (_, snapshot) = store.export_records().await?;
+        assert!(
+            snapshot
+                .iter()
+                .any(|record| record.key == format!("fleet:organization:{}", organization.id))
+        );
+
+        for key in [
+            format!("fleet:organization:{}", organization.id),
+            format!("fleet:organization-slug:{slug}"),
+            format!("fleet:project:{}", project.id),
+            format!("fleet:project-slug:{}:{slug}", organization.id),
+            format!("fleet:environment:{}", environment.id),
+            format!("fleet:environment-slug:{}:{slug}", project.id),
+        ] {
+            store.delete(&key).await?;
+        }
+        for request_id in [
+            organization_request,
+            project_request,
+            environment_request,
+            environment_archive_request,
+            project_archive_request,
+            organization_archive_request,
+        ] {
+            store
+                .delete(&format!("fleet:idempotency:{request_id}"))
+                .await?;
+        }
+        for audit in audits {
+            store.delete(&format!("fleet:audit:{}", audit.id)).await?;
+        }
         Ok(())
     }
 

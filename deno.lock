@@ -5,6 +5,7 @@
     "jsr:@std/assert@1.0.19": "1.0.19",
     "jsr:@std/assert@^1.0.14": "1.0.19",
     "jsr:@std/internal@^1.0.12": "1.0.14",
+    "jsr:@std/yaml@*": "1.2.0",
     "npm:@astrojs/check@0.9.10": "0.9.10_typescript@5.9.3",
     "npm:@astrojs/solid-js@7.0.2": "7.0.2_solid-js@1.9.14_@types+node@22.19.19",
     "npm:@bufbuild/protobuf@^2.2.3": "2.13.0",
@@ -29,6 +30,7 @@
     "npm:three@0.185.1": "0.185.1",
     "npm:typescript@5.9.3": "5.9.3",
     "npm:vite-plugin-solid@^2.11.8": "2.11.14_solid-js@1.9.14_vite@8.2.0__@types+node@22.19.19__esbuild@0.28.1_@types+node@22.19.19",
+    "npm:vite@7.3.6": "7.3.6_@types+node@22.19.19",
     "npm:vite@^7.1.1": "7.3.6_@types+node@22.19.19",
     "npm:wrangler@4.119.0": "4.119.0",
     "npm:wrangler@latest": "4.119.0",
@@ -43,6 +45,9 @@
     },
     "@std/internal@1.0.14": {
       "integrity": "291516b3d4c35024d6ffbc0a9df5bf4c64116e05b50012cf846710152d2ffdf7"
+    },
+    "@std/yaml@1.2.0": {
+      "integrity": "20beb41e4983ba3437dbefac62b14061ab058e8a187596f19d28ff9035f6e6cf"
     }
   },
   "npm": {

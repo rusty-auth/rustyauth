@@ -17,7 +17,7 @@ use aws_sdk_s3::{Client, config::Region};
 use secrecy::ExposeSecret;
 use tokio::sync::{Mutex, RwLock};
 
-use crate::config::{BackupConfig, KeyRing};
+use crate::config::{BackupConfig, BackupServerSideEncryption, KeyRing};
 
 #[derive(Clone)]
 pub struct BackupStore {
@@ -25,6 +25,11 @@ pub struct BackupStore {
     bucket: String,
     encryption_keys: KeyRing,
     interval_seconds: u64,
+    rpo_seconds: u64,
+    retention_days: u64,
+    alert_after_failures: u64,
+    server_side_encryption: BackupServerSideEncryption,
+    sse_kms_key_id: Option<String>,
     operation: Arc<Mutex<()>>,
     status: Arc<RwLock<BackupStatus>>,
 }
@@ -53,6 +58,11 @@ impl BackupStore {
             bucket: config.bucket,
             encryption_keys: config.encryption_keys,
             interval_seconds: config.interval_seconds,
+            rpo_seconds: config.rpo_seconds,
+            retention_days: config.retention_days,
+            alert_after_failures: config.alert_after_failures,
+            server_side_encryption: config.server_side_encryption,
+            sse_kms_key_id: config.sse_kms_key_id,
             operation: Arc::new(Mutex::new(())),
             status: Arc::new(RwLock::new(BackupStatus::default())),
         })

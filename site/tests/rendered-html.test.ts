@@ -39,8 +39,8 @@ Deno.test("renders every industry solution route", async () => {
   }
 
   const hub = await Deno.readTextFile(outputFor("/solutions"));
-  assertMatch(hub, /\/solutions\/industry\/saas\.jpg/);
-  assertMatch(hub, /\/solutions\/industry\/defence-secure-systems\.jpg/);
+  assertMatch(hub, /\/solutions\/industry\/saas\.svg/);
+  assertMatch(hub, /\/solutions\/industry\/defence-secure-systems\.svg/);
 
   const saas = await Deno.readTextFile(outputFor("/solutions/saas"));
   assertMatch(saas, /4-step authentication path/);

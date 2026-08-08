@@ -1,0 +1,151 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >-
+  Immutable RustyAuth backup bucket with versioning, compliance-mode Object Lock,
+  customer-managed SSE-KMS, public-access blocking and a least-privilege application policy.
+
+Parameters:
+  BackupBucketName:
+    Type: String
+    Description: Globally unique S3 bucket name.
+  BackupApplicationPrincipalArn:
+    Type: String
+    Description: IAM role or user ARN whose access key is supplied to RustyAuth.
+  RetentionDays:
+    Type: Number
+    Default: 90
+    MinValue: 1
+    MaxValue: 3650
+    Description: WORM retention and lifecycle horizon for each backup version.
+
+Resources:
+  BackupKey:
+    Type: AWS::KMS::Key
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      Description: RustyAuth backup bucket defence-in-depth key
+      EnableKeyRotation: true
+      PendingWindowInDays: 30
+      KeyPolicy:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: EnableAccountAdministration
+            Effect: Allow
+            Principal:
+              AWS: !Sub arn:${AWS::Partition}:iam::${AWS::AccountId}:root
+            Action: kms:*
+            Resource: "*"
+          - Sid: AllowRustyAuthThroughS3Only
+            Effect: Allow
+            Principal:
+              AWS: !Ref BackupApplicationPrincipalArn
+            Action:
+              - kms:Decrypt
+              - kms:DescribeKey
+              - kms:Encrypt
+              - kms:GenerateDataKey
+              - kms:ReEncryptFrom
+              - kms:ReEncryptTo
+            Resource: "*"
+            Condition:
+              StringEquals:
+                kms:ViaService: !Sub s3.${AWS::Region}.${AWS::URLSuffix}
+
+  BackupKeyAlias:
+    Type: AWS::KMS::Alias
+    Properties:
+      AliasName: !Sub alias/rustyauth-backups-${AWS::StackName}
+      TargetKeyId: !Ref BackupKey
+
+  BackupBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BucketName: !Ref BackupBucketName
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - BucketKeyEnabled: true
+            ServerSideEncryptionByDefault:
+              SSEAlgorithm: aws:kms
+              KMSMasterKeyID: !GetAtt BackupKey.Arn
+      LifecycleConfiguration:
+        Rules:
+          - Id: ExpireAfterImmutableRetention
+            Status: Enabled
+            ExpirationInDays: !Ref RetentionDays
+            NoncurrentVersionExpiration:
+              NoncurrentDays: !Ref RetentionDays
+      ObjectLockEnabled: true
+      ObjectLockConfiguration:
+        ObjectLockEnabled: Enabled
+        Rule:
+          DefaultRetention:
+            Mode: COMPLIANCE
+            Days: !Ref RetentionDays
+      OwnershipControls:
+        Rules:
+          - ObjectOwnership: BucketOwnerEnforced
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      VersioningConfiguration:
+        Status: Enabled
+
+  BackupBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref BackupBucket
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: DenyInsecureTransport
+            Effect: Deny
+            Principal: "*"
+            Action: s3:*
+            Resource:
+              - !GetAtt BackupBucket.Arn
+              - !Sub ${BackupBucket.Arn}/*
+            Condition:
+              Bool:
+                aws:SecureTransport: false
+          - Sid: AllowRustyAuthListing
+            Effect: Allow
+            Principal:
+              AWS: !Ref BackupApplicationPrincipalArn
+            Action: s3:ListBucket
+            Resource: !GetAtt BackupBucket.Arn
+            Condition:
+              StringLike:
+                s3:prefix: rustyauth-backups/*
+          - Sid: AllowRustyAuthObjectIO
+            Effect: Allow
+            Principal:
+              AWS: !Ref BackupApplicationPrincipalArn
+            Action:
+              - s3:GetObject
+              - s3:PutObject
+            Resource: !Sub ${BackupBucket.Arn}/rustyauth-backups/*
+          - Sid: DenyRustyAuthDeletionAndRetentionBypass
+            Effect: Deny
+            Principal:
+              AWS: !Ref BackupApplicationPrincipalArn
+            Action:
+              - s3:BypassGovernanceRetention
+              - s3:DeleteObject
+              - s3:DeleteObjectVersion
+              - s3:PutObjectLegalHold
+              - s3:PutObjectRetention
+            Resource: !Sub ${BackupBucket.Arn}/rustyauth-backups/*
+
+Outputs:
+  BucketName:
+    Value: !Ref BackupBucket
+  BucketRegion:
+    Value: !Ref AWS::Region
+  KmsKeyArn:
+    Value: !GetAtt BackupKey.Arn
+  RustyAuthBackupEndpoint:
+    Value: !Sub https://s3.${AWS::Region}.${AWS::URLSuffix}

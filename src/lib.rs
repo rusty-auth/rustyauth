@@ -11,6 +11,7 @@ pub mod backup;
 pub mod cli;
 pub mod config;
 pub mod event_rpc;
+pub mod fleet_rpc;
 pub mod identity_rpc;
 pub mod jwt;
 pub mod operator_auth;

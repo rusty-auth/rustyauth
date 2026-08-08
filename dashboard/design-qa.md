@@ -142,9 +142,12 @@ redrawn.
 - The local-evaluation button navigated to `?login=aperture&preview=1`; the populated RustyAuth overview was
   visible, and browser history returned to the aperture sign-in.
 - The existing passkey submit handler and pending/error states are shared with the original sign-in.
-- The console enters over 620ms with staggered child motion. The paper atmosphere drifts over 24s, the faint
-  shimmer layer moves over 15s, and button surface motion stays under 650ms. The global reduced-motion rule
-  collapses all of these durations to 0.01ms.
+- The console enters over 620ms with staggered child motion. The trust rail reveals over 760ms, then draws the
+  Operator → RustyAuth → SableDB path with node delays at 440ms, 760ms and 1080ms; the active authorization
+  node settles into a restrained 3.8s copper pulse. The paper atmosphere drifts over 24s, the faint shimmer
+  layer moves over 12s, and button surface motion stays under 650ms. The official R silhouette is blind-embossed
+  into the open paper field with opposing multiply/screen edges, an 18s drift and an 8.5s highlight change. The
+  global reduced-motion rule collapses all durations to 0.01ms and removes animation and transition delays.
 - The 390 × 844 mobile viewport has no horizontal overflow, fits the complete 366 × 630 console above the
   fold, preserves input/action target sizes and converts the trust-boundary rail to a compact brand header.
 - Browser diagnostics reported zero warnings or errors after desktop, interaction and mobile passes.

@@ -1,0 +1,71 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 840 630">
+  <defs>
+    <radialGradient id="glow" cx="0.72" cy="0.38" r="0.55">
+      <stop offset="0" stop-color="#cc5a19" stop-opacity="0.16"/>
+      <stop offset="1" stop-color="#cc5a19" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <rect width="840" height="630" fill="#22211f"/>
+  <rect width="840" height="630" fill="url(#glow)"/>
+
+  <g transform="matrix(.866,.5,-.866,.5,530,282)">
+    <rect x="-215" y="-150" width="430" height="300" rx="24" fill="#171614"/>
+  </g>
+  <g transform="matrix(.866,.5,-.866,.5,530,270)">
+    <rect x="-215" y="-150" width="430" height="300" rx="24" fill="#2c2b28" stroke="#f5f1e9" stroke-opacity="0.16" vector-effect="non-scaling-stroke"/>
+    <g stroke="#f5f1e9" stroke-opacity="0.07" vector-effect="non-scaling-stroke">
+      <line x1="-160" y1="-140" x2="-160" y2="140"/><line x1="-104" y1="-140" x2="-104" y2="140"/>
+      <line x1="-48" y1="-140" x2="-48" y2="140"/><line x1="8" y1="-140" x2="8" y2="140"/>
+      <line x1="64" y1="-140" x2="64" y2="140"/><line x1="120" y1="-140" x2="120" y2="140"/>
+      <line x1="176" y1="-140" x2="176" y2="140"/>
+      <line x1="-200" y1="-96" x2="200" y2="-96"/><line x1="-200" y1="-48" x2="200" y2="-48"/>
+      <line x1="-200" y1="0" x2="200" y2="0"/><line x1="-200" y1="48" x2="200" y2="48"/>
+      <line x1="-200" y1="96" x2="200" y2="96"/>
+    </g>
+  </g>
+
+  <!-- trace from chip stack toward controller -->
+  <g transform="matrix(.866,.5,-.866,.5,530,266)" fill="none">
+    <path d="M -140 46 L -140 -20 L -60 -20" stroke="#e89b6d" stroke-opacity="0.75" vector-effect="non-scaling-stroke"/>
+    <circle cx="-140" cy="-20" r="5" fill="#cc5a19" stroke="none"/>
+  </g>
+
+  <!-- casino chip stack -->
+  <g transform="matrix(.866,.5,-.866,.5,530,268)"><circle cx="-140" cy="84" r="38" fill="#171614"/></g>
+  <g transform="matrix(.866,.5,-.866,.5,530,262)"><circle cx="-140" cy="84" r="36" fill="#a94612"/></g>
+  <g transform="matrix(.866,.5,-.866,.5,530,254)"><circle cx="-140" cy="84" r="36" fill="#cc5a19"/></g>
+  <g transform="matrix(.866,.5,-.866,.5,530,246)">
+    <circle cx="-140" cy="84" r="36" fill="#e89b6d"/>
+    <circle cx="-140" cy="84" r="29" fill="none" stroke="#f5f1e9" stroke-width="7" stroke-dasharray="11 15"/>
+    <circle cx="-140" cy="84" r="15" fill="#f5f1e9"/>
+  </g>
+
+  <!-- die -->
+  <g transform="matrix(.866,.5,-.866,.5,530,268)"><rect x="150" y="-146" width="58" height="58" rx="10" fill="#171614"/></g>
+  <g transform="matrix(.866,.5,-.866,.5,530,244)">
+    <rect x="150" y="-146" width="58" height="58" rx="10" fill="#f5f1e9" stroke="#252321" stroke-opacity="0.5" vector-effect="non-scaling-stroke"/>
+  </g>
+  <g transform="matrix(.866,.5,-.866,.5,530,242)" fill="#252321">
+    <circle cx="179" cy="-117" r="5"/>
+    <circle cx="165" cy="-131" r="5"/><circle cx="193" cy="-131" r="5"/>
+    <circle cx="165" cy="-103" r="5"/><circle cx="193" cy="-103" r="5"/>
+  </g>
+
+  <!-- game controller -->
+  <g transform="matrix(.866,.5,-.866,.5,530,268)">
+    <rect x="-110" y="-58" width="264" height="120" rx="56" fill="#171614"/>
+  </g>
+  <g transform="matrix(.866,.5,-.866,.5,530,250)">
+    <rect x="-110" y="-58" width="264" height="120" rx="56" fill="#f5f1e9" stroke="#252321" stroke-opacity="0.55" vector-effect="non-scaling-stroke"/>
+  </g>
+  <g transform="matrix(.866,.5,-.866,.5,530,248)">
+    <rect x="-64" y="-16" width="60" height="20" rx="5" fill="#252321"/>
+    <rect x="-44" y="-36" width="20" height="60" rx="5" fill="#252321"/>
+    <circle cx="98" cy="-28" r="12" fill="#cc5a19"/>
+    <circle cx="124" cy="-6" r="12" fill="#d8cfc2"/>
+    <circle cx="98" cy="16" r="12" fill="#d8cfc2"/>
+    <circle cx="72" cy="-6" r="12" fill="#e89b6d"/>
+    <rect x="14" y="-10" width="16" height="9" rx="4.5" fill="#252321"/>
+    <rect x="38" y="-10" width="16" height="9" rx="4.5" fill="#252321"/>
+  </g>
+</svg>

@@ -1,0 +1,70 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 840 630">
+  <defs>
+    <radialGradient id="glow" cx="0.72" cy="0.38" r="0.55">
+      <stop offset="0" stop-color="#cc5a19" stop-opacity="0.16"/>
+      <stop offset="1" stop-color="#cc5a19" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <rect width="840" height="630" fill="#22211f"/>
+  <rect width="840" height="630" fill="url(#glow)"/>
+
+  <!-- board shadow + top -->
+  <g transform="matrix(.866,.5,-.866,.5,530,282)">
+    <rect x="-215" y="-150" width="430" height="300" rx="24" fill="#171614"/>
+  </g>
+  <g transform="matrix(.866,.5,-.866,.5,530,270)">
+    <rect x="-215" y="-150" width="430" height="300" rx="24" fill="#2c2b28" stroke="#f5f1e9" stroke-opacity="0.16" vector-effect="non-scaling-stroke"/>
+    <g stroke="#f5f1e9" stroke-opacity="0.07" vector-effect="non-scaling-stroke">
+      <line x1="-160" y1="-140" x2="-160" y2="140"/><line x1="-104" y1="-140" x2="-104" y2="140"/>
+      <line x1="-48" y1="-140" x2="-48" y2="140"/><line x1="8" y1="-140" x2="8" y2="140"/>
+      <line x1="64" y1="-140" x2="64" y2="140"/><line x1="120" y1="-140" x2="120" y2="140"/>
+      <line x1="176" y1="-140" x2="176" y2="140"/>
+      <line x1="-200" y1="-96" x2="200" y2="-96"/><line x1="-200" y1="-48" x2="200" y2="-48"/>
+      <line x1="-200" y1="0" x2="200" y2="0"/><line x1="-200" y1="48" x2="200" y2="48"/>
+      <line x1="-200" y1="96" x2="200" y2="96"/>
+    </g>
+  </g>
+
+  <!-- integration trace -->
+  <g transform="matrix(.866,.5,-.866,.5,530,266)" fill="none">
+    <path d="M -115 65 L -115 112 L 40 112 L 40 44" stroke="#e89b6d" stroke-opacity="0.75" vector-effect="non-scaling-stroke"/>
+    <circle cx="-115" cy="112" r="5" fill="#cc5a19" stroke="none"/>
+    <circle cx="40" cy="112" r="5" fill="#cc5a19" stroke="none"/>
+  </g>
+
+  <!-- module chips -->
+  <g transform="matrix(.866,.5,-.866,.5,530,268)">
+    <rect x="-150" y="40" width="70" height="50" rx="10" fill="#171614"/>
+    <rect x="-60" y="74" width="54" height="40" rx="8" fill="#171614"/>
+  </g>
+  <g transform="matrix(.866,.5,-.866,.5,530,258)">
+    <rect x="-150" y="40" width="70" height="50" rx="10" fill="#e9e1d5" stroke="#252321" stroke-opacity="0.5" vector-effect="non-scaling-stroke"/>
+  </g>
+  <g transform="matrix(.866,.5,-.866,.5,530,256)">
+    <rect x="-60" y="74" width="54" height="40" rx="8" fill="#cc5a19" stroke="#252321" stroke-opacity="0.4" vector-effect="non-scaling-stroke"/>
+  </g>
+
+  <!-- browser window plate -->
+  <g transform="matrix(.866,.5,-.866,.5,530,268)">
+    <rect x="-40" y="-120" width="260" height="180" rx="16" fill="#171614"/>
+  </g>
+  <g transform="matrix(.866,.5,-.866,.5,530,252)">
+    <rect x="-40" y="-120" width="260" height="180" rx="16" fill="#f5f1e9" stroke="#252321" stroke-opacity="0.55" vector-effect="non-scaling-stroke"/>
+  </g>
+  <g transform="matrix(.866,.5,-.866,.5,530,250)">
+    <rect x="-24" y="-104" width="228" height="26" rx="9" fill="#e9e1d5"/>
+    <circle cx="-8" cy="-91" r="5" fill="#cc5a19"/>
+    <circle cx="12" cy="-91" r="5" fill="#cfc6b9"/>
+    <circle cx="32" cy="-91" r="5" fill="#cfc6b9"/>
+    <rect x="58" y="-100" width="134" height="18" rx="9" fill="#fbf8f2" stroke="#252321" stroke-opacity="0.25" vector-effect="non-scaling-stroke"/>
+    <rect x="-16" y="-64" width="104" height="62" rx="8" fill="#cc5a19"/>
+    <rect x="100" y="-64" width="94" height="26" rx="6" fill="#d8cfc2"/>
+    <rect x="100" y="-28" width="94" height="26" rx="6" fill="#d8cfc2"/>
+    <rect x="-16" y="10" width="210" height="30" rx="6" fill="#e2d9cc"/>
+  </g>
+
+  <!-- cursor -->
+  <g transform="matrix(.866,.5,-.866,.5,530,230)">
+    <path d="M 150 18 L 150 52 L 160 43 L 168 58 L 176 54 L 168 39 L 181 37 Z" fill="#252321" stroke="#f5f1e9" stroke-opacity="0.85" vector-effect="non-scaling-stroke"/>
+  </g>
+</svg>

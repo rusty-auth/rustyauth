@@ -1,0 +1,417 @@
+syntax = "proto3";
+
+package rustyauth.fleet.v1;
+
+// Owns Fleet metadata and authorization. This service never exposes realm
+// database credentials or makes customer identity data authoritative centrally.
+service FleetService {
+  rpc GetFleetOverview(GetFleetOverviewRequest) returns (FleetOverview);
+
+  rpc ListOrganizations(ListOrganizationsRequest) returns (ListOrganizationsResponse);
+  rpc GetOrganization(GetOrganizationRequest) returns (Organization);
+  rpc CreateOrganization(CreateOrganizationRequest) returns (Organization);
+  rpc UpdateOrganization(UpdateOrganizationRequest) returns (Organization);
+  rpc ArchiveOrganization(ArchiveOrganizationRequest) returns (Organization);
+
+  rpc ListProjects(ListProjectsRequest) returns (ListProjectsResponse);
+  rpc GetProject(GetProjectRequest) returns (Project);
+  rpc CreateProject(CreateProjectRequest) returns (Project);
+  rpc UpdateProject(UpdateProjectRequest) returns (Project);
+  rpc ArchiveProject(ArchiveProjectRequest) returns (Project);
+
+  rpc ListEnvironments(ListEnvironmentsRequest) returns (ListEnvironmentsResponse);
+  rpc GetEnvironment(GetEnvironmentRequest) returns (Environment);
+  rpc CreateEnvironment(CreateEnvironmentRequest) returns (Environment);
+  rpc UpdateEnvironment(UpdateEnvironmentRequest) returns (Environment);
+  rpc ArchiveEnvironment(ArchiveEnvironmentRequest) returns (Environment);
+
+  rpc ListConnections(ListConnectionsRequest) returns (ListConnectionsResponse);
+  rpc GetConnection(GetConnectionRequest) returns (RealmConnection);
+  rpc BeginConnection(BeginConnectionRequest) returns (ConnectionAttempt);
+  rpc CompleteConnection(CompleteConnectionRequest) returns (RealmConnection);
+  rpc RevokeConnection(RevokeConnectionRequest) returns (RealmConnection);
+
+  rpc ListRoleBindings(ListRoleBindingsRequest) returns (ListRoleBindingsResponse);
+  rpc UpsertRoleBinding(UpsertRoleBindingRequest) returns (RoleBinding);
+  rpc RevokeRoleBinding(RevokeRoleBindingRequest) returns (RoleBinding);
+
+  rpc ListAuditEvents(ListAuditEventsRequest) returns (ListAuditEventsResponse);
+}
+
+enum FleetRole {
+  FLEET_ROLE_UNSPECIFIED = 0;
+  FLEET_ROLE_OWNER = 1;
+  FLEET_ROLE_ADMINISTRATOR = 2;
+  FLEET_ROLE_OPERATOR = 3;
+  FLEET_ROLE_SUPPORT = 4;
+  FLEET_ROLE_AUDITOR = 5;
+}
+
+enum ResourceKind {
+  RESOURCE_KIND_UNSPECIFIED = 0;
+  RESOURCE_KIND_ORGANIZATION = 1;
+  RESOURCE_KIND_PROJECT = 2;
+  RESOURCE_KIND_ENVIRONMENT = 3;
+}
+
+enum EnvironmentKind {
+  ENVIRONMENT_KIND_UNSPECIFIED = 0;
+  ENVIRONMENT_KIND_DEVELOPMENT = 1;
+  ENVIRONMENT_KIND_PREVIEW = 2;
+  ENVIRONMENT_KIND_STAGING = 3;
+  ENVIRONMENT_KIND_PRODUCTION = 4;
+}
+
+enum ResourceState {
+  RESOURCE_STATE_UNSPECIFIED = 0;
+  RESOURCE_STATE_ACTIVE = 1;
+  RESOURCE_STATE_ARCHIVED = 2;
+}
+
+enum ConnectionMode {
+  CONNECTION_MODE_UNSPECIFIED = 0;
+  CONNECTION_MODE_PUBLIC_ENDPOINT = 1;
+  CONNECTION_MODE_OUTBOUND_CONNECTOR = 2;
+}
+
+enum ConnectionState {
+  CONNECTION_STATE_UNSPECIFIED = 0;
+  CONNECTION_STATE_PENDING = 1;
+  CONNECTION_STATE_VERIFYING = 2;
+  CONNECTION_STATE_HEALTHY = 3;
+  CONNECTION_STATE_DEGRADED = 4;
+  CONNECTION_STATE_OFFLINE = 5;
+  CONNECTION_STATE_REVOKED = 6;
+}
+
+enum AuditOutcome {
+  AUDIT_OUTCOME_UNSPECIFIED = 0;
+  AUDIT_OUTCOME_SUCCEEDED = 1;
+  AUDIT_OUTCOME_DENIED = 2;
+  AUDIT_OUTCOME_FAILED = 3;
+}
+
+message MutationContext {
+  // Stable UUID supplied by the client. Repeating it must not repeat a mutation.
+  string request_id = 1;
+  // Required for sensitive production operations and retained in the audit record.
+  string reason = 2;
+}
+
+message Organization {
+  string id = 1;
+  string slug = 2;
+  string name = 3;
+  ResourceState state = 4;
+  string created_at = 5;
+  string updated_at = 6;
+  string archived_at = 7;
+}
+
+message Project {
+  string id = 1;
+  string organization_id = 2;
+  string slug = 3;
+  string name = 4;
+  string description = 5;
+  ResourceState state = 6;
+  string created_at = 7;
+  string updated_at = 8;
+  string archived_at = 9;
+}
+
+message Environment {
+  string id = 1;
+  string organization_id = 2;
+  string project_id = 3;
+  string slug = 4;
+  string name = 5;
+  EnvironmentKind kind = 6;
+  string provider = 7;
+  string region = 8;
+  ResourceState state = 9;
+  string created_at = 10;
+  string updated_at = 11;
+  string archived_at = 12;
+}
+
+message Capability {
+  string name = 1;
+  uint32 version = 2;
+}
+
+message RealmConnection {
+  string id = 1;
+  string organization_id = 2;
+  string project_id = 3;
+  string environment_id = 4;
+  string realm_id = 5;
+  string display_name = 6;
+  ConnectionMode mode = 7;
+  // Safe public management endpoint. Empty for an outbound connector.
+  string management_endpoint = 8;
+  // Opaque secret-store locator; never secret material.
+  string credential_reference = 9;
+  string deployment_version = 10;
+  string protocol_version = 11;
+  repeated Capability capabilities = 12;
+  string issuer = 13;
+  string rp_id = 14;
+  ConnectionState state = 15;
+  string last_seen_at = 16;
+  string created_at = 17;
+  string updated_at = 18;
+  string revoked_at = 19;
+}
+
+message RoleBinding {
+  string id = 1;
+  string operator_id = 2;
+  ResourceKind resource_kind = 3;
+  string resource_id = 4;
+  FleetRole role = 5;
+  string created_by = 6;
+  string created_at = 7;
+  string revoked_by = 8;
+  string revoked_at = 9;
+}
+
+message AuditEvent {
+  string id = 1;
+  string request_id = 2;
+  string operator_id = 3;
+  string action = 4;
+  ResourceKind resource_kind = 5;
+  string resource_id = 6;
+  string organization_id = 7;
+  string project_id = 8;
+  string environment_id = 9;
+  AuditOutcome outcome = 10;
+  string reason = 11;
+  string occurred_at = 12;
+}
+
+message FleetOverview {
+  uint64 organizations = 1;
+  uint64 projects = 2;
+  uint64 environments = 3;
+  uint64 healthy_connections = 4;
+  uint64 degraded_connections = 5;
+  uint64 offline_connections = 6;
+  string calculated_at = 7;
+}
+
+message GetFleetOverviewRequest {
+  string organization_id = 1;
+}
+
+message ListOrganizationsRequest {
+  uint32 page_size = 1;
+  string page_token = 2;
+  bool include_archived = 3;
+}
+
+message ListOrganizationsResponse {
+  repeated Organization organizations = 1;
+  string next_page_token = 2;
+}
+
+message GetOrganizationRequest {
+  string organization_id = 1;
+}
+
+message CreateOrganizationRequest {
+  string slug = 1;
+  string name = 2;
+  MutationContext mutation = 3;
+}
+
+message UpdateOrganizationRequest {
+  string organization_id = 1;
+  string name = 2;
+  MutationContext mutation = 3;
+}
+
+message ArchiveOrganizationRequest {
+  string organization_id = 1;
+  MutationContext mutation = 2;
+}
+
+message ListProjectsRequest {
+  string organization_id = 1;
+  uint32 page_size = 2;
+  string page_token = 3;
+  bool include_archived = 4;
+}
+
+message ListProjectsResponse {
+  repeated Project projects = 1;
+  string next_page_token = 2;
+}
+
+message GetProjectRequest {
+  string organization_id = 1;
+  string project_id = 2;
+}
+
+message CreateProjectRequest {
+  string organization_id = 1;
+  string slug = 2;
+  string name = 3;
+  string description = 4;
+  MutationContext mutation = 5;
+}
+
+message UpdateProjectRequest {
+  string organization_id = 1;
+  string project_id = 2;
+  string name = 3;
+  string description = 4;
+  MutationContext mutation = 5;
+}
+
+message ArchiveProjectRequest {
+  string organization_id = 1;
+  string project_id = 2;
+  MutationContext mutation = 3;
+}
+
+message ListEnvironmentsRequest {
+  string organization_id = 1;
+  string project_id = 2;
+  uint32 page_size = 3;
+  string page_token = 4;
+  bool include_archived = 5;
+}
+
+message ListEnvironmentsResponse {
+  repeated Environment environments = 1;
+  string next_page_token = 2;
+}
+
+message GetEnvironmentRequest {
+  string organization_id = 1;
+  string project_id = 2;
+  string environment_id = 3;
+}
+
+message CreateEnvironmentRequest {
+  string organization_id = 1;
+  string project_id = 2;
+  string slug = 3;
+  string name = 4;
+  EnvironmentKind kind = 5;
+  string provider = 6;
+  string region = 7;
+  MutationContext mutation = 8;
+}
+
+message UpdateEnvironmentRequest {
+  string organization_id = 1;
+  string project_id = 2;
+  string environment_id = 3;
+  string name = 4;
+  EnvironmentKind kind = 5;
+  string provider = 6;
+  string region = 7;
+  MutationContext mutation = 8;
+}
+
+message ArchiveEnvironmentRequest {
+  string organization_id = 1;
+  string project_id = 2;
+  string environment_id = 3;
+  MutationContext mutation = 4;
+}
+
+message ListConnectionsRequest {
+  string organization_id = 1;
+  string project_id = 2;
+  string environment_id = 3;
+  uint32 page_size = 4;
+  string page_token = 5;
+  bool include_revoked = 6;
+}
+
+message ListConnectionsResponse {
+  repeated RealmConnection connections = 1;
+  string next_page_token = 2;
+}
+
+message GetConnectionRequest {
+  string organization_id = 1;
+  string project_id = 2;
+  string environment_id = 3;
+  string connection_id = 4;
+}
+
+message BeginConnectionRequest {
+  string organization_id = 1;
+  string project_id = 2;
+  string environment_id = 3;
+  ConnectionMode mode = 4;
+  string management_endpoint = 5;
+  MutationContext mutation = 6;
+}
+
+message ConnectionAttempt {
+  string id = 1;
+  string environment_id = 2;
+  ConnectionMode mode = 3;
+  string expires_at = 4;
+  ConnectionState state = 5;
+}
+
+message CompleteConnectionRequest {
+  string attempt_id = 1;
+  // Short-lived single-use code. It is consumed server-side and never persisted by the client.
+  string pairing_code = 2;
+  MutationContext mutation = 3;
+}
+
+message RevokeConnectionRequest {
+  string organization_id = 1;
+  string project_id = 2;
+  string environment_id = 3;
+  string connection_id = 4;
+  MutationContext mutation = 5;
+}
+
+message ListRoleBindingsRequest {
+  ResourceKind resource_kind = 1;
+  string resource_id = 2;
+  uint32 page_size = 3;
+  string page_token = 4;
+  bool include_revoked = 5;
+}
+
+message ListRoleBindingsResponse {
+  repeated RoleBinding role_bindings = 1;
+  string next_page_token = 2;
+}
+
+message UpsertRoleBindingRequest {
+  string operator_id = 1;
+  ResourceKind resource_kind = 2;
+  string resource_id = 3;
+  FleetRole role = 4;
+  MutationContext mutation = 5;
+}
+
+message RevokeRoleBindingRequest {
+  string role_binding_id = 1;
+  MutationContext mutation = 2;
+}
+
+message ListAuditEventsRequest {
+  string organization_id = 1;
+  string project_id = 2;
+  string environment_id = 3;
+  uint32 page_size = 4;
+  string page_token = 5;
+}
+
+message ListAuditEventsResponse {
+  repeated AuditEvent events = 1;
+  string next_page_token = 2;
+}

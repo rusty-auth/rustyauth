@@ -1,0 +1,28 @@
+[package]
+name = "rustyauth-console"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.94.1"
+license = "Apache-2.0"
+description = "Cross-platform RustyAuth fleet management console"
+publish = false
+
+[dependencies]
+base64 = "=0.22.1"
+dioxus = { version = "=0.7.10", default-features = false, features = ["launch", "lib"] }
+dx_icons_tabler = "=0.1.0"
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+wasm-bindgen = "=0.2.127"
+web-sys = { version = "=0.3.104", features = ["History", "Location", "Window"] }
+
+[features]
+default = ["web"]
+web = ["dioxus/web"]
+desktop = ["dioxus/desktop"]
+mobile = ["dioxus/mobile"]
+
+[profile.release]
+codegen-units = 1
+lto = "thin"
+strip = "symbols"

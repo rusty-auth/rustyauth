@@ -1,10 +1,14 @@
-# Industry image credits
+# Industry card artwork
 
-All six card backgrounds use real stock photography rather than generated imagery.
+All six card backgrounds are original SVG illustrations drawn for this site in its
+own isometric design language (paper, ink and copper — matching the homepage hero
+and the solution-page boundary scenes). Each is built around the sector it targets:
 
-- `saas.jpg` — Polina Zimmerman, [Pexels](https://www.pexels.com/photo/people-working-in-office-3747094/), free to use under the Pexels licence.
-- `gambling-gaming.jpg` — Nathan b Caldeira, [Pexels](https://www.pexels.com/photo/gaming-studio-with-lots-of-computers-6125330/), free to use under the Pexels licence.
-- `banking-payments.jpg` — Connor Scott McManus, [Pexels](https://www.pexels.com/photo/treasury-in-bank-14866072/), free to use under the Pexels licence.
-- `financial-services.jpg` — Daniel Brzdęk, [Unsplash](https://unsplash.com/photos/financial-stock-market-data-displayed-on-a-screen-EuIqk6LpUU0), free to use under the Unsplash licence.
-- `healthcare-products.jpg` — MART PRODUCTION, [Pexels](https://www.pexels.com/photo/technology-hospital-medicine-indoors-7089017/), free to use under the Pexels licence.
-- `defence-secure-systems.jpg` — Tetiana Sapon, [Unsplash](https://unsplash.com/photos/blue-lit-control-room-with-many-consoles-and-ibm-coats-h-g51nVu9U4), free to use under the Unsplash licence.
+- `saas.svg` — product browser window with UI blocks and a cursor
+- `gambling-gaming.svg` — game controller, die and casino chip stack
+- `banking-payments.svg` — vault dial, payment card and coins
+- `financial-services.svg` — candlestick chart with trend line and allocation wheel
+- `healthcare-products.svg` — patient monitor with ECG trace, medical cross and capsule
+- `defence-secure-systems.svg` — radar sweep inside a dashed secure perimeter, with shield
+
+No third-party imagery is used.

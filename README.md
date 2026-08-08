@@ -52,6 +52,8 @@ permissions, entitlements and resource ownership.
 - private Connect/gRPC identity reads, exact search and controlled mutations;
 - a same-origin SolidJS operator dashboard with passkey-only sessions, user search and account
   inspection;
+- a pixel-matched Dioxus console prototype, including the operator sign-in journey, that establishes the shared
+  web, desktop and future mobile client surface for fleet management;
 - durable single-organization settings and role-gated operator access;
 - scoped service accounts with independently revocable, one-time credentials and short-lived ES256
   token exchange;
@@ -267,12 +269,18 @@ RustyAuth is currently `0.1.0` pre-release software.
 | Webhook event delivery | Not implemented |
 | Webhook and metrics control plane | Dashboard preview and protobuf contracts only; durable handlers not implemented |
 | Multi-tenant runtime isolation | Claims/events are tenant-tagged; one configured tenant per instance |
+| Fleet management across isolated deployments | Future direction documented; not implemented; single-tenant delivery remains the current priority |
+| Cross-platform Dioxus fleet console | Six-screen preview and operator sign-in clone implemented for web and desktop; fleet registry, pairing and live management APIs are not implemented |
 | Independent security review | Not completed |
 
 Production `1.0` still requires account recovery and abuse controls, event retention/webhook policy,
 cross-instance concurrency review, dependency and protocol audits, authenticator coverage and an
 independent security assessment. The detailed gate is documented in
 [Architecture](docs/ARCHITECTURE.md) and the [Security policy](SECURITY.md).
+
+The [roadmap](docs/ROADMAP.md) keeps the current focus on completing the single-tenant foundation.
+A later [fleet control plane](docs/FLEET_CONTROL_PLANE.md) may provide one dashboard for many
+isolated RustyAuth deployments without sharing their identity databases or authentication runtime.
 
 ## Development
 
@@ -301,6 +309,10 @@ deno task site:dev
 deno task site:test
 deno task dashboard:check
 deno task dashboard:build
+deno task console:check
+deno task console:check:desktop
+deno task console:check:mobile
+deno task console:build:web
 ```
 
 ConnectRPC contracts and the Solid Query adapter live in `packages/protocol` and
@@ -322,7 +334,10 @@ Pulumi configuration.
 
 | Document | Contents |
 | --- | --- |
+| [Roadmap](docs/ROADMAP.md) | Current single-tenant priorities and later product directions |
 | [Architecture](docs/ARCHITECTURE.md) | Components, flows, state and trust boundaries |
+| [Fleet control-plane direction](docs/FLEET_CONTROL_PLANE.md) | Future standalone and cross-cloud fleet-management architecture |
+| [Cross-platform console decision](docs/decisions/0002-cross-platform-fleet-console.md) | Dioxus client targets, embedded-dashboard coexistence and trust boundaries |
 | [Identity data model](docs/IDENTITY_DATA_MODEL.md) | Every persisted identity field, invariant, index and API projection |
 | [Dashboard control-plane decision](docs/decisions/0001-dashboard-control-plane.md) | SolidJS, ConnectRPC, Rust, Railway and SableDB trust boundaries |
 | [Engineering](docs/ENGINEERING.md) | Module ownership, coding standards and quality gates |

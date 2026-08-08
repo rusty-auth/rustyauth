@@ -457,6 +457,18 @@ function ApertureSignInScreen(props: {
   return (
     <main class="aperture-auth-stage">
       <div class="aperture-atmosphere" aria-hidden="true" />
+      <div class="aperture-watermark" aria-hidden="true">
+        <img
+          class="aperture-watermark-shadow"
+          src="/brand/rustyauth-mark-transparent.png"
+          alt=""
+        />
+        <img
+          class="aperture-watermark-highlight"
+          src="/brand/rustyauth-mark-transparent.png"
+          alt=""
+        />
+      </div>
       <section class="aperture-console" aria-labelledby="aperture-title">
         <aside class="aperture-trust-rail">
           <header class="aperture-brand">

@@ -1,7 +1,10 @@
 /target/
+/console/target/
+/infra/cloudflare/cloudflare
 /node_modules/
 /docs/business/
 /dashboard/dist/
+/dashboard/.vite/
 /.codex-*
 /.env
 /.idea/

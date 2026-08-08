@@ -87,6 +87,24 @@ jobs:
       - run: deno task dashboard:check
       - run: deno task dashboard:build
 
+  console:
+    name: Dioxus console checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: dtolnay/rust-toolchain@75be91dd2711b583df57c31d0873b4145c89f1d9 # 1.94.1
+        with:
+          toolchain: 1.94.1
+          components: clippy,rustfmt
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@49a0bdc70d2e1b713ca9e2869b211fcce03d3c1c # v2
+        with:
+          workspaces: console -> target
+      - run: cargo fmt --manifest-path console/Cargo.toml --check
+      - run: >-
+          cargo clippy --manifest-path console/Cargo.toml --locked
+          --target wasm32-unknown-unknown --no-default-features --features web -- -D warnings
+
   supply-chain:
     name: Dependency policy
     runs-on: ubuntu-latest

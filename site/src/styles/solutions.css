@@ -860,7 +860,7 @@
   padding: 38px;
   color: #fff;
   background:
-    linear-gradient(90deg, rgba(24, 23, 21, .96) 0%, rgba(24, 23, 21, .86) 60%, rgba(24, 23, 21, .58) 100%),
+    linear-gradient(90deg, rgba(24, 23, 21, .95) 0%, rgba(24, 23, 21, .7) 48%, rgba(24, 23, 21, .1) 100%),
     var(--card-image) center / cover no-repeat;
   border-right: 1px solid var(--line);
   border-bottom: 1px solid var(--line);
@@ -889,6 +889,7 @@
   font-size: 34px;
   line-height: 1.06;
   letter-spacing: -.05em;
+  text-shadow: 0 2px 20px rgba(24, 23, 21, .75), 0 0 3px rgba(24, 23, 21, .5);
 }
 
 .solution-hub-card > span {

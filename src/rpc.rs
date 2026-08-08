@@ -12,7 +12,9 @@ use sha2::{Digest, Sha256};
 use subtle::ConstantTimeEq;
 
 use crate::{
+    config::DeploymentRole,
     event_rpc::EventRpc,
+    fleet_rpc::FleetRpc,
     identity_rpc::IdentityRpc,
     jwt::JwtIssuer,
     operator_auth::{OperatorAuthorizer, OperatorCapability},
@@ -23,6 +25,7 @@ use crate::{
 };
 
 const EVENT_SERVICE_PREFIX: &str = "/rustyauth.events.v1.AuthEventService/";
+const FLEET_SERVICE_PREFIX: &str = "/rustyauth.fleet.v1.FleetService/";
 const IDENTITY_SERVICE_PREFIX: &str = "/rustyauth.identity.v1.IdentityService/";
 const ORGANIZATION_SERVICE_PREFIX: &str = "/rustyauth.organization.v1.OrganizationService/";
 const SERVICE_ACCOUNT_SERVICE_PREFIX: &str =
@@ -162,6 +165,134 @@ const METHOD_POLICIES: &[(&str, &str, MethodPolicy)] = &[
         "ExchangeCredential",
         MethodPolicy::PublicCredentialExchange,
     ),
+    // Fleet registry. The handler performs the second, resource-scoped check as
+    // delegated role bindings land; the transport gate always requires a real
+    // passkey operator session and never accepts the realm bearer tokens.
+    (
+        FLEET_SERVICE_PREFIX,
+        "GetFleetOverview",
+        MethodPolicy::Operator(OperatorCapability::Read),
+    ),
+    (
+        FLEET_SERVICE_PREFIX,
+        "ListOrganizations",
+        MethodPolicy::Operator(OperatorCapability::Read),
+    ),
+    (
+        FLEET_SERVICE_PREFIX,
+        "GetOrganization",
+        MethodPolicy::Operator(OperatorCapability::Read),
+    ),
+    (
+        FLEET_SERVICE_PREFIX,
+        "CreateOrganization",
+        MethodPolicy::Operator(OperatorCapability::Administer),
+    ),
+    (
+        FLEET_SERVICE_PREFIX,
+        "UpdateOrganization",
+        MethodPolicy::Operator(OperatorCapability::Administer),
+    ),
+    (
+        FLEET_SERVICE_PREFIX,
+        "ArchiveOrganization",
+        MethodPolicy::Operator(OperatorCapability::Administer),
+    ),
+    (
+        FLEET_SERVICE_PREFIX,
+        "ListProjects",
+        MethodPolicy::Operator(OperatorCapability::Read),
+    ),
+    (
+        FLEET_SERVICE_PREFIX,
+        "GetProject",
+        MethodPolicy::Operator(OperatorCapability::Read),
+    ),
+    (
+        FLEET_SERVICE_PREFIX,
+        "CreateProject",
+        MethodPolicy::Operator(OperatorCapability::Administer),
+    ),
+    (
+        FLEET_SERVICE_PREFIX,
+        "UpdateProject",
+        MethodPolicy::Operator(OperatorCapability::Administer),
+    ),
+    (
+        FLEET_SERVICE_PREFIX,
+        "ArchiveProject",
+        MethodPolicy::Operator(OperatorCapability::Administer),
+    ),
+    (
+        FLEET_SERVICE_PREFIX,
+        "ListEnvironments",
+        MethodPolicy::Operator(OperatorCapability::Read),
+    ),
+    (
+        FLEET_SERVICE_PREFIX,
+        "GetEnvironment",
+        MethodPolicy::Operator(OperatorCapability::Read),
+    ),
+    (
+        FLEET_SERVICE_PREFIX,
+        "CreateEnvironment",
+        MethodPolicy::Operator(OperatorCapability::Administer),
+    ),
+    (
+        FLEET_SERVICE_PREFIX,
+        "UpdateEnvironment",
+        MethodPolicy::Operator(OperatorCapability::Administer),
+    ),
+    (
+        FLEET_SERVICE_PREFIX,
+        "ArchiveEnvironment",
+        MethodPolicy::Operator(OperatorCapability::Administer),
+    ),
+    (
+        FLEET_SERVICE_PREFIX,
+        "ListConnections",
+        MethodPolicy::Operator(OperatorCapability::Read),
+    ),
+    (
+        FLEET_SERVICE_PREFIX,
+        "GetConnection",
+        MethodPolicy::Operator(OperatorCapability::Read),
+    ),
+    (
+        FLEET_SERVICE_PREFIX,
+        "BeginConnection",
+        MethodPolicy::Operator(OperatorCapability::Administer),
+    ),
+    (
+        FLEET_SERVICE_PREFIX,
+        "CompleteConnection",
+        MethodPolicy::Operator(OperatorCapability::Administer),
+    ),
+    (
+        FLEET_SERVICE_PREFIX,
+        "RevokeConnection",
+        MethodPolicy::Operator(OperatorCapability::Administer),
+    ),
+    (
+        FLEET_SERVICE_PREFIX,
+        "ListRoleBindings",
+        MethodPolicy::Operator(OperatorCapability::Read),
+    ),
+    (
+        FLEET_SERVICE_PREFIX,
+        "UpsertRoleBinding",
+        MethodPolicy::Operator(OperatorCapability::Administer),
+    ),
+    (
+        FLEET_SERVICE_PREFIX,
+        "RevokeRoleBinding",
+        MethodPolicy::Operator(OperatorCapability::Administer),
+    ),
+    (
+        FLEET_SERVICE_PREFIX,
+        "ListAuditEvents",
+        MethodPolicy::Operator(OperatorCapability::Read),
+    ),
 ];
 
 /// Resolves a request path to its policy, or `None` when the service is unknown
@@ -188,6 +319,7 @@ pub struct RpcServiceConfig<'a> {
     pub operator_emails: Vec<String>,
     pub jwt: JwtIssuer,
     pub rate_limiter: Arc<RateLimiter>,
+    pub deployment_role: DeploymentRole,
 }
 
 pub fn service(config: RpcServiceConfig<'_>) -> RpcService {
@@ -200,6 +332,7 @@ pub fn service(config: RpcServiceConfig<'_>) -> RpcService {
         operator_emails,
         jwt,
         rate_limiter,
+        deployment_role,
     } = config;
     let authorizer = OperatorAuthorizer::new(
         store.clone(),
@@ -207,19 +340,23 @@ pub fn service(config: RpcServiceConfig<'_>) -> RpcService {
         session_idle_seconds,
         operator_emails,
     );
-    let router = connectrpc::Router::new()
-        .add_service(Arc::new(EventRpc::new(store.clone())))
-        .add_service(Arc::new(IdentityRpc::new(store.clone())))
-        .add_service(Arc::new(OrganizationRpc::new(
-            store.clone(),
-            authorizer.clone(),
-        )))
-        .add_service(Arc::new(ServiceAccountRpc::new(
-            store,
-            authorizer.clone(),
-            jwt,
-            rate_limiter,
-        )));
+    let router = match deployment_role {
+        DeploymentRole::Realm => connectrpc::Router::new()
+            .add_service(Arc::new(EventRpc::new(store.clone())))
+            .add_service(Arc::new(IdentityRpc::new(store.clone())))
+            .add_service(Arc::new(OrganizationRpc::new(
+                store.clone(),
+                authorizer.clone(),
+            )))
+            .add_service(Arc::new(ServiceAccountRpc::new(
+                store.clone(),
+                authorizer.clone(),
+                jwt,
+                rate_limiter,
+            ))),
+        DeploymentRole::FleetControlPlane => connectrpc::Router::new()
+            .add_service(Arc::new(FleetRpc::new(store.clone(), authorizer.clone()))),
+    };
     ConnectRpcService::new(router)
         .with_limits(
             Limits::default()
@@ -399,6 +536,13 @@ mod tests {
             ),
         ),
         (
+            FLEET_SERVICE_PREFIX,
+            concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/proto/rustyauth/fleet/v1/fleet.proto"
+            ),
+        ),
+        (
             ORGANIZATION_SERVICE_PREFIX,
             concat!(
                 env!("CARGO_MANIFEST_DIR"),
@@ -432,10 +576,25 @@ mod tests {
                 "/proto/rustyauth/webhooks/v1/webhooks.proto"
             ),
         ),
+        (
+            "/rustyauth.management.v1.RealmManagementService/",
+            concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/proto/rustyauth/management/v1/management.proto"
+            ),
+        ),
+        (
+            "/rustyauth.management.v1.RealmConnectorService/",
+            concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/proto/rustyauth/management/v1/management.proto"
+            ),
+        ),
     ];
 
     const ALL_ROUTED_PREFIXES: &[&str] = &[
         EVENT_SERVICE_PREFIX,
+        FLEET_SERVICE_PREFIX,
         IDENTITY_SERVICE_PREFIX,
         ORGANIZATION_SERVICE_PREFIX,
         SERVICE_ACCOUNT_SERVICE_PREFIX,
