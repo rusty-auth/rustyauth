@@ -275,6 +275,7 @@ jobs:
             --environment "${RAILWAY_ENVIRONMENT_ID}" \
             --service "${RAILWAY_API_SERVICE_ID}" \
             --skip-deploys --json \
+            "AUTH_TRUSTED_PROXY_HOPS=1" \
             "AUTH_ISSUER=${dashboard_url}" \
             "WEBAUTHN_RP_ORIGIN=${dashboard_url}" \
             "WEBAUTHN_RP_ID=${dashboard_host}" >/dev/null

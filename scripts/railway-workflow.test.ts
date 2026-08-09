@@ -66,6 +66,7 @@ Deno.test("Railway rollout is serialized across every stateful boundary", () => 
   for (const required of ["/healthz", "/readyz", "retention-days: 90"]) {
     assertIncludes(workflow, required);
   }
+  assertIncludes(workflow, '"AUTH_TRUSTED_PROXY_HOPS=1"');
 });
 
 Deno.test("a partial Railway rollout restores services and browser origin in reverse order", () => {
