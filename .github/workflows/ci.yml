@@ -261,6 +261,9 @@ jobs:
     timeout-minutes: 3
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: azure/setup-helm@1a275c3b69536ee54be43f2070a358922e12c8d4 # v4.3.1
+        with:
+          version: v4.2.0
       - name: Validate three-service Compose templates
         env:
           AUTH_MASTER_KEY_HEX: compose-validation-only
@@ -272,6 +275,8 @@ jobs:
         run: |
           docker compose -f compose.yaml config --quiet
           docker compose -f compose.fleet.yaml config --quiet
+      - name: Validate Kubernetes Helm charts
+        run: scripts/check-helm.sh
 
   result:
     name: CI result

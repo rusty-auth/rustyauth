@@ -1,0 +1,22 @@
+RustyAuth integrated has been rendered for namespace {{ .Release.Namespace }}.
+
+Secret expected by the API:
+  {{ include "rustyauth-integrated.secretName" . }}
+
+{{- if not .Values.secrets.create }}
+The chart does not create credentials by default. Create that Secret before the pods start; see:
+  https://rustyauth.dev/docs/kubernetes
+{{- end }}
+
+{{- if .Values.ingress.enabled }}
+Dashboard origin:
+{{- range .Values.ingress.hosts }}
+  https://{{ .host }}
+{{- end }}
+{{- else }}
+Ingress is disabled. For a local check:
+  kubectl -n {{ .Release.Namespace }} port-forward svc/{{ include "rustyauth-integrated.fullname" . }}-dashboard 8080:8080
+{{- end }}
+
+RustyAuth 0.1 supports one API writer replica. This chart enforces Recreate updates for that Deployment.
+The SableDB PVC is {{ ternary "retained" "deleted with the release" .Values.sabledb.persistence.retain }}.

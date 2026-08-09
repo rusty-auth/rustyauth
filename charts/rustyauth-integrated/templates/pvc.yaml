@@ -1,0 +1,22 @@
+{{- if .Values.sabledb.persistence.enabled }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "rustyauth-integrated.fullname" . }}-sabledb
+  labels:
+    {{- include "rustyauth-integrated.labels" . | nindent 4 }}
+    app.kubernetes.io/component: sabledb
+  {{- if .Values.sabledb.persistence.retain }}
+  annotations:
+    helm.sh/resource-policy: keep
+  {{- end }}
+spec:
+  accessModes:
+    {{- toYaml .Values.sabledb.persistence.accessModes | nindent 4 }}
+  {{- if .Values.sabledb.persistence.storageClass }}
+  storageClassName: {{ .Values.sabledb.persistence.storageClass | quote }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ .Values.sabledb.persistence.size }}
+{{- end }}

@@ -1,0 +1,120 @@
+nameOverride: ""
+fullnameOverride: ""
+clusterDomain: cluster.local
+imagePullSecrets: []
+
+images:
+  api:
+    repository: ghcr.io/rusty-auth/rustyauth
+    tag: v0.1.0
+    digest: ""
+    pullPolicy: IfNotPresent
+  dashboard:
+    repository: ghcr.io/rusty-auth/dashboard
+    tag: v0.1.0
+    digest: ""
+    pullPolicy: IfNotPresent
+  sabledb:
+    repository: ghcr.io/rusty-auth/sabledb
+    tag: v0.1.0
+    digest: ""
+    pullPolicy: IfNotPresent
+
+config:
+  existingConfigMap: ""
+  existingConfigMapKey: config.yaml
+  environment: production
+  tenantId: example
+  realmId: production
+  publicIssuer: https://auth.example.com
+  trustedProxyHops: 1
+  relyingParty:
+    id: auth.example.com
+    origin: https://auth.example.com
+    name: Example Account
+  tokens:
+    audience: example-api
+    accessTtl: 5m
+  sessions:
+    idleTimeout: 30m
+    absoluteTimeout: 7d
+  events:
+    retention: 90d
+  signingKeys:
+    rotateEvery: 30d
+    prepublishFor: 10m
+    overlapFor: 10m
+    maintenanceInterval: 30s
+  operators:
+    bootstrapEmails:
+      - admin@example.com
+
+secrets:
+  # Leave both fields unset to reference <release>-rustyauth-integrated-secrets,
+  # which should be created out-of-band before installation.
+  existingSecret: ""
+  create: false
+  values:
+    masterKeyHex: ""
+    bootstrapToken: ""
+    eventRpcToken: ""
+    identityRpcToken: ""
+  extra: {}
+
+api:
+  replicaCount: 1
+  logFilter: rustyauth=info,tower_http=info
+  podAnnotations: {}
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+dashboard:
+  replicaCount: 1
+  podAnnotations: {}
+  resources:
+    requests:
+      cpu: 25m
+      memory: 32Mi
+    limits:
+      cpu: 250m
+      memory: 128Mi
+
+sabledb:
+  podAnnotations: {}
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+  persistence:
+    enabled: true
+    storageClass: ""
+    accessModes:
+      - ReadWriteOnce
+    size: 5Gi
+    retain: true
+
+ingress:
+  enabled: false
+  className: traefik
+  annotations: {}
+  hosts:
+    - host: auth.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+  tls: []
+
+networkPolicy:
+  enabled: true
+
+nodeSelector: {}
+tolerations: []
+affinity: {}

@@ -7,7 +7,17 @@ RustyAuth `1.0.0` builds three independently deployable services:
 - a private, persistent SableDB service.
 
 The Fleet template uses the same three-service shape with the realm backend replaced by a distinct Fleet
-control-plane service. See [Railway deployment templates](RAILWAY_TEMPLATE.md).
+control-plane service. See [Kubernetes and Civo K3s](KUBERNETES.md) or
+[Railway deployment templates](RAILWAY_TEMPLATE.md).
+
+## Kubernetes and K3s
+
+Three Helm charts preserve the same boundaries on Kubernetes: `rustyauth-integrated` installs a dashboard,
+Realm API and SableDB; `rustyauth-fleet` installs the separate central dashboard, control plane and Fleet
+SableDB; and `rustyauth-realm` installs only the lightweight Realm API and its isolated SableDB. The API and
+control-plane Deployments use `Recreate` because version `0.1` supports one writer, while every SableDB PVC is
+retained by default. See the [complete Kubernetes guide](KUBERNETES.md) for copyable Civo/K3s values and
+commands.
 
 An optional S3-compatible bucket enables scheduled encrypted logical backups and clean-room restore.
 

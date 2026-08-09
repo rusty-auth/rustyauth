@@ -1,0 +1,15 @@
+RustyAuth Fleet has been rendered for namespace {{ .Release.Namespace }}.
+Secret expected by the control plane: {{ include "rustyauth-fleet.secretName" . }}
+{{- if not .Values.secrets.create }}
+Create that Secret before the pods start. Credentials are not generated or stored by this chart.
+{{- end }}
+{{- if .Values.ingress.enabled }}
+Fleet dashboard:
+{{- range .Values.ingress.hosts }}
+  https://{{ .host }}
+{{- end }}
+{{- else }}
+Local check:
+  kubectl -n {{ .Release.Namespace }} port-forward svc/{{ include "rustyauth-fleet.fullname" . }}-dashboard 8080:8080
+{{- end }}
+Install each managed environment separately with the rustyauth-realm chart.

@@ -1,0 +1,15 @@
+RustyAuth Realm has been rendered for namespace {{ .Release.Namespace }}.
+Secret expected by the API: {{ include "rustyauth-realm.secretName" . }}
+{{- if not .Values.secrets.create }}
+Create that Secret before the pod starts. Credentials are not generated or stored by this chart.
+{{- end }}
+{{- if .Values.ingress.enabled }}
+Realm API:
+{{- range .Values.ingress.hosts }}
+  https://{{ .host }}
+{{- end }}
+{{- else }}
+Local API check:
+  kubectl -n {{ .Release.Namespace }} port-forward svc/{{ include "rustyauth-realm.fullname" . }}-api 8080:8080
+{{- end }}
+This chart intentionally omits the dashboard. Manage the realm from the separate Fleet control plane.

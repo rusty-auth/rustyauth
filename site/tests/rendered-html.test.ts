@@ -179,6 +179,7 @@ Deno.test("renders every documentation route", async () => {
     "/docs/fleet-analytics-v1",
     "/docs/configuration",
     "/docs/deployment",
+    "/docs/kubernetes",
     "/docs/security",
     "/docs/recovery",
     "/docs/project-status",
@@ -195,6 +196,13 @@ Deno.test("renders every documentation route", async () => {
   const architecture = await Deno.readTextFile(outputFor("/docs/architecture"));
   assertMatch(architecture, /One realm, three services/);
   assertMatch(architecture, /Fleet is a separate management plane/);
+
+  const kubernetes = await Deno.readTextFile(outputFor("/docs/kubernetes"));
+  assertMatch(kubernetes, /rustyauth-integrated/);
+  assertMatch(kubernetes, /rustyauth-fleet/);
+  assertMatch(kubernetes, /rustyauth-realm/);
+  assertMatch(kubernetes, /AUTH_MASTER_KEY_HEX/);
+  assertMatch(kubernetes, /Civo Kubernetes uses K3s/);
 
   const fleet = await Deno.readTextFile(outputFor("/docs/fleet"));
   assertMatch(fleet, /No database connection strings/);
