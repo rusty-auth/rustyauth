@@ -29,7 +29,7 @@ after seven days and are never built from, attached to or allowed to block GA re
 On 9 August 2026, Dioxus CLI 0.7.10 built the release `.app` on Apple silicon with Rust 1.94.1. The generated
 bundle passed these repository-controlled checks:
 
-- `Info.plist` parses and contains the expected identifier, `0.1.0` candidate version, Developer Tools
+- `Info.plist` parses and contains the expected identifier, `1.0.0` source version, Developer Tools
   category, icon, executable and macOS 12 deployment floor;
 - the executable is an arm64 Mach-O with only system framework and library dependencies;
 - the stylesheet and icon are inside sealed bundle resources;

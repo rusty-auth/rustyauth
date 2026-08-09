@@ -4,7 +4,8 @@ Fleet is a separate management plane for isolated RustyAuth deployments. It prov
 organizations, projects and environments while every managed realm keeps its own backend, SableDB, users,
 keys, sessions and recovery boundary.
 
-Fleet is pre-release software. The local flow is for development and evaluation.
+Fleet management and Fleet Analytics V1 are supported in the `1.0.0` server/container/web GA scope. This local
+flow uses generated development credentials and is not a production topology.
 
 ## Start the central project
 

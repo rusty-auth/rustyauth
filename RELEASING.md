@@ -42,7 +42,8 @@ own machine-readable evidence gates. Native credentials never belong in the repo
    reviewers for every gate, retain `scope: "server-container-web-ga"`, set `decision` to `go`, then run
    `deno task release:check <version>`. The validator rejects deprecated native-distribution gates.
 2. Move the `Unreleased` section of [CHANGELOG.md](CHANGELOG.md) under a new `## <version> - <date>` heading.
-   Breaking changes anywhere in the section mean a minor bump while the project is pre-`1.0`.
+   Breaking changes anywhere in the section require a major-version bump; additive features use a minor bump
+   and compatible fixes use a patch bump.
 3. Set the same version in [Cargo.toml](Cargo.toml), `console/Cargo.toml`,
    `packages/protocol/deno.json`, `packages/client/deno.json` and `site/package.json`. Package versions move in
    lockstep with the server so every tagged package version is new and publication is deterministic.

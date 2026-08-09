@@ -2731,6 +2731,9 @@
     }
   },
   "workspace": {
+    "dependencies": [
+      "jsr:@std/assert@1.0.19"
+    ],
     "members": {
       "packages/client": {
         "dependencies": [

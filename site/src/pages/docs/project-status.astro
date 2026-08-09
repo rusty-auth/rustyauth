@@ -15,15 +15,15 @@ const capabilities = [
   ["Account recovery", "Implemented", "One-use recovery codes, passkey re-enrolment, session revocation and audit"],
   ["Verification delivery", "Implemented", "One-time challenges through exact signed-webhook subscriptions"],
   ["Email sign-in delivery", "Event only", "A delivery provider/consumer remains an integration responsibility"],
-  ["Independent security review", "Not completed", "Required before production 1.0"],
+  ["Continuous security assurance", "Ongoing", "Automated checks plus independent review across supported releases"],
 ];
 ---
 
 <DocsLayout title="Status and roadmap" eyebrow="Honest product state" intro="What is usable now, what remains deliberately gated and how RustyAuth moves from one realm to Fleet.">
   <div class="docs-status-strip" aria-label="Current state">
-    <div><small>Current release</small><strong>0.1.0</strong></div>
-    <div><small>Support level</small><strong>Evaluation</strong></div>
-    <div><small>Compatibility</small><strong>Pin a release or commit</strong></div>
+    <div><small>Current release</small><strong>1.0.0</strong></div>
+    <div><small>Support level</small><strong>Server · containers · web GA</strong></div>
+    <div><small>Compatibility</small><strong>Semantic versioning</strong></div>
   </div>
 
   <h2>Capability matrix</h2>
@@ -37,13 +37,13 @@ const capabilities = [
   </ol>
   <p>SolidJS is retired from the shipped product path. Dioxus is the supported web presentation architecture and the shared basis for post-1.0 native previews; the Rust control-plane services remain the authority.</p>
 
-  <h2>Before 1.0</h2>
+  <h2>Continuous assurance after 1.0.0</h2>
   <ul>
     <li>Publish and verify signed images through clean install, upgrade and rollback.</li>
     <li>Pass the supported web browser, OS and authenticator matrix.</li>
-    <li>Complete the Analytics production qualification matrix.</li>
+    <li>Repeat the Analytics scale, soak, chaos and recovery matrix for supported releases.</li>
     <li>Run a real organization-policy Analytics canary and witnessed recovery drill.</li>
-    <li>Complete independent application, deployment, pinned-SableDB and Analytics assessments.</li>
+    <li>Continue independent application, deployment, pinned-SableDB and Analytics assessments.</li>
   </ul>
   <p>Desktop, iOS and Android distribution is separately gated post-1.0 work and does not block the server, container and web GA.</p>
 

@@ -1,7 +1,7 @@
 # Railway deployment templates
 
-**Status:** Implemented deployment topology; production qualification and published Railway template IDs are
-still gated by the release checklist.
+**Status:** Supported `1.0.0` deployment topology; published Railway template IDs remain tracked by the
+artifact-publication checklist.
 
 RustyAuth uses separate Railway services so the user interface, policy services and stateful stores have
 independent deploy, scaling, health and recovery boundaries. SableDB is always private and always attached to
@@ -25,9 +25,9 @@ call it directly. The dashboard gateway is for operator browser traffic, not a g
 
 | Service               | Image                                 | Public exposure                 | Persistent state   | Initial replicas   |
 | --------------------- | ------------------------------------- | ------------------------------- | ------------------ | ------------------ |
-| `rustyauth-dashboard` | `ghcr.io/rusty-auth/dashboard:v0.1.0` | HTTPS                           | None               | 1 or more          |
-| `rustyauth-backend`   | `ghcr.io/rusty-auth/rustyauth:v0.1.0` | Optional application API domain | None               | 1                  |
-| `realm-sabledb`       | `ghcr.io/rusty-auth/sabledb:v0.1.0`   | None                            | `/var/lib/sabledb` | 1 stateful service |
+| `rustyauth-dashboard` | `ghcr.io/rusty-auth/dashboard:v1.0.0` | HTTPS                           | None               | 1 or more          |
+| `rustyauth-backend`   | `ghcr.io/rusty-auth/rustyauth:v1.0.0` | Optional application API domain | None               | 1                  |
+| `realm-sabledb`       | `ghcr.io/rusty-auth/sabledb:v1.0.0`   | None                            | `/var/lib/sabledb` | 1 stateful service |
 
 ## Template B: Fleet control plane
 
@@ -50,9 +50,9 @@ gateway.
 
 | Service                   | Image                                     | Public exposure            | Persistent state   | Initial replicas   |
 | ------------------------- | ----------------------------------------- | -------------------------- | ------------------ | ------------------ |
-| `rustyauth-dashboard`     | `ghcr.io/rusty-auth/dashboard:v0.1.0`     | HTTPS                      | None               | 1 or more          |
-| `rustyauth-control-plane` | `ghcr.io/rusty-auth/control-plane:v0.1.0` | Optional native API domain | None               | 1                  |
-| `fleet-sabledb`           | `ghcr.io/rusty-auth/sabledb:v0.1.0`       | None                       | `/var/lib/sabledb` | 1 stateful service |
+| `rustyauth-dashboard`     | `ghcr.io/rusty-auth/dashboard:v1.0.0`     | HTTPS                      | None               | 1 or more          |
+| `rustyauth-control-plane` | `ghcr.io/rusty-auth/control-plane:v1.0.0` | Optional native API domain | None               | 1                  |
+| `fleet-sabledb`           | `ghcr.io/rusty-auth/sabledb:v1.0.0`       | None                       | `/var/lib/sabledb` | 1 stateful service |
 
 `fleet-backups` is an encrypted S3-compatible Railway bucket resource rather than a running service. The
 control-plane process schedules backups initially. A separate `fleet-worker` service is added when connector,

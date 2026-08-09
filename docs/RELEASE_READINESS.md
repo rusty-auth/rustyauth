@@ -1,13 +1,16 @@
 # RustyAuth 1.0.0 release readiness
 
-**Decision:** NO-GO
+**Source decision:** `1.0.0` GA scope approved
+
+**Artifact publication:** PENDING EVIDENCE
 
 **Last updated:** 9 August 2026
 
-RustyAuth's in-repository implementation is release-candidate complete and the recorded repository gates pass.
-Production qualification is not complete. The project must remain at `0.1.0` and must not create a `v1.0.0`
-tag until every externally owned gate below has evidence and the machine-readable release record passes
-`deno task release:check 1.0.0`.
+RustyAuth's in-repository server, container and web implementation is the `1.0.0` GA source. This decision does
+not claim that the `v1.0.0` tag, registry packages or container images already exist. Artifact publication
+remains fail-closed: do not create the tag until every externally owned publication gate below has evidence and
+the machine-readable release record passes `deno task release:check 1.0.0`. Native clients remain previews and
+are outside this decision.
 
 ## Qualified in this repository
 
@@ -46,9 +49,11 @@ The following evidence passed on the pinned local integration topology on 9 Augu
 These results qualify the checked-out source and local images. They do not substitute for published-artifact,
 platform, independent-review or real-organization evidence.
 
-## External release gates
+## Artifact-publication evidence gates
 
-Every item is required for `1.0.0`; none may be self-certified by the implementer.
+Every item is required before publishing the `v1.0.0` tag and registry artifacts; none may be self-certified by
+the implementer. These gates preserve evidence integrity without relabelling the checked-in GA source as a
+pre-release.
 
 - [ ] Independent application security assessment completed, findings resolved or explicitly accepted.
 - [ ] Independent deployment/topology assessment completed against the production ingress, egress, secret,
@@ -69,7 +74,7 @@ Every item is required for `1.0.0`; none may be self-certified by the implemente
 - [ ] A release owner records the final go decision and evidence for every gate in
       `release-evidence/v1.0.0.json`.
 
-Current `1.0.0` blockers are external reviewers, a supported web browser/authenticator matrix, real canary
+Current publication blockers are external reviewers, a supported web browser/authenticator matrix, real canary
 traffic and published-artifact/recovery evidence. A Railway production project exists, but it runs an older
 template image; repurposing or replacing it for the RC canary and destructive upgrade/rollback matrix requires
 explicit deployment authority. Mutating production infrastructure and approving risk require owner authority.
@@ -79,7 +84,7 @@ yet exist on JSR and `buf.build/rusty-auth/rustyauth` does not yet exist in the 
 repository exposes no repository-level `BUF_TOKEN`; an organization-level secret, if one exists, is not visible
 to the current operator. Provision and link the JSR packages, create the Buf module, and confirm a push-scoped
 `BUF_TOKEN` before any release-candidate tag. The workflow now verifies these destinations before any image or
-package publication begins.
+package publication begins. These are distribution setup requirements, not native-client requirements.
 
 Xcode licence acceptance, Apple/Windows signing identities, notarization credentials, Android SDK/NDK tooling
 and mobile keystores are explicitly outside the server/container/web `1.0.0` contract. They remain mandatory

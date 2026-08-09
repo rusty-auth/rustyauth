@@ -1,4 +1,4 @@
-import { assertEquals } from "jsr:@std/assert@1.0.19";
+import { assertEquals } from "@std/assert";
 import { CI_AREAS, classifyCiChanges } from "./ci-changes.ts";
 
 Deno.test("workflow classifier changes force a full qualification", () => {

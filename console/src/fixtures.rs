@@ -93,7 +93,7 @@ pub fn preview_fleet_connections() -> Vec<RealmConnection> {
         mode: ConnectionMode::PublicEndpoint.into(),
         management_endpoint: "https://auth.example.com".into(),
         credential_reference: "fleet-credential://dd87912a-ecf6-4516-bf6d-e6c7c93a123f".into(),
-        deployment_version: "0.1.0".into(),
+        deployment_version: "1.0.0".into(),
         protocol_version: "1".into(),
         state: ConnectionState::Healthy.into(),
         last_seen_at: "2026-08-08T08:28:00Z".into(),

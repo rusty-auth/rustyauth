@@ -1,7 +1,7 @@
 # Identity data model
 
 This document is the canonical developer reference for identity data persisted by RustyAuth
-`0.1.0`. It describes the authoritative account aggregate, supporting indexes and lifecycle records,
+`1.0.0`. It describes the authoritative account aggregate, supporting indexes and lifecycle records,
 what crosses each API boundary, and what RustyAuth deliberately does not store.
 
 RustyAuth uses **account**, **user** and **identity** for the same durable subject. Every subject is
@@ -68,7 +68,7 @@ any mix of email and phone identifiers, including a phone-only or email-only acc
 
 - Email is trimmed, ASCII-lowercased and validated as the supported ASCII dot-atom form. The local
   part is at most 64 bytes, the domain at most 253 bytes and the complete value at most 320 bytes.
-  Quoted local parts and internationalized addresses are not accepted in `0.1.0`.
+  Quoted local parts and internationalized addresses are not accepted in `1.0.0`.
 - Phone input must start with `+`. Spaces, parentheses, hyphens and dots are accepted as input
   formatting and removed. The stored E.164 value contains 8–15 digits and cannot begin with zero.
 - Identifier lookup is exact after canonicalization. There is no fuzzy, prefix or case-insensitive
@@ -140,7 +140,7 @@ The HTTP and private RPC APIs expose only credential ID, label and timestamps. T
 stored WebAuthn credential, public key, counter, registration state or assertion data. Passkey
 material can only be created by a successful WebAuthn ceremony; the identity RPC cannot write it.
 
-RustyAuth has no configured passkey-count limit in `0.1.0`, but it prevents duplicate credential IDs
+RustyAuth has no configured passkey-count limit in `1.0.0`, but it prevents duplicate credential IDs
 and refuses to revoke the final passkey. A non-zero signature counter must advance; regression fails
 authentication as a possible cloned credential.
 
@@ -218,7 +218,7 @@ Identity-related event types are:
 - `session.created`; and
 - `agent.handoff.created`.
 
-Events have no retention or acknowledgement record in `0.1.0`. Polling and streaming consumers own
+Events have no retention or acknowledgement record in `1.0.0`. Polling and streaming consumers own
 their checkpoint outside RustyAuth.
 
 ## Exposure by boundary

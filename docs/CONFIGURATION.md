@@ -79,7 +79,7 @@ The image automatically reads `/etc/rustyauth/config.yaml`, so no custom entrypo
 ```yaml
 services:
   auth:
-    image: ghcr.io/rusty-auth/rustyauth:v0.1.0
+    image: ghcr.io/rusty-auth/rustyauth:v1.0.0
     configs:
       - source: rustyauth
         target: /etc/rustyauth/config.yaml
@@ -107,7 +107,7 @@ separate local relying-party example must be the exact WebAuthn origin.
 The same image can validate a document in CI without starting SableDB or receiving secrets:
 
 ```sh
-docker run --rm -i ghcr.io/rusty-auth/rustyauth:v0.1.0 \
+docker run --rm -i ghcr.io/rusty-auth/rustyauth:v1.0.0 \
   config validate - < deploy/production/rustyauth.yaml
 ```
 
@@ -162,8 +162,8 @@ Webhook delivery is implemented on current main. Startup reconciles configuratio
 the worker begins sending. The served `WebhookService` manages dashboard destinations and operational actions;
 the durable delivery history records attempts, response status and terminal failures. Requests are signed with
 HMAC-SHA256 over `timestamp + "." + exact_body`, redirects are disabled, retryable failures use bounded
-exponential backoff, and retained source events may be replayed. RustyAuth remains a `0.1.0` pre-release, so
-pin the exact release or commit whose behavior you evaluated.
+exponential backoff, and retained source events may be replayed. RustyAuth `1.0.0` is GA for server, container
+and web deployments; pin the exact release or image digest you operate.
 
 ### Railway and variable-only platforms
 

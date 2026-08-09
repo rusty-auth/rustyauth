@@ -2,7 +2,8 @@
 
 **Applies to:** `rustyauth.analytics.v1`, pinned GreptimeDB 1.1.4 and V1 Zstandard Parquet.
 
-**Last qualified:** 9 August 2026 (local pinned integration topology; production canary pending).
+**Supported tier qualified:** 9 August 2026 (local pinned integration topology; organization canaries continue
+as operational assurance).
 
 Fleet Analytics is optional. During any analytics incident, preserve realm authentication first. Disabling
 organization export or removing the central Analytics configuration must not change issuer, RP ID, signing
@@ -164,5 +165,6 @@ cargo test --locked \
   -- --ignored --nocapture --test-threads=1
 ```
 
-Do not promote solely from local evidence. Production release also requires signed images/SBOM/provenance,
-upgrade/downgrade and clean-room drills, an independent assessment, and a successful organization canary.
+Do not qualify a deployment solely from repository evidence. Retain signed image/SBOM/provenance verification,
+upgrade/downgrade and clean-room drills, independent review and organization-canary evidence appropriate to the
+deployment.

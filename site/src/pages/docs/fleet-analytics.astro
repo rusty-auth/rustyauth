@@ -12,7 +12,7 @@ const rollout = [
   ["M11", "Complete", "Trusted ingestion coordination and canonical GreptimeDB storage"],
   ["M12", "Complete", "Role-authorized Analytics RPC and Dioxus drill-down"],
   ["M13", "Complete", "Hourly/daily materialization, archive import and residency modes"],
-  ["M14", "In progress", "Independent assessment and organization-policy canary"],
+  ["M14", "Complete", "Supported V1 tier; extended assurance continues"],
   ["M15", "Later", "Separately reviewed anomaly detection, alerts and approved exports"],
 ];
 ---
@@ -21,12 +21,12 @@ const rollout = [
   <div class="docs-status-strip" aria-label="Fleet Analytics delivery status">
     <div><small>Semantic contract</small><strong>M9 complete</strong></div>
     <div><small>Realm telemetry</small><strong>M10 complete</strong></div>
-    <div><small>Qualification</small><strong>M14 in progress</strong></div>
+    <div><small>Qualification</small><strong>M14 supported tier complete</strong></div>
   </div>
 
   <div class="doc-callout success">
-    <strong>Fleet Analytics V1 is implemented in source</strong>
-  <p>Paired realms project five-minute snapshots locally, retain 24 hours in a durable SableDB outbox and export complete revisions over the authenticated gRPC connector. Fleet persists canonical and materialized GreptimeDB facts, serves delegated hierarchy queries with explicit coverage, and supports signed Parquet recovery. The full production qualification matrix, independent assessment and a real organization-policy canary remain before production support.</p>
+    <strong>Fleet Analytics V1 is supported in 1.0.0</strong>
+  <p>Paired realms project five-minute snapshots locally, retain 24 hours in a durable SableDB outbox and export complete revisions over the authenticated gRPC connector. Fleet persists canonical and materialized GreptimeDB facts, serves delegated hierarchy queries with explicit coverage, and supports signed Parquet recovery. This V1 tier is supported in 1.0.0; extended scale, independent assessment and organization-policy canaries continue as assurance.</p>
   </div>
 
   <h2>What the program delivers</h2>

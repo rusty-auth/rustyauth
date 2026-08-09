@@ -1,13 +1,13 @@
 openapi: 3.1.0
 info:
   title: RustyAuth public HTTP API
-  version: 0.1.0
+  version: 1.0.0
   license:
     name: Apache-2.0
     identifier: Apache-2.0
   description: |
-    RustyAuth's public JSON API. This is the pre-`1.0` contract implemented by the
-    Rust service; it may change before `1.0`. The private Connect/gRPC-Web/gRPC
+    RustyAuth's public JSON API. This is the stable `1.0.0` contract implemented by
+    the Rust service; incompatible changes require a new major version. The private Connect/gRPC-Web/gRPC
     services (identity, events, organization, service accounts) are served on the
     same listener but are not part of this document.
 
@@ -522,7 +522,7 @@ paths:
         response. An account may hold at most 20 identifiers. Development marks
         the identifier verified immediately. Production stores it unverified and
         appends `email.verification.requested` or `phone.verification.requested`
-        for an external delivery/verification workflow. RustyAuth `0.1.0` does
+        for an external delivery/verification workflow. RustyAuth `1.0.0` does
         not itself deliver or consume a verification challenge.
       security:
         - sessionCookie: []

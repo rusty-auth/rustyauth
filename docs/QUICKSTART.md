@@ -4,7 +4,8 @@ Run one complete RustyAuth realm locally: a Dioxus dashboard, private Rust backe
 launcher generates development secrets and configuration in ignored files; checked-in examples do not contain
 working credentials.
 
-RustyAuth is pre-release software. This flow is for development and evaluation.
+RustyAuth `1.0.0` is GA for server, container and web deployments. This local flow uses generated development
+credentials and is not a production topology.
 
 ## Requirements
 

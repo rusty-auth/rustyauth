@@ -1,18 +1,18 @@
 # Security policy
 
 RustyAuth handles authentication credentials and bearer sessions. Treat every suspected weakness as
-security-sensitive even when it affects only a pre-release build.
+security-sensitive, including weaknesses found in preview clients or development builds.
 
 ## Supported versions
 
-RustyAuth has not reached a production-supported release.
-
 | Version | Security support |
 | --- | --- |
-| `main` / `0.1.x` | Best-effort fixes during pre-release development |
-| `< 0.1` prototypes | Unsupported |
+| `1.0.x` | Supported for the Rust server/control plane, supplied containers and Dioxus web dashboard |
+| `main` | Development toward the next supported release; fixes are backported when applicable |
+| `< 1.0` | Unsupported |
 
-No version is currently approved as the sole identity system for a production service.
+Desktop, iOS and Android clients are preview-only and are not covered by the `1.0.x` production-support
+contract.
 
 ## Reporting a vulnerability
 
@@ -32,9 +32,9 @@ channel. Include:
 Do not include live session cookies, JWTs, passkey assertions, bootstrap tokens, database URLs or
 backup keys. Replace them with unmistakable placeholders.
 
-The maintainers will acknowledge a usable report, coordinate validation and publish remediation
-information appropriate to the pre-release status. This project does not currently operate a bug
-bounty or promise a fixed disclosure timeline.
+The maintainers will acknowledge a usable report, coordinate validation and publish remediation information
+for supported releases. This project does not currently operate a bug bounty or promise a fixed disclosure
+timeline.
 
 ## Scope
 
@@ -134,7 +134,7 @@ identity projections.
 
 ## Known limitations
 
-These are explicit boundaries or reasons RustyAuth remains pre-release:
+These are explicit `1.0.0` boundaries and residual risks operators must account for:
 
 - Email sign-in-link delivery remains event-only. Identifier verification challenges are implemented through
   exact signed-webhook subscriptions, and the first Owner can be created with the host CLI.
@@ -157,8 +157,8 @@ These are explicit boundaries or reasons RustyAuth remains pre-release:
 - Fleet management endpoint validation cannot by itself prevent DNS rebinding. Production must enforce the
   same private, link-local and metadata denial at the network egress boundary.
 - Seeded protocol fuzzing covers Analytics batches, management wire messages and archive manifests locally
-  and in the tagged-release workflow. Independent assessment remains incomplete. Dependency auditing is
-  automated across the shipped Rust graphs and Go infrastructure: `cargo-deny` gates the root Rust service
+  and in the tagged-release workflow. Independent assessment continues as post-GA assurance. Dependency
+  auditing is automated across the shipped Rust graphs and Go infrastructure: `cargo-deny` gates the root Rust service
   on every push and tagged release over advisories, licences, bans and sources, while pinned `cargo-audit`
   checks the root, Dioxus console and repository-owned SableDB lockfiles and `govulncheck` checks the Pulumi
   module. The JSR client and generated protocol packages retain pinned dependency resolution in `deno.lock`;
@@ -169,9 +169,10 @@ These are explicit boundaries or reasons RustyAuth remains pre-release:
   distributed flood a denial of service rather than merely an unmetered one.
 - Desktop, iOS and Android clients are unsupported previews outside the `1.0.0` artifact and GA support
   contract. Their signing, platform-trust and real-device gates belong to a later native release.
-- The supported web browser/OS/authenticator matrix, published-image install/upgrade/rollback, the full
-  Analytics production qualification matrix, an organization-policy Analytics canary and independent
-  application/deployment/pinned-SableDB/Analytics assessments are not complete.
+- Browser/OS/authenticator coverage, published-image install/upgrade/rollback, Analytics scale and recovery,
+  organization-policy canaries and independent application/deployment/pinned-SableDB/Analytics assessments
+  remain continuous assurance programs. Operators must retain deployment-specific evidence for their own
+  supported matrix and risk profile.
 
 ## Safe verification
 
@@ -196,7 +197,6 @@ cargo test --locked --test integration_tests clean_room_backup_restore_and_rotat
 docker compose -f compose.integration.yaml down --volumes
 ```
 
-The production gate additionally requires dependency audit/deny checks, authenticator coverage,
-negative protocol tests, deployment isolation verification and regular operator recovery drills. The exact
-`1.0.0` decision and externally owned evidence are tracked in
-[Release readiness](docs/RELEASE_READINESS.md).
+Release qualification additionally requires dependency audit/deny checks, authenticator coverage, negative
+protocol tests, deployment isolation verification and regular operator recovery drills. The `1.0.0` artifact
+publication state and externally owned evidence are tracked in [Release readiness](docs/RELEASE_READINESS.md).

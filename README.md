@@ -8,7 +8,7 @@ ES256 access tokens.
 
 [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-cb5a19.svg)](LICENSE)
 [![Rust: 1.94.1+](https://img.shields.io/badge/rust-1.94.1%2B-303030.svg)](Cargo.toml)
-[![Status: pre-release](https://img.shields.io/badge/status-pre--release-e2a84a.svg)](#project-status)
+[![Status: 1.0.0 GA](https://img.shields.io/badge/status-1.0.0%20GA-2f855a.svg)](#project-status)
 [![Storage: SableDB](https://img.shields.io/badge/storage-SableDB-303030.svg)](https://github.com/sabledb-io/sabledb)
 
 [Website](https://rustyauth.dev) · [Developer docs](https://rustyauth.dev/docs) ·
@@ -18,10 +18,11 @@ ES256 access tokens.
 
 </div>
 
-> [!WARNING]
-> RustyAuth is pre-release software. Independent security assessment, published-artifact qualification and the
-> full Fleet Analytics qualification program are not complete. Do not make it the sole identity system for a
-> production service yet. Desktop and mobile applications are previews outside the `1.0.0` GA contract.
+> [!IMPORTANT]
+> RustyAuth `1.0.0` is generally available for the Rust server, container deployment topologies and Dioxus web
+> dashboard. Desktop, iOS and Android applications remain preview-only and are outside the `1.0.0` support
+> contract. Tagged and registry artifacts are published only by the evidence-gated release workflow; pin an
+> exact released version or image digest in production.
 
 ## What RustyAuth is
 
@@ -256,8 +257,8 @@ The complete HTTP and private RPC contracts are documented in [API](docs/API.md)
 `rustyauth.identity.v1` service reads/searches profile, identifier and passkey metadata and applies controlled
 identity mutations. `rustyauth.organization.v1` and `rustyauth.service_accounts.v1` are authorized by passkey
 operator sessions; service-account credential exchange returns scoped, short-lived JWTs. `rustyauth.events.v1`
-provides resumable server streaming. All services support Connect, gRPC-Web and gRPC. The API may change
-before `1.0`; pin a release or commit.
+provides resumable server streaming. All services support Connect, gRPC-Web and gRPC. The `1.x` contract uses
+semantic versioning; pin a release or image digest and review the changelog before upgrading.
 
 ## Configuration and deployment
 
@@ -276,7 +277,8 @@ not a runtime dependency.
 
 ## Project status
 
-RustyAuth is currently `0.1.0` pre-release software.
+RustyAuth is at `1.0.0`. The supported GA scope is the Rust server and control plane, the supplied container
+topologies, and the Dioxus web dashboard. Native desktop and mobile clients remain explicit previews.
 
 | Capability                                                  | Status                                                                                                                                                                              |
 | ----------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -297,16 +299,16 @@ RustyAuth is currently `0.1.0` pre-release software.
 | Webhook and standalone metrics control plane                | Implemented on current main; local five-minute analytics projection backs bounded per-realm metrics                                                                                 |
 | Multi-tenant runtime isolation                              | Claims/events are tenant-tagged; one configured tenant per instance                                                                                                                 |
 | Fleet management across isolated deployments                | Implemented hierarchy/RBAC, public and outbound pairing, step-up remote administration, source-tagged partial operations, rotation/revocation and dual audit                        |
-| Federated Fleet Analytics V1                                | Implemented trusted export/ingestion, private canonical and materialized serving, delegated API/Dioxus, residency policy and signed Parquet recovery; production qualification pending |
+| Federated Fleet Analytics V1                                | GA feature set: trusted export/ingestion, private canonical and materialized serving, delegated API/Dioxus, residency policy and signed Parquet recovery                            |
 | Dioxus operator console                                    | Web is the supported `1.0.0` client; shared desktop/mobile builds, device tokens and OS-vault adapters remain preview-only                                                         |
-| Independent security review                                 | Not completed                                                                                                                                                                       |
+| Continuous security and scale assurance                     | Automated on `main` and scheduled runs; independent assessment and extended canary evidence remain ongoing                                                                          |
 
-Production `1.0` still requires published-image and clean deployment/upgrade evidence, the supported web
-browser/authenticator matrix, the full Analytics production qualification matrix, independent
-application/deployment/SableDB/Analytics assessments and a successful organization-policy Analytics canary.
-Desktop, iOS and Android distribution is separately gated post-1.0 work. The detailed gate is documented in
-[Security hardening](docs/SECURITY_HARDENING.md), the [roadmap](docs/ROADMAP.md) and the machine-gated
-[1.0.0 release-readiness record](docs/RELEASE_READINESS.md).
+The `1.0.0` source and support contract is GA. Artifact publication remains fail-closed: the `v1.0.0` tag is
+created only after the machine-readable evidence record passes, then the workflow publishes and verifies the
+server, control-plane, dashboard and SableDB images plus the TypeScript and Protobuf packages. Extended scale,
+canary and independent security work continues as asynchronous assurance on supported releases. Desktop, iOS
+and Android distribution is separately gated post-1.0 work. See [Security hardening](docs/SECURITY_HARDENING.md),
+the [roadmap](docs/ROADMAP.md) and the [1.0.0 release-readiness record](docs/RELEASE_READINESS.md).
 
 The [roadmap](docs/ROADMAP.md) keeps the single-tenant foundation intact while delivering the
 [Fleet control plane](docs/FLEET_CONTROL_PLANE.md) as a separate management plane for isolated deployments.
@@ -324,10 +326,9 @@ cargo build --locked --release
 
 Tests cover configuration validation, browser-handoff confinement, credential input validation, signing-key
 lifecycle, authenticated backup envelopes, protocol skew/fuzzing and pinned-service fault/recovery drills. CI
-also performs a clean-room recovery drill against real SableDB and S3-compatible MinIO services. The remaining
-production gates are the real web browser/authenticator matrix, published-artifact drills, the organization
-Analytics canary and independent assessments listed above. Native distribution remains preview-only post-1.0
-work.
+also performs a clean-room recovery drill against real SableDB and S3-compatible MinIO services. Extended
+browser/authenticator, published-artifact, organization-canary and independent-assessment exercises continue
+through release qualification and scheduled assurance. Native distribution remains preview-only post-1.0 work.
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for the development workflow and security-sensitive change
 requirements.
