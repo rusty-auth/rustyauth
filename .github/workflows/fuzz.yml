@@ -3,6 +3,7 @@ name: Protocol fuzzing
 on:
   pull_request:
     paths:
+      - ".github/workflows/fuzz.yml"
       - "fuzz/**"
       - "proto/**"
       - "src/analytics.rs"
