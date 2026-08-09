@@ -85,6 +85,11 @@ The combined template also provisions separate `fleet-backups` and optional real
 never cross state boundaries: restoring Fleet does not restore a realm, and restoring a realm does not restore
 Fleet.
 
+Railway's native buckets currently lack S3 Versioning, Object Lock and server-side-encryption metadata. The
+production automation therefore configures RustyAuth's explicit `portable` storage profile and verifies a
+fresh application-encrypted recovery point before each API rollout. Use the repository's AWS immutable-bucket
+stack when provider-enforced WORM retention is required.
+
 ## Dashboard gateway contract
 
 The dashboard service is stateless. It may know only:

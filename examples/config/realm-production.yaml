@@ -61,6 +61,7 @@ spec:
       region: eu-west-2
       bucket: example-rustyauth-backups
       urlStyle: virtual
+      storageProfile: immutable
       serverSideEncryption:
         mode: aws-kms
         # Use the exact key ID returned by GetObject; the AWS stack outputs this ARN.

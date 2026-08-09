@@ -24,7 +24,10 @@ use rustyauth::{
     app_state::AppState,
     auth,
     backup::BackupStore,
-    config::{BackupConfig, BackupServerSideEncryption, KeyRing, SigningRotationConfig},
+    config::{
+        BackupConfig, BackupServerSideEncryption, BackupStorageProfile, KeyRing,
+        SigningRotationConfig,
+    },
     jwt::{JwtIssuer, validate_snapshot_keyset},
     proto::rustyauth::analytics::v1::{
         BucketAcknowledgementStatus, MetricSchemaVersion, SessionTokenMetrics, TelemetryBucket,
@@ -957,6 +960,7 @@ fn backup_config(active: [u8; 32], previous: Vec<[u8; 32]>) -> Result<BackupConf
         rpo_seconds: 21_600,
         retention_days: 90,
         alert_after_failures: 2,
+        storage_profile: BackupStorageProfile::Immutable,
         server_side_encryption: BackupServerSideEncryption::Provider,
         sse_kms_key_id: None,
     })

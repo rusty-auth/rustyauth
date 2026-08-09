@@ -774,6 +774,7 @@ async fn doctor(
                 "consecutiveFailures": status.consecutive_failures,
                 "rpoSeconds": status.rpo_seconds,
                 "retentionDays": status.retention_days,
+                "storageProfile": status.storage_profile,
                 "overdue": status.overdue,
                 "alerting": status.alerting,
             })

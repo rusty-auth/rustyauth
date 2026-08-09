@@ -47,6 +47,8 @@ Deno.test("Railway candidates are immutable, signed and digest-verified", () => 
       '"redeploy"',
       '"--from-source"',
       "await runJson(runner, redeployArgs(options));",
+      "Verify candidates are anonymously pullable",
+      "docker buildx imagetools inspect",
     ]
   ) assertIncludes(workflow + rollout, required);
   if (/tags:.*:latest/.test(workflow)) {
@@ -67,6 +69,9 @@ Deno.test("Railway rollout is serialized across every stateful boundary", () => 
     assertIncludes(workflow, required);
   }
   assertIncludes(workflow, '"AUTH_TRUSTED_PROXY_HOPS=1"');
+  assertIncludes(workflow, '"AUTH_BACKUP_STORAGE_PROFILE=portable"');
+  assertIncludes(workflow, '"AUTH_BACKUP_SSE=provider"');
+  assertIncludes(rollout, '"/usr/local/bin/rustyauth backup create"');
 });
 
 Deno.test("a partial Railway rollout restores services and browser origin in reverse order", () => {

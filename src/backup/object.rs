@@ -12,7 +12,11 @@ use time::{OffsetDateTime, format_description::well_known::Rfc3339};
 use tracing::info;
 use uuid::Uuid;
 
-use crate::{config::KeyRing, jwt::validate_snapshot_keyset, store::Store};
+use crate::{
+    config::{BackupServerSideEncryption, BackupStorageProfile, KeyRing},
+    jwt::validate_snapshot_keyset,
+    store::Store,
+};
 
 use super::{
     BackupStore,
@@ -34,6 +38,7 @@ pub struct BackupReceipt {
     pub record_count: u64,
     pub envelope_bytes: usize,
     pub encryption_key_id: String,
+    pub storage_profile: String,
     pub object_version_id: Option<String>,
     pub retained_until: Option<u64>,
     pub server_side_encryption: Option<String>,
@@ -101,7 +106,9 @@ impl BackupStore {
             .await
             .context("upload encrypted auth snapshot")?;
 
-        if uploaded.version_id().is_none() {
+        if self.storage_profile == BackupStorageProfile::Immutable
+            && uploaded.version_id().is_none()
+        {
             bail!(
                 "backup upload did not return an object version id; bucket versioning is required"
             );
@@ -123,6 +130,7 @@ impl BackupStore {
             record_count: snapshot.manifest.record_count,
             envelope_bytes: envelope.len(),
             encryption_key_id: self.encryption_keys.active().0.to_owned(),
+            storage_profile: self.storage_profile.as_str().to_owned(),
             object_version_id: posture.version_id,
             retained_until: posture.retained_until,
             server_side_encryption: posture.server_side_encryption,
@@ -133,6 +141,7 @@ impl BackupStore {
             record_count = receipt.record_count,
             envelope_bytes = receipt.envelope_bytes,
             encryption_key_id = %receipt.encryption_key_id,
+            storage_profile = %receipt.storage_profile,
             object_version_id = ?receipt.object_version_id,
             retained_until = ?receipt.retained_until,
             server_side_encryption = ?receipt.server_side_encryption,
@@ -216,6 +225,7 @@ impl BackupStore {
             record_count: snapshot.manifest.record_count,
             envelope_bytes,
             encryption_key_id: key_id,
+            storage_profile: self.storage_profile.as_str().to_owned(),
             object_version_id: posture.version_id,
             retained_until: posture.retained_until,
             server_side_encryption: posture.server_side_encryption,
@@ -275,12 +285,34 @@ impl BackupStore {
         posture: &ObjectPosture,
         captured_at: u64,
     ) -> Result<()> {
-        // Existing v2 recovery points remain readable. Every newly-created v3
-        // object must prove versioning, WORM retention and the configured
-        // provider-side encryption in addition to the application AES envelope.
-        if object_key.contains("/v2/") {
-            return Ok(());
-        }
+        validate_storage_posture(
+            self.storage_profile,
+            self.server_side_encryption,
+            self.sse_kms_key_id.as_deref(),
+            self.retention_days,
+            object_key,
+            posture,
+            captured_at,
+        )
+    }
+}
+
+fn validate_storage_posture(
+    storage_profile: BackupStorageProfile,
+    server_side_encryption: BackupServerSideEncryption,
+    sse_kms_key_id: Option<&str>,
+    retention_days: u64,
+    object_key: &str,
+    posture: &ObjectPosture,
+    captured_at: u64,
+) -> Result<()> {
+    // Existing v2 recovery points remain readable. The portable profile keeps
+    // the authenticated application envelope and read-after-write verification,
+    // while immutable additionally proves provider-enforced WORM controls.
+    if object_key.contains("/v2/") {
+        return Ok(());
+    }
+    if storage_profile == BackupStorageProfile::Immutable {
         if posture.version_id.as_deref().is_none_or(str::is_empty) {
             bail!("backup object has no version id; bucket versioning is required");
         }
@@ -288,30 +320,26 @@ impl BackupStore {
             bail!("backup object is not protected by Object Lock compliance mode");
         }
         let expected_until = captured_at
-            .saturating_add(self.retention_days.saturating_mul(86_400))
+            .saturating_add(retention_days.saturating_mul(86_400))
             .saturating_sub(RETENTION_CLOCK_SKEW_SECONDS);
         if posture
             .retained_until
             .is_none_or(|value| value < expected_until)
         {
-            bail!(
-                "backup object retention is shorter than configured {} days",
-                self.retention_days
-            );
+            bail!("backup object retention is shorter than configured {retention_days} days");
         }
-        let expected_sse = self.server_side_encryption.as_str();
-        if expected_sse != "provider"
-            && posture.server_side_encryption.as_deref() != Some(expected_sse)
-        {
-            bail!("backup object did not use required server-side encryption {expected_sse}");
-        }
-        if let Some(expected_key) = self.sse_kms_key_id.as_deref()
-            && posture.sse_kms_key_id.as_deref() != Some(expected_key)
-        {
-            bail!("backup object did not use the configured SSE-KMS key");
-        }
-        Ok(())
     }
+    let expected_sse = server_side_encryption.as_str();
+    if expected_sse != "provider" && posture.server_side_encryption.as_deref() != Some(expected_sse)
+    {
+        bail!("backup object did not use required server-side encryption {expected_sse}");
+    }
+    if let Some(expected_key) = sse_kms_key_id
+        && posture.sse_kms_key_id.as_deref() != Some(expected_key)
+    {
+        bail!("backup object did not use the configured SSE-KMS key");
+    }
+    Ok(())
 }
 
 // The body is buffered whole before its real length can be checked, so an object that
@@ -363,6 +391,88 @@ mod tests {
         );
         assert!(
             validate_object_key("rustyauth-backups/v3/tenant-a/2026.rauth", "tenant-a").is_ok()
+        );
+    }
+
+    #[test]
+    fn portable_storage_accepts_providers_without_immutable_s3_apis() {
+        let posture = ObjectPosture {
+            version_id: None,
+            server_side_encryption: None,
+            sse_kms_key_id: None,
+            object_lock_mode: None,
+            retained_until: None,
+        };
+        assert!(
+            validate_storage_posture(
+                BackupStorageProfile::Portable,
+                BackupServerSideEncryption::Provider,
+                None,
+                90,
+                "rustyauth-backups/v3/tenant-a/2026.rauth",
+                &posture,
+                1_000,
+            )
+            .is_ok()
+        );
+        assert!(
+            validate_storage_posture(
+                BackupStorageProfile::Immutable,
+                BackupServerSideEncryption::Provider,
+                None,
+                90,
+                "rustyauth-backups/v3/tenant-a/2026.rauth",
+                &posture,
+                1_000,
+            )
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn portable_storage_still_enforces_explicit_provider_encryption() {
+        let posture = ObjectPosture {
+            version_id: None,
+            server_side_encryption: None,
+            sse_kms_key_id: None,
+            object_lock_mode: None,
+            retained_until: None,
+        };
+        assert!(
+            validate_storage_posture(
+                BackupStorageProfile::Portable,
+                BackupServerSideEncryption::Aes256,
+                None,
+                90,
+                "rustyauth-backups/v3/tenant-a/2026.rauth",
+                &posture,
+                1_000,
+            )
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn immutable_storage_accepts_complete_compliance_posture() {
+        let captured_at = 1_000;
+        let posture = ObjectPosture {
+            version_id: Some("version-1".to_owned()),
+            server_side_encryption: Some("AES256".to_owned()),
+            sse_kms_key_id: None,
+            object_lock_mode: Some("COMPLIANCE".to_owned()),
+            retained_until: Some(captured_at + 86_400),
+        };
+        assert!(
+            validate_storage_posture(
+                BackupStorageProfile::Immutable,
+                BackupServerSideEncryption::Aes256,
+                None,
+                1,
+                "rustyauth-backups/v3/tenant-a/2026.rauth",
+                &posture,
+                captured_at,
+            )
+            .is_ok()
         );
     }
 }

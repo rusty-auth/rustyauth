@@ -195,9 +195,26 @@ jobs:
           DIGEST: ${{ steps.build.outputs.digest }}
         run: cosign sign --yes "ghcr.io/rusty-auth/sabledb@${DIGEST}"
 
+  verify-public-candidates:
+    name: Verify candidates are anonymously pullable
+    needs: [prepare, publish-api, publish-dashboard, publish-sabledb]
+    if: needs.prepare.outputs.deploy == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
+      - name: Pull immutable manifests without registry credentials
+        env:
+          API_DIGEST: ${{ needs.publish-api.outputs.digest }}
+          DASHBOARD_DIGEST: ${{ needs.publish-dashboard.outputs.digest }}
+          SABLEDB_DIGEST: ${{ needs.publish-sabledb.outputs.digest }}
+        run: |
+          docker buildx imagetools inspect "ghcr.io/rusty-auth/rustyauth@${API_DIGEST}" >/dev/null
+          docker buildx imagetools inspect "ghcr.io/rusty-auth/dashboard@${DASHBOARD_DIGEST}" >/dev/null
+          docker buildx imagetools inspect "ghcr.io/rusty-auth/sabledb@${SABLEDB_DIGEST}" >/dev/null
+
   deploy:
     name: Roll out verified candidate
-    needs: [prepare, publish-api, publish-dashboard, publish-sabledb]
+    needs: [prepare, publish-api, publish-dashboard, publish-sabledb, verify-public-candidates]
     if: needs.prepare.outputs.deploy == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 45
@@ -276,6 +293,8 @@ jobs:
             --service "${RAILWAY_API_SERVICE_ID}" \
             --skip-deploys --json \
             "AUTH_TRUSTED_PROXY_HOPS=1" \
+            "AUTH_BACKUP_STORAGE_PROFILE=portable" \
+            "AUTH_BACKUP_SSE=provider" \
             "AUTH_ISSUER=${dashboard_url}" \
             "WEBAUTHN_RP_ORIGIN=${dashboard_url}" \
             "WEBAUTHN_RP_ID=${dashboard_host}" >/dev/null

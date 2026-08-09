@@ -118,7 +118,8 @@ identity projections.
   for at least the maximum access-token lifetime plus the JWKS cache allowance.
 - Backups use compact versioned binary encoding, Zstandard compression, an authenticated AES-256-GCM
   envelope, a content manifest and tenant-bound object paths. Every new upload is read back and must prove
-  bucket versioning, compliance-mode retention, configured server-side encryption and content validity.
+  content validity. The default immutable profile additionally proves bucket versioning, compliance-mode
+  retention and configured server-side encryption; explicit portable deployments do not claim WORM storage.
 - Restore accepts only an empty target and invalidates durable sessions by default. An incomplete
   restore marker prevents the service from starting.
 - SableDB is private and volume-backed.

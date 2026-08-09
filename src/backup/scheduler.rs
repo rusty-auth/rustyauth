@@ -29,6 +29,7 @@ pub struct BackupStatus {
     pub consecutive_failures: u64,
     pub rpo_seconds: u64,
     pub retention_days: u64,
+    pub storage_profile: String,
     pub overdue: bool,
     pub alerting: bool,
 }
@@ -56,6 +57,7 @@ impl BackupStore {
             .unwrap_or_default();
         status.rpo_seconds = self.rpo_seconds;
         status.retention_days = self.retention_days;
+        status.storage_profile = self.storage_profile.as_str().to_owned();
         self.evaluate_health(&mut status);
         Ok(status)
     }
@@ -78,6 +80,7 @@ impl BackupStore {
             status.last_attempt_at = Some(now());
             status.rpo_seconds = self.rpo_seconds;
             status.retention_days = self.retention_days;
+            status.storage_profile = self.storage_profile.as_str().to_owned();
             self.evaluate_health(&mut status);
             self.persist_status(store, &status).await;
         }
@@ -145,6 +148,7 @@ impl BackupStore {
     fn evaluate_health(&self, status: &mut BackupStatus) {
         status.rpo_seconds = self.rpo_seconds;
         status.retention_days = self.retention_days;
+        status.storage_profile = self.storage_profile.as_str().to_owned();
         status.overdue = status.last_attempt_at.is_some()
             && status
                 .last_success_at
