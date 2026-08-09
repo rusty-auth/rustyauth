@@ -5,13 +5,43 @@ import "../styles/global.css";
 interface Props {
   title?: string;
   description?: string;
+  robots?: string;
+  structuredData?: Record<string, unknown> | Array<Record<string, unknown>>;
 }
 
 const {
-  title = "RustyAuth — Authentication for the agentic threat era",
-  description = "Passkey-first authentication for SaaS products, customer-controlled infrastructure and disconnected environments.",
+  title = "RustyAuth — Self-Hosted Passkey Authentication in Rust",
+  description = "Open-source, passkey-first authentication built in Rust. Self-host with private SableDB storage in your cloud, customer infrastructure or disconnected environments.",
+  robots,
+  structuredData = [],
 } = Astro.props;
 const canonical = new URL(Astro.url.pathname, Astro.site);
+const organizationId = new URL("/#organization", Astro.site).href;
+const websiteId = new URL("/#website", Astro.site).href;
+const pageStructuredData = Array.isArray(structuredData) ? structuredData : [structuredData];
+const jsonLd = JSON.stringify({
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "Organization",
+      "@id": organizationId,
+      name: "Livermore Ledger Ltd",
+      url: new URL("/", Astro.site).href,
+      logo: new URL("/brand/rustyauth-mark.png", Astro.site).href,
+      brand: { "@type": "Brand", name: "RustyAuth" },
+      sameAs: ["https://github.com/rusty-auth"],
+    },
+    {
+      "@type": "WebSite",
+      "@id": websiteId,
+      name: "RustyAuth",
+      url: new URL("/", Astro.site).href,
+      publisher: { "@id": organizationId },
+      inLanguage: "en",
+    },
+    ...pageStructuredData,
+  ],
+}).replaceAll("<", "\\u003c");
 ---
 
 <!doctype html>
@@ -20,18 +50,27 @@ const canonical = new URL(Astro.url.pathname, Astro.site);
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width" />
     <meta name="description" content={description} />
+    {robots && <meta name="robots" content={robots} />}
     <meta name="theme-color" content="#f5f1e9" />
     <link rel="icon" href="/favicon.svg" />
     <link rel="canonical" href={canonical} />
+    <link rel="sitemap" type="application/xml" href="/sitemap.xml" />
     <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="RustyAuth" />
+    <meta property="og:locale" content="en_GB" />
     <meta property="og:title" content={title} />
     <meta property="og:description" content={description} />
-    <meta property="og:image" content={new URL("/og-agentic.png", Astro.site)} />
+    <meta property="og:image" content={new URL("/og-self-hosted.png", Astro.site)} />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:image:alt" content="RustyAuth self-hosted passkey authentication built in Rust and durable on SableDB" />
     <meta property="og:url" content={canonical} />
     <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:title" content={title} />
     <meta name="twitter:description" content={description} />
-    <meta name="twitter:image" content={new URL("/og-agentic.png", Astro.site)} />
+    <meta name="twitter:image" content={new URL("/og-self-hosted.png", Astro.site)} />
+    <meta name="twitter:image:alt" content="RustyAuth self-hosted passkey authentication built in Rust" />
+    <script type="application/ld+json" set:html={jsonLd} is:inline></script>
     <title>{title}</title>
   </head>
   <body>
@@ -42,12 +81,13 @@ const canonical = new URL(Astro.url.pathname, Astro.site);
           <span>Rusty<strong>Auth</strong></span>
         </a>
         <nav aria-label="Primary navigation">
-          <a href="/#why-rustyauth">Product</a>
+          <a href="/why-rustyauth">Why RustyAuth</a>
+          <a href="/fleet">Fleet</a>
+          <a href="/guides">Guides</a>
           <a href="/solutions">Solutions</a>
           <a href="/docs">Docs</a>
-          <a href="https://github.com/rusty-auth/rustyauth">GitHub</a>
         </nav>
-        <GitHubStars client:load />
+        <GitHubStars client:idle />
         <a class="header-cta" href="/docs/getting-started">Get started <span>→</span></a>
       </div>
     </header>
@@ -56,11 +96,11 @@ const canonical = new URL(Astro.url.pathname, Astro.site);
       <div class="shell footer-grid">
         <div>
           <a class="brand footer-brand" href="/"><img src="/brand/rustyauth-mark.png" width="42" height="42" alt="" /><span>Rusty<strong>Auth</strong></span></a>
-          <p>Authentication for the agentic threat era. Passkey-first, customer-controlled and deliberately small.</p>
+          <p>Self-hosted passkey authentication built in Rust. Open source, customer-controlled and deliberately small.</p>
         </div>
         <div class="footer-links">
           <div><strong>Solutions</strong><a href="/solutions/saas">SaaS</a><a href="/solutions/banking-payments">Banking</a><a href="/solutions/defence-secure-systems">Secure systems</a></div>
-          <div><strong>Project</strong><a href="/docs">Documentation</a><a href="https://github.com/rusty-auth/rustyauth">Source</a><a href="https://github.com/rusty-auth/rustyauth/releases">Releases</a></div>
+          <div><strong>Project</strong><a href="/why-rustyauth">Why RustyAuth</a><a href="/fleet">Fleet control plane</a><a href="/guides">Developer guides</a><a href="/passkey-authentication">Passkey authentication</a><a href="/authentication-events">Authentication events</a><a href="/docs">Documentation</a><a href="https://github.com/rusty-auth/rustyauth">Source</a></div>
           <div><strong>Community</strong><a href="https://github.com/rusty-auth/rustyauth/issues">Issues</a><a href="https://github.com/rusty-auth/rustyauth/discussions">Discussions</a><a href="https://github.com/rusty-auth/rustyauth/blob/main/CONTRIBUTING.md">Contributing</a></div>
           <div><strong>Trust</strong><a href="https://github.com/rusty-auth/rustyauth/blob/main/SECURITY.md">Security</a><a href="https://github.com/rusty-auth/rustyauth/blob/main/LICENSE">Apache-2.0</a><a href="https://github.com/rusty-auth/rustyauth/blob/main/THIRD_PARTY_NOTICES.md">Notices</a></div>
         </div>

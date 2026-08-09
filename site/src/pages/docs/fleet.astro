@@ -1,0 +1,71 @@
+---
+import DocsLayout from "../../layouts/DocsLayout.astro";
+
+const roles = [
+  ["Owner", "Workspace or organization", "Full policy and lifecycle control"],
+  ["Administrator", "Organization, project or environment", "Manage scoped resources and operators"],
+  ["Support", "Assigned scope", "Operational reads and permitted support actions"],
+  ["Auditor", "Assigned scope", "Read-only state and audit access"],
+];
+---
+
+<DocsLayout title="Fleet control plane" eyebrow="Cross-cloud management" intro="Manage many isolated RustyAuth realms through one central plane without merging their users, keys, databases or recovery boundaries.">
+  <div class="doc-callout">
+    <strong>Looking for the product overview?</strong>
+    <p>Start with the <a href="/fleet">RustyAuth Fleet page</a> for the multi-cloud operating model, topology, analytics story and deployment paths.</p>
+  </div>
+  <div class="doc-callout success">
+    <strong>Centrally managed, locally isolated</strong>
+    <p>Fleet owns organization and deployment metadata. Each realm remains the authority for its own identities, credentials, sessions, signing material and datastore.</p>
+  </div>
+
+  <h2>The hierarchy</h2>
+  <div class="identity-lifecycle">
+    <div><small>Ownership</small><strong>Organization</strong><span>Brand · team · policy root</span></div>
+    <b>→</b>
+    <div><small>Application</small><strong>Project</strong><span>Product or deployable app</span></div>
+    <b>→</b>
+    <div><small>Isolation</small><strong>Environment</strong><span>Development · staging · production</span></div>
+  </div>
+  <p>An environment registers one or more realms. Realm identity is immutable inside Fleet; deleting or moving a UI record never silently reassigns the remote authentication store.</p>
+
+  <h2>The central project</h2>
+  <div class="deployment-grid">
+    <div><small>Public edge</small><strong>Dioxus Fleet dashboard</strong><p>Web today · shared desktop/mobile product surface</p></div>
+    <div><small>Private authority</small><strong>Fleet control-plane API</strong><p>Passkey sessions · hierarchy RBAC · pairing · audit</p></div>
+    <div><small>Private state</small><strong>Fleet SableDB</strong><p>Metadata · encrypted credentials · projections · backups</p></div>
+  </div>
+  <p>The Fleet datastore needs its own persistence, backups and clean-room restore plan because the central project may live in a different environment or cloud from every managed realm. It never replaces realm backups.</p>
+
+  <h2>Pair a realm</h2>
+  <ol>
+    <li>Create or select the organization, project and environment.</li>
+    <li>Ask the target realm to issue a short-lived, single-use pairing token.</li>
+    <li>Enter the realm management endpoint and token in Fleet.</li>
+    <li>Fleet validates TLS, capabilities and immutable realm identity.</li>
+    <li>The realm exchanges the token for a narrowly scoped management credential.</li>
+    <li>Fleet encrypts the credential at rest, records the audit event and starts bounded discovery.</li>
+  </ol>
+  <div class="doc-callout warning">
+    <strong>No database connection strings</strong>
+    <p>The dashboard and control plane connect to a realm management API—not SableDB. Direct cross-cloud database access would collapse tenant isolation, expose credentials and bypass realm authorization.</p>
+  </div>
+
+  <h2>Scoped roles</h2>
+  <div class="doc-table-wrap"><table><thead><tr><th>Role</th><th>Scope</th><th>Intent</th></tr></thead><tbody>{roles.map(([role, scope, intent]) => <tr><td>{role}</td><td>{scope}</td><td>{intent}</td></tr>)}</tbody></table></div>
+  <p>The server resolves inherited scope and authorizes every operation. Hiding a navigation item in Dioxus is presentation, not enforcement. Sensitive actions require an appropriate passkey session and produce durable central audit records.</p>
+
+  <h2>Health and analytics</h2>
+  <p>Fleet reads redacted capabilities, health and bounded aggregate telemetry. It does not ingest passkey material, raw tokens or realm identity records merely to draw a chart. <a href="/docs/fleet-analytics">Fleet Analytics</a> defines the cross-cloud delivery and rollup architecture; <a href="/docs/fleet-analytics-v1">V1 semantics</a> define explicit buckets, coverage and compatibility so a partial fleet cannot be presented as complete.</p>
+  <div class="doc-callout success"><strong>Reliable realm export is available</strong><p>M9 semantics and the M10 local projector, standalone metrics, 24-hour SableDB outbox and authenticated gRPC export are shipped. Canonical GreptimeDB serving and the hierarchy-scoped dashboard read path remain M11–M14 work.</p></div>
+
+  <h2>Failure isolation</h2>
+  <ul>
+    <li>A Fleet outage must not stop realm sign-in or token verification.</li>
+    <li>A realm outage marks only that registration unavailable.</li>
+    <li>Revoking a pairing credential stops future central management without deleting realm data.</li>
+    <li>Fleet restore and realm restore are independent, auditable operations.</li>
+    <li>Native clients store short-lived credentials in the OS credential vault, never ordinary config files.</li>
+  </ul>
+  <p>Read the <a href="https://github.com/rusty-auth/rustyauth/blob/main/docs/FLEET_CONTROL_PLANE.md">complete Fleet architecture</a> and <a href="https://github.com/rusty-auth/rustyauth/blob/main/docs/FLEET_ANALYTICS.md">analytics delivery program</a>.</p>
+</DocsLayout>

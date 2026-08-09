@@ -1,0 +1,52 @@
+---
+import DocsLayout from "../../layouts/DocsLayout.astro";
+
+const capabilities = [
+  ["Passkey registration and sign-in", "Implemented", "Server-side, single-use ceremonies and durable sessions"],
+  ["Accounts and credentials", "Implemented", "Stable UUID, email/phone identifiers, profile and multiple passkeys"],
+  ["JWT and signing keys", "Implemented", "ES256, JWKS, staged rotation and retired-key overlap"],
+  ["Dioxus dashboard", "Implemented", "Web console and shared desktop/mobile feature builds"],
+  ["Fleet hierarchy and pairing", "Implemented", "Public-endpoint topology, scoped roles, audit and revocation"],
+  ["Fleet Analytics V1", "Contract shipped", "Semantics and compatibility fixtures; durable projection remains"],
+  ["Encrypted backup and restore", "Implemented", "Logical snapshot, verification and empty-target recovery"],
+  ["Configuration as code", "Implemented", "Versioned YAML, schema, CLI validation and Docker/Railway inputs"],
+  ["Signed webhook delivery", "Implemented on main", "IaC or dashboard ownership, durable retry, history and replay"],
+  ["Account recovery", "Not implemented", "Required before production 1.0"],
+  ["Email/SMS delivery", "Not implemented", "Events exist; challenge delivery and consumption remain"],
+  ["Independent security review", "Not completed", "Required before production 1.0"],
+];
+---
+
+<DocsLayout title="Status and roadmap" eyebrow="Honest product state" intro="What is usable now, what remains deliberately gated and how RustyAuth moves from one realm to Fleet.">
+  <div class="docs-status-strip" aria-label="Current state">
+    <div><small>Current release</small><strong>0.1.0</strong></div>
+    <div><small>Support level</small><strong>Evaluation</strong></div>
+    <div><small>Compatibility</small><strong>Pin a release or commit</strong></div>
+  </div>
+
+  <h2>Capability matrix</h2>
+  <div class="doc-table-wrap"><table><thead><tr><th>Capability</th><th>Status</th><th>Boundary</th></tr></thead><tbody>{capabilities.map(([capability, status, boundary]) => <tr><td>{capability}</td><td>{status}</td><td>{boundary}</td></tr>)}</tbody></table></div>
+
+  <h2>Product direction</h2>
+  <p>RustyAuth supports two deployment styles without weakening realm isolation:</p>
+  <ol>
+    <li><strong>Standalone:</strong> one project contains a Dioxus dashboard, one RustyAuth backend and one private SableDB for a single isolated realm.</li>
+    <li><strong>Fleet:</strong> a separate central dashboard, control-plane API and datastore manage organizations, projects and environments while each realm keeps its own three-service boundary.</li>
+  </ol>
+  <p>SolidJS is retired from the shipped product path. Dioxus is the shared web, desktop and mobile presentation architecture; the Rust control-plane services remain the authority.</p>
+
+  <h2>Before 1.0</h2>
+  <ul>
+    <li>Ship account recovery and abuse/rate-limit controls.</li>
+    <li>Complete durable Fleet analytics projection and private outbound telemetry.</li>
+    <li>Qualify multi-writer behavior and cross-instance concurrency.</li>
+    <li>Finish native credential transport, signed desktop updates and mobile packaging.</li>
+    <li>Expand authenticator, browser and protocol-negative coverage.</li>
+    <li>Complete an independent security assessment.</li>
+  </ul>
+
+  <h2>How to read status</h2>
+  <p><strong>Implemented</strong> means code and automated coverage exist in this repository. It does not by itself mean production-qualified. <strong>Contract shipped</strong> means the typed semantic boundary is reviewable and tested while a runtime projection may remain. <strong>Direction</strong> is not a product claim.</p>
+  <p>For the post-Fleet sequence, see the guided <a href="/docs/fleet-analytics">Fleet Analytics roadmap</a> and its <a href="/docs/fleet-analytics-v1">V1 semantic contract</a>.</p>
+  <p>The <a href="https://github.com/rusty-auth/rustyauth/blob/main/docs/ROADMAP.md">normative roadmap</a>, <a href="https://github.com/rusty-auth/rustyauth/blob/main/CHANGELOG.md">changelog</a> and <a href="https://github.com/rusty-auth/rustyauth/blob/main/docs/FLEET_CONTROL_PLANE.md">Fleet architecture</a> preserve the detailed program.</p>
+</DocsLayout>

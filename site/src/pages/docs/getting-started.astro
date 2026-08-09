@@ -1,20 +1,50 @@
 ---
 import DocsLayout from "../../layouts/DocsLayout.astro";
 ---
-<DocsLayout title="Getting started" eyebrow="Local development" intro="Run RustyAuth and its private SableDB persistence layer locally in a few minutes.">
-  <h2>Prerequisites</h2><ul><li>Docker with Compose v2</li><li>Git</li><li>A browser with WebAuthn support</li></ul>
-  <h2>Start the stack</h2><pre class="doc-code"><code>git clone https://github.com/rusty-auth/rustyauth.git
+
+<DocsLayout title="Getting started" eyebrow="Local development" intro="Run a complete three-service RustyAuth realm—or the central Fleet stack—with generated local secrets and one command.">
+  <h2>Prerequisites</h2>
+  <ul>
+    <li>Docker with Compose v2</li>
+    <li>Git, OpenSSL and <code>curl</code></li>
+    <li>A browser with WebAuthn support</li>
+  </ul>
+
+  <h2>Start an isolated realm</h2>
+  <pre><code>git clone https://github.com/rusty-auth/rustyauth.git
 cd rustyauth
-cp .env.example .env
-  docker compose up --build</code></pre>
-  <div class="doc-callout"><strong>Private by design</strong><p>The Compose topology publishes RustyAuth only on loopback. SableDB remains on the internal container network and writes to a persistent volume.</p></div>
-  <div class="doc-callout doc-callout-railway"><strong>Prefer a hosted evaluation?</strong><p>Launch the same stack from the Railway template, then return here to verify readiness and explore the operator experience.</p><p><a class="button button-railway" href="https://railway.com/new/template/rustyauth?utm_medium=integration&utm_source=button&utm_campaign=rustyauth" target="_blank" rel="noreferrer">Deploy on Railway <span aria-hidden="true">↗</span></a></p></div>
-  <h2>Verify readiness</h2><pre class="doc-code"><code>curl --fail http://127.0.0.1:8081/healthz
+scripts/local-stack standalone up</code></pre>
+  <p>The launcher creates private values in the ignored <code>.env.standalone.local</code>, derives an ignored local YAML configuration and starts the Dioxus dashboard, RustyAuth realm backend and private SableDB. Open <a href="http://localhost:8081">http://localhost:8081</a>.</p>
+  <div class="doc-callout">
+    <strong>Nothing public is pre-seeded</strong>
+    <p>The checked-in examples contain policy, not working secrets. The local launcher generates every secret independently and Compose rejects missing values by name.</p>
+  </div>
+
+  <h2>Verify the stack</h2>
+  <pre><code>curl --fail http://127.0.0.1:8081/healthz
 curl --fail http://127.0.0.1:8081/readyz
-curl --fail http://127.0.0.1:8081/.well-known/passkey-auth</code></pre>
-  <p>The health endpoint proves the process is alive. Readiness confirms the private SableDB dependency is reachable, while capability discovery reports the runtime's backup status.</p>
-  <h2>Check the operator experience</h2><pre class="doc-code"><code>docker compose exec auth passkey-auth-service --help
-docker compose exec auth passkey-auth-service doctor</code></pre>
-  <p>Open <a href="http://localhost:8081">the local control plane</a>. A passkey account listed in <code>AUTH_OPERATOR_EMAILS</code> can bootstrap the owner; add <code>?preview=1</code> to inspect populated sample data. <code>doctor</code> validates configuration, SableDB connectivity, signing-key state and backup access when backups are enabled.</p>
-  <h2>Next steps</h2><p>Review <a href="/docs/configuration"><code>WEBAUTHN_RP_ORIGIN</code>, token and backup settings</a>, follow the endpoint contracts in the <a href="/docs/api">API guide</a>, and rehearse the <a href="/docs/recovery">backup and recovery workflow</a>.</p>
+curl --fail http://127.0.0.1:8081/.well-known/passkey-auth
+curl --fail http://127.0.0.1:8081/.well-known/jwks.json</code></pre>
+  <p>Liveness proves the backend process is running. Readiness proves its private durable dependency is reachable. Capability discovery describes supported browser flows; backup health remains an authenticated operator concern.</p>
+
+  <h2>Create the first operator</h2>
+  <p>Follow the first-run dashboard flow to register the local allowlisted account. Production uses <code>rustyauth operator promote &lt;user-id&gt; owner</code> from a deployment shell: control of an email address alone never grants operator access. Add <code>?preview=1</code> locally to inspect populated sample data without mutating SableDB.</p>
+
+  <h2>Run the Fleet control plane instead</h2>
+  <pre><code>scripts/local-stack fleet up</code></pre>
+  <p>Open <a href="http://localhost:5196">http://localhost:5196</a>. This starts a separate Dioxus Fleet dashboard, control-plane API and private Fleet SableDB. Pair isolated realms through their management APIs; Fleet never receives direct database access.</p>
+
+  <h2>Stop without deleting state</h2>
+  <pre><code>scripts/local-stack standalone down
+# or
+scripts/local-stack fleet down</code></pre>
+  <p>The named SableDB volume survives container replacement. Pass <code>--volumes</code> only when you intentionally want to erase local identity data.</p>
+
+  <h2>Where next</h2>
+  <ul>
+    <li><a href="/docs/integration">Integrate a relying-party application</a>.</li>
+    <li><a href="/docs/configuration">Replace local policy with reviewed configuration</a>.</li>
+    <li><a href="/docs/deployment">Deploy the three services independently</a>.</li>
+    <li><a href="https://github.com/rusty-auth/rustyauth/blob/main/docs/QUICKSTART.md">Read the command-by-command GitHub quick start</a>.</li>
+  </ul>
 </DocsLayout>

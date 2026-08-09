@@ -1,0 +1,292 @@
+---
+import BaseLayout from "../layouts/BaseLayout.astro";
+
+const benefits = [
+  {
+    number: "01",
+    eyebrow: "Fleet-native",
+    title: "Operate many boundaries as one estate.",
+    body: "Model organizations, products, environments and realms in one control plane without turning them into one shared identity database.",
+  },
+  {
+    number: "02",
+    eyebrow: "Local authority",
+    title: "Keep identity inside its realm.",
+    body: "Users, passkeys, sessions, signing keys and recovery data stay with the application, customer or environment they belong to.",
+  },
+  {
+    number: "03",
+    eyebrow: "Deliberately small",
+    title: "Understand the security-critical path.",
+    body: "A Rust-native authentication boundary focuses on passkeys, sessions, short-lived tokens, recovery and operations—not an unlimited identity workflow engine.",
+  },
+  {
+    number: "04",
+    eyebrow: "Open by default",
+    title: "Own the deployment and the exit.",
+    body: "The Apache-2.0 core is free to run in your infrastructure. Fleet coordination does not require a hosted identity service or per-user contract.",
+  },
+];
+
+const deployments = [
+  ["SaaS core", "AWS · eu-west", "Keep the product realm close to the application and scale it as an independent cell.", "Available profile"],
+  ["Customer VPC", "Azure · private", "Place a customer-specific realm inside their network while retaining narrow Fleet visibility.", "Fleet direction"],
+  ["Installed product", "On-premises", "Ship the same compact identity boundary with local administration and separately verified recovery.", "Fleet direction"],
+  ["Secure enclave", "Disconnected", "Operate without a live control plane after offline release, crypto and assurance work is qualified.", "Future profile"],
+];
+
+const providers = [
+  {
+    name: "RustyAuth",
+    kind: "Fleet-native identity cells",
+    strength: "Independent app and customer realms governed as one estate.",
+    difference: "Narrower and earlier than every alternative here; OIDC interoperability, realm HA and independent assurance are still qualification work.",
+    href: "/docs/project-status",
+    linkLabel: "Current status",
+    featured: true,
+  },
+  {
+    name: "Rauthy",
+    kind: "Lightweight Rust OIDC",
+    strength: "A mature lightweight Rust identity provider with passkeys, OIDC and HA deployment options.",
+    difference: "The closest runtime competitor. RustyAuth is differentiating around a control plane for numerous autonomous realms, not one IdP or HA cluster.",
+    href: "https://sebadob.github.io/rauthy/",
+    linkLabel: "Rauthy documentation",
+  },
+  {
+    name: "Kanidm",
+    kind: "Identity and directory platform",
+    strength: "Rust-based identity management with passkeys, OIDC, Unix integration and geographic replication.",
+    difference: "Designed around a replicated identity domain. RustyAuth instead isolates application and customer realms that do not replicate identity data into Fleet.",
+    href: "https://kanidm.com/",
+    linkLabel: "Kanidm documentation",
+  },
+  {
+    name: "Keycloak",
+    kind: "Broad enterprise IAM",
+    strength: "Deep protocol, federation, directory and extension coverage backed by a large ecosystem.",
+    difference: "Choose its breadth when you need it. RustyAuth targets a smaller operational surface and cell-by-cell placement instead of a shared general-purpose identity platform.",
+    href: "https://www.keycloak.org/docs/latest/server_admin/",
+    linkLabel: "Keycloak documentation",
+  },
+  {
+    name: "authentik",
+    kind: "Flexible SSO and outposts",
+    strength: "Strong application access, proxy, LDAP and RADIUS workflows with centrally managed remote outposts.",
+    difference: "Outposts extend authentik Core. RustyAuth realms are intended to remain complete local authentication boundaries when Fleet or the WAN is unavailable.",
+    href: "https://docs.goauthentik.io/add-secure-apps/outposts",
+    linkLabel: "authentik outposts",
+  },
+  {
+    name: "ZITADEL",
+    kind: "Scalable multi-tenant CIAM",
+    strength: "Mature OIDC, OAuth and SAML capabilities with virtual instances and efficient centralized scaling.",
+    difference: "Its virtual instances share a platform deployment. RustyAuth spends more infrastructure to gain physically separate realm state and failure boundaries.",
+    href: "https://zitadel.com/docs/concepts/structure/instance",
+    linkLabel: "ZITADEL instances",
+  },
+];
+
+const tradeoffs = [
+  ["Isolation over consolidation", "More realms mean more deployable units. In return, one customer, region or environment does not automatically become every other realm’s data and failure boundary."],
+  ["A narrow core over feature abundance", "RustyAuth does not try to replace an employee directory, a general authorization engine or every legacy federation protocol. Applications keep business authorization."],
+  ["Local continuity over central dependence", "Fleet receives less data and stays out of sign-in. That limits centralized analytics and requires explicit, privacy-preserving operational reporting."],
+  ["Open ownership over hosted convenience", "Self-hosting removes a mandatory identity vendor but makes deployment, monitoring, backup and upgrades your responsibility—or a managed service you choose."],
+];
+---
+
+<BaseLayout
+  title="Why RustyAuth — Fleet-Native Identity Infrastructure"
+  description="See how RustyAuth differs from traditional IAM: compact passkey and OIDC realms deployed anywhere, centrally governed without centralizing identity data or signing keys."
+  structuredData={{
+    "@type": "WebPage",
+    "@id": "https://rustyauth.dev/why-rustyauth/#page",
+    name: "Why RustyAuth",
+    description: "The architecture, benefits and deliberate trade-offs behind RustyAuth fleet-native identity infrastructure.",
+    url: "https://rustyauth.dev/why-rustyauth/",
+    isPartOf: { "@id": "https://rustyauth.dev/#website" },
+  }}
+>
+  <main class="why-page">
+    <section class="why-hero shell">
+      <div class="why-hero-copy">
+        <p class="kicker"><span></span> Why RustyAuth</p>
+        <h1>Identity infrastructure<br /><em>built to live everywhere.</em></h1>
+        <p>
+          RustyAuth combines a compact, passkey-first identity realm with an open-source Fleet control plane. Deploy
+          identity where each product or customer needs it, then operate the estate without pulling credentials,
+          signing keys or user records into one shared platform.
+        </p>
+        <div class="hero-actions">
+          <a class="button button-primary" href="/docs/getting-started">Start locally <span>→</span></a>
+          <a class="button button-secondary" href="/fleet">Explore Fleet <span>→</span></a>
+        </div>
+        <p class="why-hero-status"><i></i> 0.1.0 pre-release · Apache-2.0 · Claims separated from product direction</p>
+      </div>
+
+      <div class="why-hero-visual" role="img" aria-label="One RustyAuth Fleet control plane coordinating four independent identity realms without receiving their identity data">
+        <div class="why-fleet-node">
+          <small>One operating view</small>
+          <strong>RustyAuth Fleet</strong>
+          <span>Configuration · health · recovery</span>
+        </div>
+        <div class="why-fleet-paths" aria-hidden="true"><i></i><i></i><i></i><i></i></div>
+        <div class="why-realm-grid">
+          <article><small>AWS</small><strong>SaaS core</strong><span>Users · keys · sessions</span></article>
+          <article><small>Azure</small><strong>Customer VPC</strong><span>Users · keys · sessions</span></article>
+          <article><small>Private cloud</small><strong>Installed product</strong><span>Users · keys · sessions</span></article>
+          <article><small>On-premises</small><strong>Secure site</strong><span>Users · keys · sessions</span></article>
+        </div>
+        <p><b>Fleet sees:</b> operational state <span></span> <b>Fleet does not see:</b> realm identity data</p>
+      </div>
+    </section>
+
+    <section class="why-thesis">
+      <div class="shell why-thesis-grid">
+        <p><span>Category</span><strong>Fleet-native identity infrastructure.</strong></p>
+        <p><span>Promise</span><strong>One identity realm anywhere. One Fleet everywhere.</strong></p>
+        <p><span>Boundary</span><strong>Central coordination. Local authority.</strong></p>
+      </div>
+    </section>
+
+    <section class="why-benefits shell" id="differences">
+      <div class="why-section-heading">
+        <p class="kicker"><span></span> The differentiators</p>
+        <h2>Not one enormous identity system.<br />A fleet of accountable boundaries.</h2>
+        <p>The advantage is the combination: compact Rust runtime, passkey-first authentication, isolated state and a management plane designed around many realms.</p>
+      </div>
+      <div class="why-benefit-grid">
+        {benefits.map(({ number, eyebrow, title, body }) => (
+          <article>
+            <div><span>{number}</span><small>{eyebrow}</small></div>
+            <h3>{title}</h3>
+            <p>{body}</p>
+          </article>
+        ))}
+      </div>
+    </section>
+
+    <section class="why-model-section">
+      <div class="shell">
+        <div class="why-section-heading why-section-heading-light">
+          <p class="kicker light"><span></span> A different scaling model</p>
+          <h2>Scale by cells first.<br />Then scale inside a cell.</h2>
+          <p>Both models are valid. RustyAuth chooses additional operational units in exchange for smaller trust, data and failure domains.</p>
+        </div>
+
+        <div class="why-model-grid">
+          <article class="why-model-shared">
+            <div class="why-model-label"><span>Traditional model</span><strong>Shared identity platform</strong></div>
+            <div class="why-shared-apps"><span>Product A</span><span>Product B</span><span>Customer C</span></div>
+            <div class="why-down-arrows" aria-hidden="true">↓ &nbsp;&nbsp;&nbsp; ↓ &nbsp;&nbsp;&nbsp; ↓</div>
+            <div class="why-shared-core"><small>One logical boundary</small><strong>IAM cluster + shared state</strong><span>Users · sessions · signing keys · policy</span></div>
+            <p><b>Optimises for:</b> centralized administration, shared capacity and broad integration.</p>
+          </article>
+
+          <article class="why-model-fleet">
+            <div class="why-model-label"><span>RustyAuth model</span><strong>Fleet-governed identity cells</strong></div>
+            <div class="why-model-fleet-node"><small>Management plane</small><strong>Fleet</strong><span>No realm database access</span></div>
+            <div class="why-down-arrows" aria-hidden="true">↓ &nbsp;&nbsp;&nbsp; ↓ &nbsp;&nbsp;&nbsp; ↓</div>
+            <div class="why-cell-row">
+              <div><small>Realm A</small><strong>Local state</strong></div>
+              <div><small>Realm B</small><strong>Local state</strong></div>
+              <div><small>Realm C</small><strong>Local state</strong></div>
+            </div>
+            <p><b>Optimises for:</b> customer control, placement, failure isolation and local continuity.</p>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section class="why-deployments shell">
+      <div class="why-section-heading">
+        <p class="kicker"><span></span> One runtime · different boundaries</p>
+        <h2>Put authentication where trust already lives.</h2>
+        <p>Start with a standalone realm. Introduce Fleet when products, customers or environments turn one deployment into an estate.</p>
+      </div>
+      <div class="why-deployment-rail">
+        {deployments.map(([title, location, body, status], index) => (
+          <article>
+            <div><span>0{index + 1}</span><small>{status}</small></div>
+            <p>{location}</p>
+            <h3>{title}</h3>
+            <span>{body}</span>
+            <div class="why-mini-runtime"><b>RustyAuth</b><i>→</i><b>Private state</b></div>
+          </article>
+        ))}
+      </div>
+    </section>
+
+    <section class="why-alternatives" id="alternatives">
+      <div class="shell">
+        <div class="why-section-heading why-section-heading-light">
+          <p class="kicker light"><span></span> The honest comparison</p>
+          <h2>Different by architecture.<br />Not magically better at everything.</h2>
+          <p>RustyAuth has a specific wedge. The established alternatives remain better choices when their strengths match the job.</p>
+        </div>
+
+        <div class="why-provider-list">
+          {providers.map(({ name, kind, strength, difference, href, linkLabel, featured }) => (
+            <article class:list={[{ featured }] }>
+              <div class="why-provider-name"><span>{kind}</span><h3>{name}</h3></div>
+              <div><small>Strongest fit</small><p>{strength}</p></div>
+              <div><small>Architectural difference</small><p>{difference}</p></div>
+              <a href={href}>{linkLabel} <span>↗</span></a>
+            </article>
+          ))}
+        </div>
+        <p class="why-comparison-note">Comparison reflects public product documentation reviewed 9 August 2026. It is deliberately qualitative: verify current capabilities against your own requirements.</p>
+      </div>
+    </section>
+
+    <section class="why-tradeoffs shell">
+      <div class="why-section-heading">
+        <p class="kicker"><span></span> Deliberate trade-offs</p>
+        <h2>Every architecture has a bill.<br />This is the one we chose.</h2>
+        <p>Trust comes from showing the costs as clearly as the advantages.</p>
+      </div>
+      <div class="why-tradeoff-list">
+        {tradeoffs.map(([title, body], index) => (
+          <article><span>0{index + 1}</span><h3>{title}</h3><p>{body}</p></article>
+        ))}
+      </div>
+    </section>
+
+    <section class="why-decision-section">
+      <div class="shell why-decision-grid">
+        <article class="why-choose">
+          <p class="kicker light"><span></span> Choose RustyAuth when</p>
+          <h2>The boundary matters as much as the login.</h2>
+          <ul>
+            <li>You need passkey-first authentication inside infrastructure you control.</li>
+            <li>Products or customers require separate identity and signing-key boundaries.</li>
+            <li>You want to govern deployments without centralizing their identity data.</li>
+            <li>A compact, open-source runtime matters more than a huge integration catalogue.</li>
+            <li>You can evaluate a pre-release product and help shape the Fleet operating model.</li>
+          </ul>
+        </article>
+        <article class="why-choose-other">
+          <p class="kicker"><span></span> Choose an established provider when</p>
+          <h2>You need breadth or assurance today.</h2>
+          <ul>
+            <li>You require SAML, LDAP, SCIM or extensive upstream federation immediately.</li>
+            <li>You need a long operating history, certified profiles or an existing enterprise support programme.</li>
+            <li>Your preferred architecture is one centralized identity domain.</li>
+            <li>You need sophisticated workforce identity workflows or directory management.</li>
+            <li>You cannot accept pre-release software in the authentication path.</li>
+          </ul>
+        </article>
+      </div>
+    </section>
+
+    <section class="why-final shell">
+      <p class="kicker centered"><span></span> Evaluate the boundary</p>
+      <h2>One realm locally.<br />Then see what Fleet changes.</h2>
+      <p>Run the implemented authentication core with synthetic identities, inspect the data boundary, and decide whether the cellular model fits your product.</p>
+      <div class="hero-actions centered-actions">
+        <a class="button button-primary" href="/docs/getting-started">Run the quickstart <span>→</span></a>
+        <a class="button button-secondary" href="/docs/project-status">Review project status <span>→</span></a>
+      </div>
+    </section>
+  </main>
+</BaseLayout>

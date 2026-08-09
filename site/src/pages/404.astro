@@ -1,0 +1,24 @@
+---
+import BaseLayout from "../layouts/BaseLayout.astro";
+---
+
+<BaseLayout
+  title="Page not found · RustyAuth"
+  description="The requested RustyAuth page could not be found."
+  robots="noindex, follow"
+>
+  <main>
+    <section class="missing-page shell">
+      <p class="kicker"><span></span> 404 · Page not found</p>
+      <h1>This route has<br /><em>left the boundary.</em></h1>
+      <p>
+        The page may have moved. Continue with the passkey authentication guide, developer documentation or
+        project source.
+      </p>
+      <div class="hero-actions">
+        <a class="button button-primary" href="/passkey-authentication">Read the passkey guide <span>→</span></a>
+        <a class="button button-secondary" href="/docs">Browse documentation <span>→</span></a>
+      </div>
+    </section>
+  </main>
+</BaseLayout>

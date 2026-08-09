@@ -1,0 +1,83 @@
+---
+import GuideLayout from "../layouts/GuideLayout.astro";
+---
+
+<GuideLayout
+  title="Authentication in Rust: Passkeys, Sessions and Tokens | RustyAuth"
+  description="How to design authentication in Rust with WebAuthn passkeys, revocable sessions, short-lived JWTs and a durable private data store."
+  eyebrow="Developer guide · Rust"
+  heading="Authentication in Rust"
+  intro="Rust is a strong fit for authentication infrastructure: it combines memory safety, explicit data modelling and a compact runtime. The language helps, but secure authentication still depends on protocol verification, narrow trust boundaries and disciplined operations."
+  currentPath="/authentication-in-rust"
+>
+  <p class="guide-lede">
+    Building authentication in Rust should not start with a password table or a JWT helper. Start with the boundary:
+    which identities exist, how credentials prove control, how sessions are revoked, which claims leave the service,
+    and which decisions remain inside the relying application.
+  </p>
+
+  <h2 id="why-rust">Why Rust for authentication infrastructure?</h2>
+  <p>
+    Rust prevents broad classes of memory-safety bugs without a garbage collector, supports precise domain types and
+    makes error handling visible in control flow. Those properties are useful in a service that parses attacker-
+    controlled protocol input and sits on the request path for every user session.
+  </p>
+  <p>
+    Rust does not automatically make an authentication system secure. Origin validation, challenge lifecycle,
+    cryptographic choices, session handling, dependency configuration and operator access still require explicit
+    design. Performance claims also need benchmarks against a real deployment; language choice alone is not evidence
+    of a particular latency or throughput number.
+  </p>
+
+  <h2 id="components">A practical Rust authentication stack</h2>
+  <div class="guide-card-grid guide-card-grid-three">
+    <div><strong>HTTP boundary</strong><p>Axum routes receive browser ceremonies, sessions and operator requests through typed extractors.</p></div>
+    <div><strong>WebAuthn verification</strong><p>Protocol libraries verify challenges, origins, relying parties, public credentials and assertions.</p></div>
+    <div><strong>Durable state</strong><p>A private SableDB key-value store keeps users, credentials, ceremonies, sessions and ordered events.</p></div>
+  </div>
+
+  <h2 id="flow">From passkey assertion to application session</h2>
+  <ol>
+    <li><strong>Create a ceremony:</strong> generate a cryptographically random challenge with a short expiry and durable single-use record.</li>
+    <li><strong>Return public options:</strong> send only the relying-party and credential options the browser requires.</li>
+    <li><strong>Verify the assertion:</strong> check the response against server-owned origin, challenge and credential state.</li>
+    <li><strong>Create a session:</strong> persist a hash of the bearer value with idle and absolute expiry so the session can be revoked.</li>
+    <li><strong>Issue narrow claims:</strong> mint a short-lived signed token only when another service needs verifiable identity context.</li>
+  </ol>
+  <div class="guide-callout">
+    <strong>Do not turn JWTs into permanent sessions</strong>
+    <p>Short-lived tokens are useful for downstream verification. A durable server-side session remains the better control point for logout, revocation, expiry and step-up state.</p>
+  </div>
+
+  <h2 id="rustyauth">How RustyAuth is structured</h2>
+  <p>
+    RustyAuth uses a Rust backend for WebAuthn ceremonies, session policy, ES256 token issuance and operational
+    controls. A Dioxus dashboard consumes the same service contract. Each realm has a private SableDB instance rather
+    than sharing identity tables with the relying application.
+  </p>
+  <p>
+    The compact runtime and key-value data path are intended to keep authentication infrastructure lean. RustyAuth
+    does not publish performance numbers without a repeatable benchmark; teams that care about cost and latency should
+    measure the exact topology, persistence settings and workload they plan to run.
+  </p>
+
+  <h2 id="security-boundaries">Security boundaries to keep explicit</h2>
+  <ul>
+    <li><strong>Authentication versus authorization:</strong> the Rust service proves identity; application code owns permission and resource decisions.</li>
+    <li><strong>Public versus operator APIs:</strong> enrolment and sign-in should not share authority with backup, key and configuration operations.</li>
+    <li><strong>Bearer values versus durable data:</strong> store hashes for revocable session lookup; never persist raw session tokens.</li>
+    <li><strong>Realm versus fleet:</strong> a management plane should coordinate isolated realms without receiving their database credentials.</li>
+    <li><strong>Available versus planned:</strong> roadmap features are not security controls until they ship and are tested.</li>
+  </ul>
+
+  <h2 id="start">Run the Rust stack locally</h2>
+  <pre><code>git clone https://github.com/rusty-auth/rustyauth.git
+cd rustyauth
+scripts/local-stack standalone up</code></pre>
+  <p>
+    The launcher creates development secrets and starts the dashboard, Rust service and private SableDB. Follow the
+    <a href="/docs/getting-started">local quickstart</a>, inspect the
+    <a href="/docs/architecture">service architecture</a>, then use the
+    <a href="/docs/integration">integration guide</a> to connect a relying-party application.
+  </p>
+</GuideLayout>

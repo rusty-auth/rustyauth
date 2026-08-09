@@ -1,19 +1,75 @@
 ---
+import { docsNavigation } from "../../data/docs";
 import DocsLayout from "../../layouts/DocsLayout.astro";
-const chapters = [
-  ["01", "Getting started", "Run RustyAuth and SableDB locally with Docker Compose.", "/docs/getting-started"],
-  ["02", "Architecture", "Understand trust boundaries, durable state and authentication flows.", "/docs/architecture"],
-  ["03", "Identity data model", "See every persisted identity field, invariant and API projection.", "/docs/identity-data"],
-  ["04", "HTTP API", "Review public endpoints, access requirements and response contracts.", "/docs/api"],
-  ["05", "Configuration", "Configure origins, tokens, sessions, persistence and backups.", "/docs/configuration"],
-  ["06", "Backups and key rotation", "Operate, rotate, verify and rehearse clean-room recovery.", "/docs/recovery"],
-  ["07", "Deployment", "Package RustyAuth safely for Docker and Railway.", "/docs/deployment"],
+
+const paths = [
+  {
+    label: "Application developer",
+    title: "Add passkeys to an app",
+    body: "Start the standalone stack, complete a ceremony, exchange the session for a JWT and verify it in your API.",
+    href: "/docs/integration",
+  },
+  {
+    label: "Platform operator",
+    title: "Deploy one isolated realm",
+    body: "Understand the three-service topology, versioned configuration, secrets, backups and recovery gates.",
+    href: "/docs/deployment",
+  },
+  {
+    label: "Fleet operator",
+    title: "Manage many realms",
+    body: "Run the separate Fleet control plane and pair organizations, projects and environments without sharing databases.",
+    href: "/docs/fleet",
+  },
 ];
 ---
-<DocsLayout title="Own the identity boundary." eyebrow="RustyAuth documentation" intro="Everything you need to understand, run and integrate the pre-release RustyAuth service.">
-  <div class="doc-callout warning"><strong>Pre-release</strong><p>Account recovery, abuse controls, multi-writer qualification and an independent security assessment are not complete.</p></div>
-  <h2>Start here</h2>
-  <div class="docs-card-grid">{chapters.map(([number, title, body, href]) => <a class="docs-card" href={href}><small>{number}</small><h3>{title}</h3><p>{body}</p><span>Read chapter →</span></a>)}</div>
-  <h2>What RustyAuth does</h2>
-  <p>RustyAuth authenticates an identity, maintains revocable browser sessions and issues short-lived claims for downstream services. It intentionally leaves roles, permissions, entitlements and resource ownership to the application.</p>
+
+<DocsLayout title="Own the identity boundary." eyebrow="RustyAuth documentation" intro="Learn, integrate and operate RustyAuth—from one isolated realm to a cross-cloud Fleet control plane.">
+  <div class="docs-status-strip" aria-label="Project status">
+    <div><small>Release</small><strong>0.1.0 pre-release</strong></div>
+    <div><small>Runtime</small><strong>Rust + Dioxus + SableDB</strong></div>
+    <div><small>Production gate</small><strong>Security review required</strong></div>
+  </div>
+
+  <div class="doc-callout warning">
+    <strong>Evaluate before production</strong>
+    <p>Passkeys, revocable sessions, Fleet hierarchy and encrypted recovery are implemented. Account recovery, abuse controls, multi-writer qualification and an independent security assessment are not complete.</p>
+  </div>
+
+  <h2>Choose your path</h2>
+  <div class="docs-path-grid">
+    {paths.map((path) => (
+      <a class="docs-card" href={path.href}>
+        <small>{path.label}</small>
+        <h3>{path.title}</h3>
+        <p>{path.body}</p>
+        <span>Follow the path →</span>
+      </a>
+    ))}
+  </div>
+
+  <h2>The product boundary</h2>
+  <p>RustyAuth authenticates an identity, maintains revocable browser sessions and issues short-lived claims for downstream services. Your application still owns authorization, roles, entitlements and resource ownership.</p>
+  <div class="doc-architecture">
+    <div><small>Presentation</small><strong>Dioxus dashboard</strong><span>Web · desktop · mobile</span></div>
+    <b>→</b>
+    <div class="accent"><small>Trust boundary</small><strong>RustyAuth API</strong><span>Passkeys · policy · Protobuf</span></div>
+    <b>→</b>
+    <div class="dark"><small>Private state</small><strong>SableDB</strong><span>Durable realm or Fleet data</span></div>
+  </div>
+
+  <h2>Browse every guide</h2>
+  <div class="docs-card-grid">
+    {docsNavigation.flatMap((group) => group.items.filter((item) => item.href !== "/docs").map((item) => (
+      <a class="docs-card" href={item.href}>
+        <small>{group.label}</small>
+        <h3>{item.label}</h3>
+        <p>{item.description}</p>
+        <span>Open guide →</span>
+      </a>
+    )))}
+  </div>
+
+  <h2>Source of truth</h2>
+  <p>This site is the guided developer experience. The repository contains the normative protocol, security and operational references. Start at the <a href="https://github.com/rusty-auth/rustyauth/blob/main/docs/README.md">GitHub documentation index</a> when you need exhaustive contracts or release-specific detail.</p>
 </DocsLayout>

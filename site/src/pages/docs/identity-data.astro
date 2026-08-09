@@ -96,4 +96,5 @@ const exposures = [
   <h2>Integration rules</h2>
   <ol><li>Use the UUID as the downstream foreign identity key.</li><li>Treat contact identifiers as mutable and verification as independent from primary selection.</li><li>Never authorize by email, phone or display name.</li><li>Keep the identity RPC credential in a trusted service, never browser code.</li><li>Validate JWT signature, issuer, audience, expiry, tenant and required authentication claims.</li><li>Plan verified email/SMS delivery and account recovery before production adoption.</li></ol>
   <p>For exact request contracts, continue to the <a href="/docs/api">HTTP and RPC API</a>. For key families, backup behavior and trust boundaries, see <a href="/docs/architecture">Architecture</a>.</p>
+  <p>The <a href="https://github.com/rusty-auth/rustyauth/blob/main/docs/IDENTITY_DATA_MODEL.md">normative identity data reference</a> stays beside the persistence implementation and must change with any stored field or index.</p>
 </DocsLayout>

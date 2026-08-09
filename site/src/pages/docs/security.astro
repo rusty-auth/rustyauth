@@ -1,0 +1,51 @@
+---
+import DocsLayout from "../../layouts/DocsLayout.astro";
+
+const controls = [
+  ["Browser", "Exact origins; HttpOnly SameSite cookies; CSP; frame denial; bounded bodies and timeouts"],
+  ["Operator", "Passkeys; server-side scope authorization; recent-auth checks; durable audit"],
+  ["Service", "Short-lived scoped credentials; TLS/mTLS or workload identity; versioned Protobuf"],
+  ["Datastore", "Private networking; no browser access; encrypted signing material; atomic mutations"],
+  ["Recovery", "AES-256-GCM snapshots; provider encryption; Object Lock; empty-target restore"],
+  ["Supply chain", "Non-root containers; pinned dependencies; signed release direction; CI recovery drill"],
+];
+---
+
+<DocsLayout title="Security" eyebrow="Trust model and hardening" intro="The Rust and Dioxus implementation reduces classes of defects; the security boundary still comes from explicit authentication, authorization and isolation.">
+  <div class="doc-callout warning">
+    <strong>Pre-release security posture</strong>
+    <p>RustyAuth is not yet qualified as the sole identity system for production. Account recovery, abuse controls, multi-writer review, broader authenticator coverage and an independent assessment remain release gates.</p>
+  </div>
+
+  <h2>Core assumptions</h2>
+  <ul>
+    <li>The Dioxus dashboard is an untrusted presentation client.</li>
+    <li>The Rust backend is the authentication and authorization boundary.</li>
+    <li>SableDB and backup storage remain private infrastructure.</li>
+    <li>Fleet operators are powerful principals; their access must be passkey-bound, scoped and audited.</li>
+    <li>Protobuf is a contract and encoding—not encryption, identity or authorization.</li>
+  </ul>
+
+  <h2>Control map</h2>
+  <div class="doc-table-wrap"><table><thead><tr><th>Boundary</th><th>Controls</th></tr></thead><tbody>{controls.map(([boundary, value]) => <tr><td>{boundary}</td><td>{value}</td></tr>)}</tbody></table></div>
+
+  <h2>Secrets and credentials</h2>
+  <p>Commit non-secret YAML policy. Inject independent master keys, backup keys, bootstrap values and service credentials through the platform secret store or <code>_FILE</code> mounts. Never store realm connection credentials in browser storage, logs or ordinary desktop configuration. Fleet encrypts scoped realm credentials at rest; native clients use the OS keychain for their own short-lived tokens.</p>
+
+  <h2>Server-side authorization</h2>
+  <p>Every organization, project, environment, realm, operator and service-account operation is authorized again in the backend. Tenant identity and scope come from verified server-side context—not a client-provided label. Recent-passkey requirements protect sensitive mutations, and raw session values are never persisted.</p>
+
+  <h2>Network and SSRF posture</h2>
+  <p>Keep backends and datastores private. Fleet management and webhook URLs are outbound request targets: validate scheme and normalized host, resolve DNS, block loopback/private/link-local destinations unless explicitly permitted, prevent redirect escape and revalidate connections. RustyAuth requires HTTPS webhook URLs and disables redirects, but production still needs an egress allowlist or proxy to close DNS-rebinding paths and express reviewed private-network exceptions.</p>
+
+  <h2>Release gate</h2>
+  <ol>
+    <li>Complete recovery and abuse-control design.</li>
+    <li>Qualify cross-process mutation safety and supported replica counts.</li>
+    <li>Expand browser, authenticator, protocol-negative and authorization tests.</li>
+    <li>Generate and verify SBOM, provenance, signatures and dependency policy.</li>
+    <li>Complete an independent threat-model and implementation review.</li>
+    <li>Run disaster recovery with escrowed keys and a real post-restore passkey sign-in.</li>
+  </ol>
+  <p>Use the normative <a href="https://github.com/rusty-auth/rustyauth/blob/main/SECURITY.md">security policy and threat model</a> and the <a href="https://github.com/rusty-auth/rustyauth/blob/main/docs/SECURITY_HARDENING.md">hardening checklist</a>. Report vulnerabilities through the private channel described there—not a public issue.</p>
+</DocsLayout>

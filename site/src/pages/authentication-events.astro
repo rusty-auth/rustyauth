@@ -1,0 +1,202 @@
+---
+import GuideLayout from "../layouts/GuideLayout.astro";
+---
+
+<GuideLayout
+  title="Authentication Events with gRPC and Webhooks | RustyAuth"
+  description="Stream signup and identity events over resumable gRPC, poll the ordered event log, or deliver durable signed webhooks with RustyAuth."
+  eyebrow="Developer guide · Events and integration"
+  heading="Connect authentication events to the rest of your product"
+  intro="A new signup should be able to create an application profile, start onboarding or update analytics without coupling your primary database to an authentication ceremony. RustyAuth gives trusted services three deliberate ways to consume the same ordered event log."
+  currentPath="/authentication-events"
+>
+  <p class="guide-lede">
+    RustyAuth records durable, ordered authentication events inside each isolated realm. Your application can
+    follow them as a resumable gRPC stream, poll them during a migration, or let RustyAuth deliver signed HTTPS
+    webhooks. The event is a notification—not a second copy of the identity record.
+  </p>
+
+  <div class="guide-callout">
+    <strong>The integration rule</strong>
+    <p>Use the event’s stable <code>subject</code> UUID as the application identity key. When you need current profile data, fetch the safe projection from the private IdentityService and commit your database update before advancing the event cursor.</p>
+  </div>
+
+  <h2 id="choose">Choose the delivery path</h2>
+  <div class="guide-table-wrap" tabindex="0" role="region" aria-label="Authentication event delivery options">
+    <table>
+      <thead><tr><th>Path</th><th>Best for</th><th>Delivery contract</th></tr></thead>
+      <tbody>
+        <tr><td>Native gRPC stream</td><td>Always-on trusted services and low-latency projection</td><td>Replay after a cursor, then follow; at least once</td></tr>
+        <tr><td>Signed webhook</td><td>Simple HTTPS integrations, automation and third-party endpoints</td><td>Durable history, bounded retry and operator replay</td></tr>
+        <tr><td>HTTP polling</td><td>Bootstrap, scripts, migrations and restricted networks</td><td>Up to 500 ordered events after a sequence</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="guide-event-flow" aria-label="RustyAuth event log feeding gRPC consumers, signed webhooks and HTTP polling">
+    <div class="source"><small>Isolated realm</small><strong>RustyAuth event log</strong><span>Gap-free sequence · redacted data</span></div>
+    <b aria-hidden="true">→</b>
+    <div class="destinations">
+      <div><small>Continuous</small><strong>gRPC stream</strong><span>Resume from committed cursor</span></div>
+      <div><small>Push</small><strong>Signed webhook</strong><span>Verify, deduplicate, return 2xx</span></div>
+      <div><small>Pull</small><strong>HTTP poll</strong><span>Bootstrap and migration</span></div>
+    </div>
+  </div>
+
+  <h2 id="events">What events contain</h2>
+  <p>
+    Every event has a gap-free sequence, UUID, tenant ID, event type, optional subject UUID, timestamp and a
+    redacted JSON object. Useful lifecycle types include <code>identity.created</code>,
+    <code>profile.updated</code>, <code>identifier.added</code>, <code>identifier.removed</code>,
+    <code>identifier.primary_changed</code>, <code>identifier.verified</code>,
+    <code>identifier.unverified</code> and session or credential lifecycle events.
+  </p>
+  <p>
+    Events deliberately exclude email and phone values, passkey material, cookies, JWTs, assertions and
+    one-time codes. This keeps an event broker or webhook log from becoming a shadow identity database. A trusted
+    backend that needs the current profile calls <code>IdentityService/GetUser</code> with the event subject.
+  </p>
+
+  <h2 id="credentials">Create a least-privilege consumer</h2>
+  <p>
+    Create a service account in the RustyAuth dashboard with <code>events.read</code> and, only if the consumer
+    projects profiles, <code>identity.read</code>. Create a credential and store the returned <code>rsa_…</code>
+    secret once. Exchange it for a short-lived ES256 bearer token; do not place either credential in browser code.
+  </p>
+  <pre><code>{`export RUSTYAUTH_ADDR=localhost:8081
+
+grpcurl -plaintext -import-path ./proto -proto rustyauth/service_accounts/v1/service_accounts.proto -d '{"credential":"rsa_REPLACE_ME","requestedScopes":["events.read","identity.read"]}' "$RUSTYAUTH_ADDR" rustyauth.service_accounts.v1.ServiceAccountService/ExchangeCredential`}</code></pre>
+  <p>Use TLS and omit <code>-plaintext</code> outside the local stack. Refresh the access token before its returned expiry; disabling or revoking the underlying credential prevents future exchanges.</p>
+
+  <h2 id="grpc">Stream signups over gRPC</h2>
+  <p>
+    Start with the last sequence your consumer committed. Zero begins at the oldest retained event. An empty
+    event-type list follows everything; exact filters reduce consumer work without changing the global cursor.
+  </p>
+  <pre><code>{`export RUSTYAUTH_ACCESS_TOKEN='eyJ…'
+
+grpcurl -plaintext -H "authorization: Bearer $RUSTYAUTH_ACCESS_TOKEN" -import-path ./proto -proto rustyauth/events/v1/events.proto -d '{
+    "afterSequence": "0",
+    "eventTypes": [
+      "identity.created",
+      "profile.updated",
+      "identifier.added",
+      "identifier.removed",
+      "identifier.primary_changed",
+      "identifier.verified",
+      "identifier.unverified"
+    ],
+    "checkpointIntervalSeconds": 15
+  }' "$RUSTYAUTH_ADDR" rustyauth.events.v1.AuthEventService/Subscribe`}</code></pre>
+  <p>
+    The stream first replays records after the cursor and then waits for new ones. Idle checkpoints report the
+    latest sequence, including events excluded by your filter. An expired cursor returns <code>OUT_OF_RANGE</code>;
+    a malformed or missing sequence returns <code>DATA_LOSS</code> instead of silently skipping work.
+  </p>
+
+  <h2 id="profile-sync">Project a signup into your primary database</h2>
+  <p>
+    On <code>identity.created</code> or a later profile/identifier event, call the private identity service with the
+    stable subject UUID. The response includes the safe profile, identifiers and passkey metadata—not stored
+    WebAuthn public keys, counters, sessions or tokens.
+  </p>
+  <pre><code>{`grpcurl -plaintext -H "authorization: Bearer $RUSTYAUTH_ACCESS_TOKEN" -import-path ./proto -proto rustyauth/identity/v1/identity.proto -d '{"userId":"THE_EVENT_SUBJECT_UUID"}' "$RUSTYAUTH_ADDR" rustyauth.identity.v1.IdentityService/GetUser`}</code></pre>
+  <ol>
+    <li>Begin one application-database transaction.</li>
+    <li>Upsert the profile by RustyAuth user UUID; never use email as the primary key.</li>
+    <li>Record the event UUID or sequence so retries are harmless.</li>
+    <li>Commit the profile update and consumer cursor together.</li>
+    <li>Only then acknowledge progress by using that sequence on the next subscription.</li>
+  </ol>
+  <p>Your application database should continue to own roles, billing state, entitlements and resources. RustyAuth owns authentication identity.</p>
+
+  <h2 id="webhooks">Use durable signed webhooks</h2>
+  <p>
+    Declare stable destinations in <code>rustyauth.yaml</code> when infrastructure as code should be authoritative,
+    or create a dashboard-managed destination through WebhookService. A creation or secret rotation returns the
+    <code>whsec_…</code> signing secret exactly once. A YAML-managed destination can be tested, inspected, replayed
+    and have its secret rotated, but its URL and filters remain owned by YAML.
+  </p>
+  <pre><code>{`spec:
+  webhooks:
+    - id: application-profile-sync
+      name: Application profile sync
+      endpoint: https://api.example.com/hooks/rustyauth
+      enabled: true
+      eventTypes:
+        - identity.created
+        - profile.updated
+        - identifier.added
+        - identifier.removed
+        - identifier.primary_changed
+        - identifier.verified
+        - identifier.unverified`}</code></pre>
+  <p>Each delivery includes:</p>
+  <ul>
+    <li><code>x-rustyauth-delivery</code> — the idempotency key for this delivery.</li>
+    <li><code>x-rustyauth-event</code> — the event type.</li>
+    <li><code>x-rustyauth-timestamp</code> — Unix seconds used in the signature.</li>
+    <li><code>x-rustyauth-signature: v1=…</code> — lowercase hex HMAC-SHA256.</li>
+  </ul>
+  <pre><code>{`use std::time::{SystemTime, UNIX_EPOCH};
+use hmac::{Hmac, Mac};
+use sha2::Sha256;
+
+type HmacSha256 = Hmac<Sha256>;
+
+fn unix_seconds() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("system clock before Unix epoch")
+        .as_secs()
+}
+
+fn verify_rustyauth_webhook(
+    secret: &str,
+    timestamp: &str,
+    signature: &str,
+    exact_body: &[u8],
+) -> anyhow::Result<()> {
+    let sent_at: u64 = timestamp.parse()?;
+    anyhow::ensure!(unix_seconds().abs_diff(sent_at) <= 300, "stale webhook");
+
+    let supplied = signature
+        .strip_prefix("v1=")
+        .ok_or_else(|| anyhow::anyhow!("unsupported signature version"))?;
+    let supplied = hex::decode(supplied)?;
+
+    let mut mac = HmacSha256::new_from_slice(secret.as_bytes())?;
+    mac.update(timestamp.as_bytes());
+    mac.update(b".");
+    mac.update(exact_body);
+    mac.verify_slice(&supplied)?; // constant-time comparison
+    Ok(())
+}`}</code></pre>
+  <p>
+    Verify the signature against the untouched request bytes before parsing JSON. Reject stale timestamps, then
+    deduplicate on the delivery ID and return a <code>2xx</code> only after your durable work commits. RustyAuth
+    retries transport failures, <code>408</code>, <code>425</code>, <code>429</code> and <code>5xx</code> responses with
+    bounded exponential backoff. Redirects are never followed. Operators can inspect history and replay a failed
+    delivery while its source event remains retained.
+  </p>
+
+  <h2 id="polling">Use HTTP polling for bootstrap work</h2>
+  <pre><code>{`curl -sS -H "x-bootstrap-token: $BOOTSTRAP_TOKEN" "http://localhost:8081/v1/events?after=0"`}</code></pre>
+  <p>
+    Polling returns up to 500 subsequent ordered records. The bootstrap token is administrative and is best kept
+    for controlled migrations or local evaluation; use scoped service accounts for long-running gRPC consumers.
+  </p>
+
+  <h2 id="operations">Production checklist</h2>
+  <ol>
+    <li>Keep RPC and webhook secrets in a server-side secret manager.</li>
+    <li>Grant only the scopes the consumer needs; profile sync normally needs <code>events.read</code> and <code>identity.read</code>.</li>
+    <li>Persist cursor progress in the same transaction as downstream state.</li>
+    <li>Make every handler idempotent and expect at-least-once delivery.</li>
+    <li>Constrain webhook destinations with a production egress allowlist or proxy; URL validation cannot close DNS rebinding by itself.</li>
+    <li>Alert on stream <code>DATA_LOSS</code>, webhook terminal failures and a growing delivery backlog.</li>
+    <li>Exercise credential rotation, webhook signing-secret rotation and replay before launch.</li>
+    <li>Pin the evaluated RustyAuth release or commit; <code>0.1.0</code> remains pre-release software.</li>
+  </ol>
+  <p>Continue with the <a href="/docs/integration">application integration path</a>, <a href="/docs/api">exact API boundary</a> and <a href="/docs/configuration">configuration reference</a>.</p>
+</GuideLayout>

@@ -1,0 +1,96 @@
+---
+import GuideLayout from "../layouts/GuideLayout.astro";
+---
+
+<GuideLayout
+  title="Self-Hosted Authentication: Architecture and Tradeoffs | RustyAuth"
+  description="A practical guide to self-hosted authentication architecture, costs, operational responsibilities and when customer-controlled identity infrastructure makes sense."
+  eyebrow="Developer guide · Deployment"
+  heading="Self-hosted authentication"
+  intro="Self-hosting authentication puts the identity boundary, keys and data inside infrastructure you control. It can reduce vendor dependency and support private deployments—but it also makes security operations your responsibility."
+  currentPath="/self-hosted-authentication"
+>
+  <p class="guide-lede">
+    Self-hosted authentication means your team deploys and operates the service that registers credentials, creates
+    sessions and issues identity claims. It does not mean inventing cryptography or placing login logic directly in
+    every application. A useful self-hosted system is still a narrow, independently operated service boundary.
+  </p>
+
+  <h2 id="why-self-host">Why teams self-host authentication</h2>
+  <p>
+    Hosted identity platforms are a strong default when speed of adoption matters more than infrastructure control.
+    Self-hosting becomes attractive when authentication data must stay in a customer environment, workloads need to
+    operate without public internet access, per-user pricing grows faster than infrastructure cost, or a team needs a
+    reviewable open-source boundary instead of a required external provider.
+  </p>
+  <div class="guide-card-grid">
+    <div><strong>Data location</strong><p>Keep identities, credentials, sessions and audit events inside a chosen region or customer network.</p></div>
+    <div><strong>Deployment control</strong><p>Run the same authentication boundary in your cloud, private infrastructure or a disconnected enclave.</p></div>
+    <div><strong>Cost shape</strong><p>Pay for the runtime and operations you use instead of automatically scaling a per-user identity bill.</p></div>
+    <div><strong>Reviewability</strong><p>Inspect source, configuration and data flows rather than treating identity as an opaque external dependency.</p></div>
+  </div>
+
+  <h2 id="responsibility">What you own when you self-host</h2>
+  <p>
+    Infrastructure ownership is not the same as reduced responsibility. Your team owns patching, availability,
+    monitoring, key rotation, rate limiting, abuse response, data retention, backups and restore drills. You also need
+    a documented response for account recovery and compromised operator access.
+  </p>
+  <ul>
+    <li>Terminate TLS correctly and configure the exact WebAuthn relying-party origins.</li>
+    <li>Keep authentication services and their data stores private from the public network where possible.</li>
+    <li>Rotate signing keys while preserving verification overlap for issued tokens.</li>
+    <li>Back up identity state, verify snapshots and practise restoring into a clean environment.</li>
+    <li>Collect useful security events without logging challenges, bearer tokens or private credential material.</li>
+    <li>Apply capacity planning and failure testing to the authentication path, not only the main application.</li>
+  </ul>
+
+  <h2 id="architecture">A small self-hosted authentication architecture</h2>
+  <div class="guide-architecture" aria-label="Self-hosted authentication architecture">
+    <div><span>01</span><strong>Your application</strong><small>Authorization and resources</small></div>
+    <b aria-hidden="true">→</b>
+    <div class="accent"><span>02</span><strong>Authentication service</strong><small>Passkeys, sessions and tokens</small></div>
+    <b aria-hidden="true">→</b>
+    <div><span>03</span><strong>Private data store</strong><small>Identity and audit state</small></div>
+  </div>
+  <p>
+    The separation matters. Authentication should produce a durable user identifier and narrow claims. The relying
+    application should decide whether that identity may read an account, approve a transaction or use a paid feature.
+    Moving authorization into a general identity service creates a much wider—and harder to reason about—boundary.
+  </p>
+
+  <h2 id="evaluate">Evaluation checklist</h2>
+  <div class="guide-table-wrap" tabindex="0" role="region" aria-label="Self-hosted authentication evaluation checklist">
+    <table>
+      <thead><tr><th>Question</th><th>Evidence to request</th></tr></thead>
+      <tbody>
+        <tr><td>Can it fail closed?</td><td>Startup validation, dependency readiness and explicit deny behaviour</td></tr>
+        <tr><td>Can state be recovered?</td><td>Versioned backup format, integrity verification and a clean-room restore runbook</td></tr>
+        <tr><td>Are trust boundaries clear?</td><td>Network diagram, token claims and a list of deliberately excluded responsibilities</td></tr>
+        <tr><td>Can it be upgraded safely?</td><td>Migration policy, compatibility contract and rollback procedure</td></tr>
+        <tr><td>Is production readiness honest?</td><td>Published limitations, security process and independent assessment status</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h2 id="rustyauth-model">The RustyAuth deployment model</h2>
+  <p>
+    A standalone RustyAuth realm contains a Dioxus dashboard, one Rust backend and one private, volume-backed SableDB
+    instance. Fleet deployments add a separate central control plane while each realm keeps its own service and data
+    boundary. Configuration is versionable YAML with environment overrides for secrets.
+  </p>
+  <p>
+    This model is designed for teams that want <a href="/passkey-authentication">passkey authentication</a> without
+    accepting a mandatory hosted identity provider. Read the
+    <a href="/docs/deployment">deployment documentation</a>,
+    <a href="/docs/configuration">configuration contract</a> and
+    <a href="/docs/recovery">backup and recovery runbook</a> for the operational details.
+  </p>
+
+  <h2 id="when-hosted-is-better">When a hosted provider is the better choice</h2>
+  <p>
+    Choose a mature hosted provider if your team cannot own an on-call authentication path, needs broad enterprise
+    federation immediately, or requires completed certifications that RustyAuth does not claim. Self-hosting should be
+    a deliberate infrastructure decision, not an assumption that open-source software removes operational work.
+  </p>
+</GuideLayout>

@@ -11,8 +11,18 @@ const foundations = [
 ---
 
 <BaseLayout
-  title="Solutions · RustyAuth"
+  title="Authentication Solutions for SaaS and Private Infrastructure | RustyAuth"
   description="Reference scenarios for deploying RustyAuth across SaaS, gambling, banking, financial services, healthcare products and secure systems."
+  structuredData={{
+    "@type": "CollectionPage",
+    name: "RustyAuth authentication solutions",
+    url: new URL("/solutions/", Astro.site).href,
+    hasPart: solutions.map((solution) => ({
+      "@type": "WebPage",
+      name: solution.seoTitle,
+      url: new URL(`/solutions/${solution.slug}/`, Astro.site).href,
+    })),
+  }}
 >
   <main class="solutions-hub">
     <section class="solution-hub-hero shell">

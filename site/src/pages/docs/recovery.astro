@@ -1,31 +1,139 @@
 ---
 import DocsLayout from "../../layouts/DocsLayout.astro";
+
+const realmState = [
+  ["Accounts", "Users, profiles, identifiers, passkeys and every reverse lookup index"],
+  ["Sessions", "Captured with absolute expiry; skipped and invalidated by default during restore"],
+  ["Signing state", "The AES-wrapped ES256 keyset required to prove the snapshot is recoverable"],
+  ["Dashboard administration", "Organization settings, operator grants, service accounts and credential locators"],
+  ["Fleet trust", "Realm grants and live credential-digest locators"],
+  ["Audit history", "Ordered events and their contiguous sequence"],
+];
+
+const fleetState = [
+  ["Workspace", "Organizations, projects, environments and all slug indexes"],
+  ["Realm registrations", "Connections and their already-encrypted scoped credentials"],
+  ["Authorization", "Role bindings and reverse subject indexes"],
+  ["Mutation history", "Idempotency records and the central audit trail"],
+];
+
+const commands = [
+  ["backup create", "Create, upload, read back and return a verified JSON receipt"],
+  ["backup list", "List v3 and compatible v2 recovery points for this tenant"],
+  ["backup status", "Report durable freshness/failure state and exit non-zero while alerting"],
+  ["backup verify <object-key>", "Verify storage posture, decrypt, validate the manifest and check signing material"],
+  ["backup restore <object-key>", "Restore into an empty managed namespace with safe session invalidation"],
+  ["doctor", "Check SableDB, signing state, bucket reachability, object count and backup health"],
+];
 ---
-<DocsLayout title="Backups and key rotation" eyebrow="Recovery operations" intro="A small, explicit operator workflow for encrypted backups, key changes and clean-room restore drills.">
-  <div class="doc-callout"><strong>Simple by default</strong><p>Provide the complete backup environment once. RustyAuth creates a verified logical backup after startup and every six hours by default, while signing keys rotate automatically with staged JWKS publication and retired-key overlap.</p></div>
 
-  <h2>Operator commands</h2><pre class="doc-code"><code>rustyauth doctor
-rustyauth backup create
-rustyauth backup list
-rustyauth backup status
+<DocsLayout title="Backups and disaster recovery" eyebrow="Recovery operations" intro="How RustyAuth captures a complete Realm or Fleet workspace, seals it as a compact binary object, verifies immutable S3 storage and restores it safely.">
+  <div class="doc-callout">
+    <strong>A backup is successful only after recovery checks</strong>
+    <p>RustyAuth does not treat <code>PutObject</code> as proof. It reads the object back, checks its version, compliance retention and provider encryption, decrypts it, validates every manifest and ownership invariant, and only then records success.</p>
+  </div>
+
+  <h2>Recovery boundaries</h2>
+  <p>A backup is a logical export of the managed <code>auth:*</code> and <code>fleet:*</code> SableDB keyspaces. It is not a SableDB volume image, continuous replication or a transaction log. Realm and Fleet deployments produce separate objects because they have separate owners, datastores and failure domains.</p>
+  <div class="doc-callout warning"><strong>Fleet does not replace Realm backups</strong><p>A Fleet object protects central hierarchy, realm registrations, scoped authorization and audit. It never connects to a paired realm's database. Each Realm keeps its own users, credentials, sessions, signing state and backup schedule.</p></div>
+
+  <h3>Realm workspace</h3>
+  <div class="doc-table-wrap"><table><thead><tr><th>Area</th><th>Recovered state</th></tr></thead><tbody>{realmState.map(([area, state]) => <tr><td>{area}</td><td>{state}</td></tr>)}</tbody></table></div>
+
+  <h3>Fleet workspace</h3>
+  <div class="doc-table-wrap"><table><thead><tr><th>Area</th><th>Recovered state</th></tr></thead><tbody>{fleetState.map(([area, state]) => <tr><td>{area}</td><td>{state}</td></tr>)}</tbody></table></div>
+  <p>The exporter scans both managed prefixes for either deployment role. A Fleet backup therefore also contains every applicable central <code>auth:*</code> record, including its signing and operator identity state, alongside the Fleet-specific families above.</p>
+
+  <h3>Excluded and external state</h3>
+  <p>Short-lived WebAuthn ceremonies, agent handoffs, Fleet pairing/connection attempts, maintenance locks, backup health, leases and restore markers are deliberately excluded so recovery does not replay an in-progress operation. An unknown durable key family fails snapshot creation instead of being silently omitted.</p>
+  <p>Browser navigation and filters are transient. The Dioxus dashboard assets come from the pinned release image; durable dashboard settings are the organization, operator, service-account or Fleet records above. Retain the image digest, validated YAML, active and previous master/backup keys, bucket IaC and downstream application data in separate recovery systems.</p>
+
+  <h2>Creation pipeline</h2>
+  <div class="doc-architecture">
+    <div><small>Capture</small><strong>SableDB logical snapshot</strong><span>Sorted · tenant-bound · explicit key allowlist</span></div>
+    <b>→</b>
+    <div class="accent"><small>Seal</small><strong>Postcard + Zstandard</strong><span>AES-256-GCM authenticated envelope</span></div>
+    <b>→</b>
+    <div class="dark"><small>Prove</small><strong>Immutable S3 object</strong><span>Version · Object Lock · SSE · decrypt read-back</span></div>
+  </div>
+  <ol>
+    <li>Startup, the interval scheduler or <code>backup create</code> takes the in-process operation lock and a one-hour SableDB lease.</li>
+    <li>The exporter takes the process-local mutation gate, records capture time, scans managed keys and reads each value with its TTL.</li>
+    <li>Records are sorted and validated; the signing keyset must also be recoverable with the configured master-key ring.</li>
+    <li>A stable Postcard DTO is compressed with Zstandard level 3 and sealed with a random-nonce AES-256-GCM envelope.</li>
+    <li>RustyAuth uploads with an SHA-256 transport checksum under the tenant's v3 prefix.</li>
+    <li><code>GetObject</code> must return the same decryptable snapshot plus the required version, retention and server-side-encryption posture.</li>
+    <li>The scheduler persists the successful object key and resets its failure count.</li>
+  </ol>
+  <div class="doc-callout warning"><strong>One-writer qualification still applies</strong><p>The mutation gate coordinates writers in one RustyAuth process. The backup lease prevents duplicate backup jobs across processes, but it is not a datastore-wide transaction across unqualified multi-writer replicas.</p></div>
+
+  <h2>Manifest validation</h2>
+  <p>The authenticated snapshot stores its UUID, tenant, capture time, sorted records, record count, SHA-256 content digest, key-family counts and ordered-event sequence. Validation runs before upload and after every download.</p>
+  <p>RustyAuth rejects tenant crossing, duplicate or unknown keys, digest/count disagreement, missing signing state, malformed expiries, event gaps, orphaned identity indexes, unknown session/operator owners, broken service credentials, inconsistent Realm-to-Fleet locators, cross-workspace Fleet relationships, invalid role-binding indexes and audit/idempotency disagreement.</p>
+  <div class="doc-table-wrap"><table><thead><tr><th>Safety limit</th><th>Maximum</th></tr></thead><tbody><tr><td>Managed records</td><td>1,000,000</td></tr><tr><td>One value</td><td>8 MiB</td></tr><tr><td>Decompressed snapshot</td><td>512 MiB</td></tr><tr><td>Encrypted object</td><td>256 MiB</td></tr></tbody></table></div>
+
+  <h2>Binary <code>.rauth</code> format</h2>
+  <p>New objects use <code>RAUTHBK3</code>. Protobuf/gRPC remains the application transport; it is not the durable backup format. Postcard removes repeated JSON field names, Zstandard compresses the structured data, and encryption happens last because ciphertext is intentionally incompressible.</p>
+  <div class="doc-table-wrap"><table><thead><tr><th>Field</th><th>Size</th><th>Protection</th></tr></thead><tbody><tr><td><code>RAUTHBK3</code> magic</td><td>8 bytes</td><td>AES-GCM additional authenticated data</td></tr><tr><td>Key-ID length</td><td>1 byte</td><td>AES-GCM additional authenticated data</td></tr><tr><td>Derived UTF-8 key ID</td><td>Variable</td><td>AES-GCM additional authenticated data</td></tr><tr><td>Random nonce</td><td>12 bytes</td><td>AES-GCM additional authenticated data</td></tr><tr><td>Ciphertext and tag</td><td>Variable + 16 bytes</td><td>AES-256-GCM</td></tr></tbody></table></div>
+  <p>The key ID selects the active or a previous key without storing key material. Header or payload tampering, truncation and use of the wrong key all fail authentication before decompression. Existing <code>RAUTHBK2</code> compressed-JSON objects remain restorable; pre-restorable <code>PAUTHBK1</code> payloads are rejected.</p>
+
+  <h2>S3 object and immutability contract</h2>
+  <pre><code>rustyauth-backups/v3/&lt;tenant-id&gt;/&lt;capture-time&gt;-&lt;snapshot-uuid&gt;.rauth</code></pre>
+  <p>The v3 object uses content type <code>application/vnd.rustyauth.backup.v3</code> and records non-secret snapshot ID, derived key ID, format version and <code>complete-server-workspace</code> scope metadata. Reads are confined to the configured tenant's v2/v3 prefixes.</p>
+  <p>Every new object must return a version ID, <code>COMPLIANCE</code> Object Lock, retention through at least capture time plus the configured policy, and the configured SSE mode. With <code>aws-kms</code>, RustyAuth can also require the exact KMS key ID returned by the provider. <code>provider</code> mode skips only the exact SSE-header comparison; versioning, compliance retention and application AES encryption remain mandatory.</p>
+  <div class="doc-callout"><strong>Bucket defaults own retention and SSE</strong><p>RustyAuth does not need permission to change retention. Its S3 policy should contain only <code>ListBucket</code>, <code>GetObject</code> and <code>PutObject</code>, with no delete, legal-hold, retention-change or bypass capability. The checked-in AWS stack also limits KMS use to requests made through S3.</p></div>
+  <p>Deploy the repository's <a href="https://github.com/rusty-auth/rustyauth/blob/main/infra/aws/backup-bucket.yaml">immutable AWS bucket stack</a>, or reproduce the same guarantees with a compatible provider. Legacy v2 compatibility does not prove that an old object had these storage controls.</p>
+
+  <h2>Configuration and keys</h2>
+  <pre><code>{`backups:
+  enabled: true
+  destination:
+    endpoint: https://s3.eu-west-2.amazonaws.com
+    region: eu-west-2
+    bucket: example-rustyauth-backups
+    urlStyle: virtual
+    serverSideEncryption:
+      mode: aws-kms
+      kmsKeyId: arn:aws:kms:eu-west-2:123456789012:key/<key-id>
+  schedule:
+    interval: 6h
+    recoveryPointObjective: 6h
+  retention: 90d
+  alertAfterFailures: 2`}</code></pre>
+  <p>Supply <code>AUTH_BACKUP_ACCESS_KEY_ID</code>, <code>AUTH_BACKUP_SECRET_ACCESS_KEY</code> and an independent 32-byte <code>AUTH_BACKUP_ENCRYPTION_KEY_HEX</code> through the secret store or their <code>_FILE</code> inputs. Put former application keys in <code>AUTH_BACKUP_PREVIOUS_KEYS_HEX</code>. Partial configuration and repeated-byte placeholder keys fail startup.</p>
+  <p>The defaults are a six-hour interval/RPO, 90 days immutable retention, alert after two failures and <code>aws-kms</code> provider encryption. The interval may be 5 minutes–7 days; the RPO may be the interval–30 days; retention may be 1–3,650 whole days.</p>
+  <div class="doc-callout warning"><strong>Three independent key layers</strong><p>The backup key opens the portable envelope. The master-key ring opens wrapped signing state and encrypted Fleet connection credentials. The KMS key opens the provider's stored object. Escrow and test all three recovery paths independently.</p></div>
+
+  <h2>Operator commands and receipts</h2>
+  <div class="doc-table-wrap"><table><thead><tr><th>Command</th><th>Behavior</th></tr></thead><tbody>{commands.map(([command, behavior]) => <tr><td><code>rustyauth {command}</code></td><td>{behavior}</td></tr>)}</tbody></table></div>
+  <p>Create and verify return JSON containing format version, snapshot/object identifiers, capture time, record and envelope sizes, derived encryption-key ID, provider version ID, retain-until time and reported SSE mode. Retain these receipts with deployment and drill evidence.</p>
+
+  <h2>Scheduler health and alerting</h2>
+  <p>The first scheduler tick runs after startup and later ticks use delay semantics, so a stalled provider does not create a burst of catch-up uploads. Health survives restarts in an operational SableDB record excluded from snapshots. It tracks running state, last attempt/success, last object, consecutive failures, RPO, retention, overdue and alerting.</p>
+  <p>Alerting begins when the last success exceeds the RPO or the failure threshold is reached. <code>backup status</code> and <code>doctor</code> print JSON and exit non-zero while alerting. Schedule one of them from the host and page on failure; <code>backup_health_alert=true</code> is supporting telemetry, not the only alert path. Public discovery and readiness deliberately omit backup posture.</p>
+
+  <h2>Clean-room restore</h2>
+  <p>Prepare a pinned compatible image, exact tenant/role configuration, the selected object receipt, bucket/KMS access, active and previous backup/master keys, and a new private SableDB volume with no managed records. Never restore over a live namespace.</p>
+  <pre class="doc-code"><code>rustyauth backup list
 rustyauth backup verify &lt;object-key&gt;
-rustyauth keys status
-rustyauth keys rotate</code></pre>
-  <p>Commands print structured JSON receipts for automation and incident records. <code>doctor</code> checks configuration, the durable store, signing-key state and configured backup storage without exposing secret key material.</p>
-
-  <h2>Signing keys</h2><p>RustyAuth creates and stores ES256 signing keys, publishes the next public key before activation and keeps a retired public key available long enough for already-issued tokens to expire. The maintenance loop and a cross-process lease make this automatic; <code>keys rotate</code> is the intentional on-demand path.</p>
-
-  <h3>Rotate the master key</h3><ol><li>Generate a new independent 32-byte key.</li><li>Set it as <code>AUTH_MASTER_KEY_HEX</code> and retain the old key in <code>AUTH_MASTER_PREVIOUS_KEYS_HEX</code>.</li><li>Restart each instance and confirm <code>keys status</code> succeeds.</li><li>Remove the old key only after every instance has rewrapped the stored signing-key material.</li></ol>
-
-  <h2>Backup encryption keys</h2><p>Set the new key in <code>AUTH_BACKUP_ENCRYPTION_KEY_HEX</code> and retain the old key in <code>AUTH_BACKUP_PREVIOUS_KEYS_HEX</code>. Keep previous keys until every backup they protect has expired under retention policy or has been replaced by a verified recovery point. Escrow these portable application keys outside both the hosting platform and bucket-provider account; SSE-KMS protects the storage layer but cannot recover a lost application key.</p>
-
-  <h2>Workspace recovery scope</h2><p>The encrypted snapshot contains every durable server-side dashboard, Fleet and authentication record: organization settings, operators, service accounts and credentials, Fleet organizations/projects/environments and audit data, users, passkeys, sessions, signing state and ordered events. Browser navigation/query state is transient, while dashboard assets are recovered from the pinned release image. Keep that image digest, runtime configuration inventory and external key escrow beside this runbook rather than embedding the only recovery keys in their own backup.</p>
-
-  <h2>Clean-room restore drill</h2><pre class="doc-code"><code>rustyauth backup verify &lt;object-key&gt;
 rustyauth backup restore &lt;object-key&gt;
-rustyauth doctor</code></pre>
-  <p>Restore is an offline operation and accepts only an empty RustyAuth namespace in SableDB. By default it invalidates existing sessions, creates fresh signing-key material and records a recovery event. An in-progress sentinel prevents normal startup if the final security steps do not complete.</p>
-  <div class="doc-callout warning"><strong>Preserve sessions only by exception</strong><p><code>--preserve-sessions</code> exists for a specifically reviewed incident response. The safe default is to make users authenticate again after recovery.</p></div>
+rustyauth doctor
+rustyauth keys status
+rustyauth operator list</code></pre>
+  <ol>
+    <li><code>verify</code> proves storage posture, envelope authentication, tenant, manifest relationships and signing-key recoverability without writing.</li>
+    <li><code>restore</code> writes an in-progress sentinel, then restores records in atomic batches of at most 250 and skips already expired TTL records.</li>
+    <li>By default it skips every stored session and increments each user's session generation.</li>
+    <li>RustyAuth loads the recovered signing state, forces a fresh signing-key rotation and appends <code>recovery.restored</code>.</li>
+    <li>The sentinel is removed only when every security step succeeds. A remaining sentinel blocks normal startup.</li>
+  </ol>
+  <div class="doc-callout warning"><strong>Do not repair a partial target in place</strong><p>If restore fails after writing begins, discard the new SableDB volume, correct the cause and start again. Do not manually remove the sentinel. <code>--preserve-sessions</code> exists only for a specifically reviewed incident response.</p></div>
+  <p>Before promotion, verify readiness, discovery/JWKS, a real synthetic passkey sign-in and the role-specific workspace: Realm identities/settings/operators/events or Fleet hierarchy/connections/roles/audit. Record the restored count, new signing key and test result.</p>
 
-  <h2>Before relying on a backup</h2><p>Run a monthly restore drill against a new SableDB volume, retain the JSON receipts, run <code>doctor</code>, and complete a real passkey sign-in. Schedule <code>backup status</code> and page on its non-zero alert exit; the service also emits <code>backup_health_alert=true</code> as supporting telemetry. Configuration and retention guidance live in the <a href="/docs/configuration">configuration reference</a>; topology and deployment guidance live in the <a href="/docs/deployment">deployment guide</a>.</p>
+  <h2>Rotation and recovery drills</h2>
+  <p>To rotate the portable backup key, make a new random key active, retain the former key in <code>AUTH_BACKUP_PREVIOUS_KEYS_HEX</code>, restart every instance, create and verify a new object, then complete a clean-room restore. Keep old keys until every object they protect has expired and the drill evidence is retained.</p>
+  <p>Run a monthly external drill against a real retained provider object. A passing drill downloads both encryption layers, restores a new volume, passes <code>doctor</code> and completes an end-to-end passkey operation. Page on the job's non-zero exit—the production process cannot attest that an isolated job ran elsewhere.</p>
+
+  <h2>Normative repository reference</h2>
+  <p>The exhaustive contract, including the complete inclusion/exclusion boundary, envelope layout, S3 metadata, limits, IAM policy, key rotation, command receipts, compatibility rules and integration-test command, lives in <a href="https://github.com/rusty-auth/rustyauth/blob/main/docs/BACKUPS.md">Backups and disaster recovery</a>. Configuration source precedence is in <a href="/docs/configuration">Configuration</a>; service placement is in <a href="/docs/deployment">Deployment</a>.</p>
 </DocsLayout>
