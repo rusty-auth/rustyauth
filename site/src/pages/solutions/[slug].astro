@@ -9,9 +9,26 @@ export function getStaticPaths() {
 }
 
 const { solution } = Astro.props as { solution: Solution };
+const breadcrumbStructuredData = {
+  "@type": "BreadcrumbList",
+  itemListElement: [
+    {
+      "@type": "ListItem",
+      position: 1,
+      name: "Authentication solutions",
+      item: new URL("/solutions/", Astro.site).href,
+    },
+    {
+      "@type": "ListItem",
+      position: 2,
+      name: solution.sector,
+      item: new URL(`/solutions/${solution.slug}/`, Astro.site).href,
+    },
+  ],
+};
 ---
 
-<BaseLayout title={`${solution.sector} · RustyAuth`} description={solution.intro}>
+<BaseLayout title={solution.seoTitle} description={solution.intro} structuredData={breadcrumbStructuredData}>
   <main class={`solution-detail solution-${solution.slug}`}>
     <section class="solution-detail-hero shell">
       <div class="solution-detail-copy">
@@ -21,7 +38,7 @@ const { solution } = Astro.props as { solution: Solution };
         <p>{solution.intro}</p>
         <div class="reference-pill"><span>Illustrative reference scenario</span><small>Not a customer or compliance claim</small></div>
       </div>
-      <SolutionBoundary3D sector={solution.sector} steps={solution.boundary} client:load />
+      <SolutionBoundary3D sector={solution.sector} steps={solution.boundary} client:idle />
     </section>
 
     <section class="solution-story shell">

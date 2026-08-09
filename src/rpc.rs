@@ -12,26 +12,37 @@ use sha2::{Digest, Sha256};
 use subtle::ConstantTimeEq;
 
 use crate::{
+    analytics_rpc::AnalyticsRpc,
+    analytics_store::GreptimeAnalyticsStore,
+    backup::BackupStore,
     config::{DeploymentRole, Environment, KeyRing},
     event_rpc::EventRpc,
     fleet_rpc::FleetRpc,
     identity_rpc::IdentityRpc,
     jwt::JwtIssuer,
-    management_rpc::ManagementRpc,
+    management_rpc::{ManagementRpc, ManagementRpcConfig},
+    metrics_rpc::MetricsRpc,
     operator_auth::{OperatorAuthorizer, OperatorCapability},
     organization_rpc::OrganizationRpc,
     rate_limit::RateLimiter,
     service_account_rpc::ServiceAccountRpc,
     store::Store,
+    telemetry::{ConnectorHub, ConnectorRpc},
+    webhook::WebhookRuntime,
+    webhook_rpc::WebhookRpc,
 };
 
 const EVENT_SERVICE_PREFIX: &str = "/rustyauth.events.v1.AuthEventService/";
+const ANALYTICS_SERVICE_PREFIX: &str = "/rustyauth.analytics.v1.AnalyticsService/";
 const FLEET_SERVICE_PREFIX: &str = "/rustyauth.fleet.v1.FleetService/";
 const IDENTITY_SERVICE_PREFIX: &str = "/rustyauth.identity.v1.IdentityService/";
 const ORGANIZATION_SERVICE_PREFIX: &str = "/rustyauth.organization.v1.OrganizationService/";
 const MANAGEMENT_SERVICE_PREFIX: &str = "/rustyauth.management.v1.RealmManagementService/";
+const CONNECTOR_SERVICE_PREFIX: &str = "/rustyauth.management.v1.RealmConnectorService/";
+const METRICS_SERVICE_PREFIX: &str = "/rustyauth.metrics.v1.MetricsService/";
 const SERVICE_ACCOUNT_SERVICE_PREFIX: &str =
     "/rustyauth.service_accounts.v1.ServiceAccountService/";
+const WEBHOOK_SERVICE_PREFIX: &str = "/rustyauth.webhooks.v1.WebhookService/";
 
 pub type RpcService = ConnectRpcService<connectrpc::Router>;
 
@@ -47,6 +58,18 @@ enum MethodPolicy {
     Operator(OperatorCapability),
     /// Unauthenticated at the transport; the handler validates a credential.
     PublicCredentialExchange,
+    /// The streaming handler resolves a connection-scoped proof from HELLO.
+    HandlerAuthenticatedStreaming,
+}
+
+/// Authentication result inserted by the interceptor for handlers that need
+/// to apply resource-level checks without re-running transport authentication.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum RpcPrincipal {
+    Machine,
+    Operator,
+    PublicCredentialExchange,
+    HandlerAuthenticatedStreaming,
 }
 
 /// Every RPC method's authorization policy, named one by one.
@@ -56,12 +79,89 @@ enum MethodPolicy {
 /// `authorize_unary`, and `every_proto_method_has_an_explicit_policy` fails until
 /// someone assigns it a policy — so widening the surface is never silent.
 const METHOD_POLICIES: &[(&str, &str, MethodPolicy)] = &[
+    (
+        ANALYTICS_SERVICE_PREFIX,
+        "GetAnalyticsOverview",
+        MethodPolicy::Operator(OperatorCapability::Read),
+    ),
+    (
+        ANALYTICS_SERVICE_PREFIX,
+        "QueryMetricSeries",
+        MethodPolicy::Operator(OperatorCapability::Read),
+    ),
+    (
+        ANALYTICS_SERVICE_PREFIX,
+        "GetAuthenticationFunnel",
+        MethodPolicy::Operator(OperatorCapability::Read),
+    ),
+    (
+        ANALYTICS_SERVICE_PREFIX,
+        "GetFailureBreakdown",
+        MethodPolicy::Operator(OperatorCapability::Read),
+    ),
+    (
+        ANALYTICS_SERVICE_PREFIX,
+        "GetReportingCoverage",
+        MethodPolicy::Operator(OperatorCapability::Read),
+    ),
+    (
+        ANALYTICS_SERVICE_PREFIX,
+        "CompareScopes",
+        MethodPolicy::Operator(OperatorCapability::Read),
+    ),
+    (
+        ANALYTICS_SERVICE_PREFIX,
+        "GetAnalyticsPolicy",
+        MethodPolicy::Operator(OperatorCapability::Read),
+    ),
+    (
+        ANALYTICS_SERVICE_PREFIX,
+        "UpdateAnalyticsPolicy",
+        MethodPolicy::Operator(OperatorCapability::Read),
+    ),
+    (
+        CONNECTOR_SERVICE_PREFIX,
+        "PairOutbound",
+        MethodPolicy::PublicCredentialExchange,
+    ),
+    (
+        CONNECTOR_SERVICE_PREFIX,
+        "Connect",
+        MethodPolicy::HandlerAuthenticatedStreaming,
+    ),
     // Event log: consumed by trusted backend services only.
     (EVENT_SERVICE_PREFIX, "Subscribe", MethodPolicy::Bearer),
+    // Standalone aggregate metrics contain no identity dimensions, but still
+    // require either an operator session or a scoped service-account token.
+    (
+        METRICS_SERVICE_PREFIX,
+        "GetOverview",
+        MethodPolicy::BearerOrOperator(OperatorCapability::Read),
+    ),
+    (
+        METRICS_SERVICE_PREFIX,
+        "QuerySeries",
+        MethodPolicy::BearerOrOperator(OperatorCapability::Read),
+    ),
+    (
+        METRICS_SERVICE_PREFIX,
+        "GetAuthenticationFunnel",
+        MethodPolicy::BearerOrOperator(OperatorCapability::Read),
+    ),
+    (
+        METRICS_SERVICE_PREFIX,
+        "GetFailureBreakdown",
+        MethodPolicy::BearerOrOperator(OperatorCapability::Read),
+    ),
     // Identity: reads are available to any operator; every mutation needs Support.
     (
         IDENTITY_SERVICE_PREFIX,
         "GetUser",
+        MethodPolicy::BearerOrOperator(OperatorCapability::Read),
+    ),
+    (
+        IDENTITY_SERVICE_PREFIX,
+        "ListUsers",
         MethodPolicy::BearerOrOperator(OperatorCapability::Read),
     ),
     (
@@ -131,6 +231,21 @@ const METHOD_POLICIES: &[(&str, &str, MethodPolicy)] = &[
         "ListOperators",
         MethodPolicy::Operator(OperatorCapability::Read),
     ),
+    (
+        ORGANIZATION_SERVICE_PREFIX,
+        "CreateAccountInvitation",
+        MethodPolicy::Operator(OperatorCapability::Administer),
+    ),
+    (
+        ORGANIZATION_SERVICE_PREFIX,
+        "ListAccountInvitations",
+        MethodPolicy::Operator(OperatorCapability::Read),
+    ),
+    (
+        ORGANIZATION_SERVICE_PREFIX,
+        "RevokeAccountInvitation",
+        MethodPolicy::Operator(OperatorCapability::Administer),
+    ),
     // Service accounts.
     (
         SERVICE_ACCOUNT_SERVICE_PREFIX,
@@ -167,12 +282,73 @@ const METHOD_POLICIES: &[(&str, &str, MethodPolicy)] = &[
         "ExchangeCredential",
         MethodPolicy::PublicCredentialExchange,
     ),
+    // Durable signed webhooks.
+    (
+        WEBHOOK_SERVICE_PREFIX,
+        "ListWebhooks",
+        MethodPolicy::BearerOrOperator(OperatorCapability::Read),
+    ),
+    (
+        WEBHOOK_SERVICE_PREFIX,
+        "GetWebhook",
+        MethodPolicy::BearerOrOperator(OperatorCapability::Read),
+    ),
+    (
+        WEBHOOK_SERVICE_PREFIX,
+        "CreateWebhook",
+        MethodPolicy::BearerOrOperator(OperatorCapability::Administer),
+    ),
+    (
+        WEBHOOK_SERVICE_PREFIX,
+        "UpdateWebhook",
+        MethodPolicy::BearerOrOperator(OperatorCapability::Administer),
+    ),
+    (
+        WEBHOOK_SERVICE_PREFIX,
+        "RotateSigningSecret",
+        MethodPolicy::BearerOrOperator(OperatorCapability::Administer),
+    ),
+    (
+        WEBHOOK_SERVICE_PREFIX,
+        "TestWebhook",
+        MethodPolicy::BearerOrOperator(OperatorCapability::Administer),
+    ),
+    (
+        WEBHOOK_SERVICE_PREFIX,
+        "ListDeliveries",
+        MethodPolicy::BearerOrOperator(OperatorCapability::Read),
+    ),
+    (
+        WEBHOOK_SERVICE_PREFIX,
+        "ReplayDelivery",
+        MethodPolicy::BearerOrOperator(OperatorCapability::Administer),
+    ),
+    (
+        WEBHOOK_SERVICE_PREFIX,
+        "DeleteWebhook",
+        MethodPolicy::BearerOrOperator(OperatorCapability::Administer),
+    ),
     // Fleet registry. The handler performs the second, resource-scoped check as
     // delegated role bindings land; the transport gate always requires a real
     // passkey operator session and never accepts the realm bearer tokens.
     (
         FLEET_SERVICE_PREFIX,
         "GetFleetOverview",
+        MethodPolicy::Operator(OperatorCapability::Read),
+    ),
+    (
+        FLEET_SERVICE_PREFIX,
+        "GetAnalyticsOverview",
+        MethodPolicy::Operator(OperatorCapability::Read),
+    ),
+    (
+        FLEET_SERVICE_PREFIX,
+        "GetRealmOperations",
+        MethodPolicy::Operator(OperatorCapability::Read),
+    ),
+    (
+        FLEET_SERVICE_PREFIX,
+        "ExecuteRealmMutation",
         MethodPolicy::Operator(OperatorCapability::Read),
     ),
     (
@@ -272,6 +448,11 @@ const METHOD_POLICIES: &[(&str, &str, MethodPolicy)] = &[
     ),
     (
         FLEET_SERVICE_PREFIX,
+        "RotateConnection",
+        MethodPolicy::Operator(OperatorCapability::Read),
+    ),
+    (
+        FLEET_SERVICE_PREFIX,
         "RevokeConnection",
         MethodPolicy::Operator(OperatorCapability::Read),
     ),
@@ -312,12 +493,27 @@ const METHOD_POLICIES: &[(&str, &str, MethodPolicy)] = &[
     ),
     (
         MANAGEMENT_SERVICE_PREFIX,
+        "GetOperationalSnapshot",
+        MethodPolicy::PublicCredentialExchange,
+    ),
+    (
+        MANAGEMENT_SERVICE_PREFIX,
+        "ExecuteRemoteMutation",
+        MethodPolicy::PublicCredentialExchange,
+    ),
+    (
+        MANAGEMENT_SERVICE_PREFIX,
         "CreatePairingCode",
         MethodPolicy::Operator(OperatorCapability::Administer),
     ),
     (
         MANAGEMENT_SERVICE_PREFIX,
         "ExchangePairingCode",
+        MethodPolicy::PublicCredentialExchange,
+    ),
+    (
+        MANAGEMENT_SERVICE_PREFIX,
+        "RotateFleetCredential",
         MethodPolicy::PublicCredentialExchange,
     ),
     (
@@ -341,6 +537,57 @@ fn method_policy(path: &str) -> Option<MethodPolicy> {
         .map(|(_, _, policy)| *policy)
 }
 
+/// Resolves the least-privilege service-account scope for bearer-capable RPCs.
+/// The match remains method-exact so adding a proto method never inherits a
+/// nearby method's authority by accident.
+fn required_service_account_scope(path: &str) -> Option<&'static str> {
+    if path == format!("{EVENT_SERVICE_PREFIX}Subscribe") {
+        return Some("events.read");
+    }
+    if matches!(
+        path.strip_prefix(IDENTITY_SERVICE_PREFIX),
+        Some("GetUser" | "ListUsers" | "SearchUsers")
+    ) {
+        return Some("identity.read");
+    }
+    if matches!(
+        path.strip_prefix(IDENTITY_SERVICE_PREFIX),
+        Some(
+            "UpdateProfile"
+                | "AddIdentifier"
+                | "RemoveIdentifier"
+                | "SetPrimaryIdentifier"
+                | "RenamePasskey"
+                | "RevokePasskey"
+        )
+    ) {
+        return Some("identity.write");
+    }
+    if matches!(
+        path.strip_prefix(METRICS_SERVICE_PREFIX),
+        Some("GetOverview" | "QuerySeries" | "GetAuthenticationFunnel" | "GetFailureBreakdown")
+    ) {
+        return Some("metrics.read");
+    }
+    if matches!(
+        path.strip_prefix(WEBHOOK_SERVICE_PREFIX),
+        Some(
+            "ListWebhooks"
+                | "GetWebhook"
+                | "CreateWebhook"
+                | "UpdateWebhook"
+                | "RotateSigningSecret"
+                | "TestWebhook"
+                | "ListDeliveries"
+                | "ReplayDelivery"
+                | "DeleteWebhook"
+        )
+    ) {
+        return Some("webhooks.manage");
+    }
+    None
+}
+
 /// Everything the RPC surface needs from configuration and the composition root.
 pub struct RpcServiceConfig<'a> {
     pub store: Store,
@@ -357,6 +604,9 @@ pub struct RpcServiceConfig<'a> {
     pub control_plane_instance_id: String,
     pub issuer: String,
     pub rp_id: String,
+    pub webhook_runtime: Option<WebhookRuntime>,
+    pub backup: Option<BackupStore>,
+    pub analytics: Option<GreptimeAnalyticsStore>,
 }
 
 pub fn service(config: RpcServiceConfig<'_>) -> RpcService {
@@ -375,6 +625,9 @@ pub fn service(config: RpcServiceConfig<'_>) -> RpcService {
         control_plane_instance_id,
         issuer,
         rp_id,
+        webhook_runtime,
+        backup,
+        analytics,
     } = config;
     let authorizer = OperatorAuthorizer::new(
         store.clone(),
@@ -383,18 +636,27 @@ pub fn service(config: RpcServiceConfig<'_>) -> RpcService {
         environment == Environment::Production,
         operator_emails,
     );
+    let service_token_issuer = jwt.clone();
     let router = match deployment_role {
         DeploymentRole::Realm => connectrpc::Router::new()
             .add_service(Arc::new(EventRpc::new(store.clone())))
-            .add_service(Arc::new(IdentityRpc::new(store.clone())))
+            .add_service(Arc::new(MetricsRpc::new(store.clone(), backup.clone())))
+            .add_service(Arc::new(IdentityRpc::with_authorizer(
+                store.clone(),
+                authorizer.clone(),
+            )))
             .add_service(Arc::new(ManagementRpc::new(
                 store.clone(),
                 authorizer.clone(),
-                environment,
-                control_plane_instance_id.clone(),
-                issuer,
-                rp_id,
-                Arc::clone(&rate_limiter),
+                ManagementRpcConfig {
+                    environment,
+                    realm_id: control_plane_instance_id.clone(),
+                    issuer,
+                    rp_id,
+                    rate_limiter: Arc::clone(&rate_limiter),
+                    jwt: jwt.clone(),
+                    backup: backup.clone(),
+                },
             )))
             .add_service(Arc::new(OrganizationRpc::new(
                 store.clone(),
@@ -405,16 +667,38 @@ pub fn service(config: RpcServiceConfig<'_>) -> RpcService {
                 authorizer.clone(),
                 jwt,
                 rate_limiter,
-            ))),
-        DeploymentRole::FleetControlPlane => {
-            connectrpc::Router::new().add_service(Arc::new(FleetRpc::new(
+            )))
+            .add_service(Arc::new(WebhookRpc::new(
                 store.clone(),
                 authorizer.clone(),
-                master_keys,
-                environment,
-                rp_origin.to_owned(),
-                control_plane_instance_id,
-            )))
+                webhook_runtime.expect("realm RPC composition requires webhook runtime"),
+            ))),
+        DeploymentRole::FleetControlPlane => {
+            let connector_hub = ConnectorHub::default();
+            connectrpc::Router::new()
+                .add_service(Arc::new(AnalyticsRpc::new(
+                    store.clone(),
+                    authorizer.clone(),
+                    analytics.clone(),
+                )))
+                .add_service(Arc::new(FleetRpc::new(
+                    store.clone(),
+                    authorizer.clone(),
+                    master_keys.clone(),
+                    environment,
+                    rp_origin.to_owned(),
+                    control_plane_instance_id.clone(),
+                    connector_hub.clone(),
+                    analytics.clone(),
+                )))
+                .add_service(Arc::new(ConnectorRpc::new(
+                    store.clone(),
+                    master_keys,
+                    connector_hub,
+                    Arc::clone(&rate_limiter),
+                    control_plane_instance_id,
+                    analytics,
+                )))
         }
     };
     ConnectRpcService::new(router)
@@ -427,6 +711,7 @@ pub fn service(config: RpcServiceConfig<'_>) -> RpcService {
             event_token,
             identity_token,
             authorizer,
+            service_token_issuer,
         ))
 }
 
@@ -435,6 +720,7 @@ pub(crate) struct RpcAuth {
     event_digest: [u8; 32],
     identity_digest: [u8; 32],
     operator: Option<OperatorAuthorizer>,
+    service_token_issuer: Option<JwtIssuer>,
 }
 
 impl RpcAuth {
@@ -442,11 +728,13 @@ impl RpcAuth {
         event_token: &SecretString,
         identity_token: &SecretString,
         operator: OperatorAuthorizer,
+        service_token_issuer: JwtIssuer,
     ) -> Self {
         Self {
             event_digest: token_digest(event_token.expose_secret()),
             identity_digest: token_digest(identity_token.expose_secret()),
             operator: Some(operator),
+            service_token_issuer: Some(service_token_issuer),
         }
     }
 
@@ -456,44 +744,61 @@ impl RpcAuth {
             event_digest: token_digest(event_token.expose_secret()),
             identity_digest: token_digest(identity_token.expose_secret()),
             operator: None,
+            service_token_issuer: None,
         }
     }
 
     fn bearer_authorized(&self, path: Option<&str>, headers: &http::HeaderMap) -> bool {
-        bearer_authorized(&self.event_digest, &self.identity_digest, path, headers)
+        if bearer_authorized(&self.event_digest, &self.identity_digest, path, headers) {
+            return true;
+        }
+        let Some((issuer, path, token)) = self
+            .service_token_issuer
+            .as_ref()
+            .zip(path)
+            .zip(bearer_token(headers))
+            .map(|((issuer, path), token)| (issuer, path, token))
+        else {
+            return false;
+        };
+        required_service_account_scope(path)
+            .is_some_and(|scope| issuer.authorizes_service_account(token, scope))
     }
 
     async fn authorize_unary(
         &self,
         path: Option<&str>,
         headers: &http::HeaderMap,
-    ) -> Result<(), ConnectError> {
+    ) -> Result<RpcPrincipal, ConnectError> {
         let Some(path) = path else {
             return Err(unauthenticated());
         };
         match method_policy(path) {
             // Deliberately public: the caller proves possession of a service-account
             // secret inside the handler, which is the only credential it has.
-            Some(MethodPolicy::PublicCredentialExchange) => Ok(()),
+            Some(MethodPolicy::PublicCredentialExchange) => {
+                Ok(RpcPrincipal::PublicCredentialExchange)
+            }
             Some(MethodPolicy::Operator(capability)) => {
                 self.operator_authorizer()?
                     .authorize(headers, capability)
                     .await?;
-                Ok(())
+                Ok(RpcPrincipal::Operator)
             }
             Some(MethodPolicy::BearerOrOperator(capability)) => {
                 if self.bearer_authorized(Some(path), headers) {
-                    return Ok(());
+                    return Ok(RpcPrincipal::Machine);
                 }
                 self.operator_authorizer()?
                     .authorize(headers, capability)
                     .await?;
-                Ok(())
+                Ok(RpcPrincipal::Operator)
             }
             Some(MethodPolicy::Bearer) => self
                 .bearer_authorized(Some(path), headers)
-                .then_some(())
+                .then_some(RpcPrincipal::Machine)
                 .ok_or_else(unauthenticated),
+            Some(MethodPolicy::HandlerAuthenticatedStreaming) => Err(unauthenticated()),
             None => Err(unauthenticated()),
         }
     }
@@ -509,11 +814,14 @@ impl RpcAuth {
         &self,
         path: Option<&str>,
         headers: &http::HeaderMap,
-    ) -> Result<(), ConnectError> {
+    ) -> Result<RpcPrincipal, ConnectError> {
         match path.and_then(method_policy) {
+            Some(MethodPolicy::HandlerAuthenticatedStreaming) => {
+                Ok(RpcPrincipal::HandlerAuthenticatedStreaming)
+            }
             Some(MethodPolicy::Bearer) => self
                 .bearer_authorized(path, headers)
-                .then_some(())
+                .then_some(RpcPrincipal::Machine)
                 .ok_or_else(unauthenticated),
             _ => Err(unauthenticated()),
         }
@@ -531,33 +839,40 @@ fn bearer_authorized(
         Some(path) if path.starts_with(IDENTITY_SERVICE_PREFIX) => identity_digest,
         _ => return false,
     };
-    let supplied = headers
+    let supplied = bearer_token(headers).unwrap_or_default();
+    bool::from(expected.ct_eq(&token_digest(supplied)))
+}
+
+fn bearer_token(headers: &http::HeaderMap) -> Option<&str> {
+    headers
         .get(http::header::AUTHORIZATION)
         .and_then(|value| value.to_str().ok())
         .and_then(|value| value.strip_prefix("Bearer "))
-        .unwrap_or_default();
-    bool::from(expected.ct_eq(&token_digest(supplied)))
+        .filter(|value| !value.is_empty())
 }
 
 #[connectrpc::async_trait]
 impl Interceptor for RpcAuth {
     async fn intercept_unary(
         &self,
-        request: UnaryRequest,
+        mut request: UnaryRequest,
         next: Next<'_>,
     ) -> Result<UnaryResponse, ConnectError> {
-        self.authorize_unary(request.ctx.path(), request.ctx.headers())
+        let principal = self
+            .authorize_unary(request.ctx.path(), request.ctx.headers())
             .await?;
+        request.ctx.extensions_mut().insert(principal);
         next.run(request).await
     }
 
     async fn intercept_streaming(
         &self,
-        request: StreamRequest,
+        mut request: StreamRequest,
         inbound: PayloadStream,
         next: NextStream<'_>,
     ) -> Result<StreamResponse, ConnectError> {
-        self.authorize_streaming(request.ctx.path(), request.ctx.headers())?;
+        let principal = self.authorize_streaming(request.ctx.path(), request.ctx.headers())?;
+        request.ctx.extensions_mut().insert(principal);
         next.run(request, inbound).await
     }
 }
@@ -581,6 +896,13 @@ mod tests {
 
     /// Every service whose methods must appear in [`METHOD_POLICIES`].
     const ROUTED_PROTOS: &[(&str, &str)] = &[
+        (
+            ANALYTICS_SERVICE_PREFIX,
+            concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/proto/rustyauth/analytics/v1/analytics.proto"
+            ),
+        ),
         (
             EVENT_SERVICE_PREFIX,
             concat!(
@@ -610,6 +932,13 @@ mod tests {
             ),
         ),
         (
+            CONNECTOR_SERVICE_PREFIX,
+            concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/proto/rustyauth/management/v1/connector.proto"
+            ),
+        ),
+        (
             MANAGEMENT_SERVICE_PREFIX,
             concat!(
                 env!("CARGO_MANIFEST_DIR"),
@@ -623,42 +952,38 @@ mod tests {
                 "/proto/rustyauth/service_accounts/v1/service_accounts.proto"
             ),
         ),
-    ];
-
-    /// Services that are declared in proto but not served. They have no policy on
-    /// purpose; the assertion below pins that they stay denied until someone
-    /// implements them and assigns capabilities deliberately.
-    const UNSERVED_PROTOS: &[(&str, &str)] = &[
         (
-            "/rustyauth.metrics.v1.MetricsService/",
-            concat!(
-                env!("CARGO_MANIFEST_DIR"),
-                "/proto/rustyauth/metrics/v1/metrics.proto"
-            ),
-        ),
-        (
-            "/rustyauth.webhooks.v1.WebhookService/",
+            WEBHOOK_SERVICE_PREFIX,
             concat!(
                 env!("CARGO_MANIFEST_DIR"),
                 "/proto/rustyauth/webhooks/v1/webhooks.proto"
             ),
         ),
         (
-            "/rustyauth.management.v1.RealmConnectorService/",
+            METRICS_SERVICE_PREFIX,
             concat!(
                 env!("CARGO_MANIFEST_DIR"),
-                "/proto/rustyauth/management/v1/connector.proto"
+                "/proto/rustyauth/metrics/v1/metrics.proto"
             ),
         ),
     ];
 
+    /// Services that are declared in proto but not served. They have no policy on
+    /// purpose; the assertion below pins that they stay denied until someone
+    /// implements them and assigns capabilities deliberately.
+    const UNSERVED_PROTOS: &[(&str, &str)] = &[];
+
     const ALL_ROUTED_PREFIXES: &[&str] = &[
+        ANALYTICS_SERVICE_PREFIX,
         EVENT_SERVICE_PREFIX,
+        CONNECTOR_SERVICE_PREFIX,
         FLEET_SERVICE_PREFIX,
         IDENTITY_SERVICE_PREFIX,
         MANAGEMENT_SERVICE_PREFIX,
+        METRICS_SERVICE_PREFIX,
         ORGANIZATION_SERVICE_PREFIX,
         SERVICE_ACCOUNT_SERVICE_PREFIX,
+        WEBHOOK_SERVICE_PREFIX,
     ];
 
     fn proto_methods(path: &str) -> Vec<String> {
@@ -743,6 +1068,53 @@ mod tests {
             ),
             Some(MethodPolicy::PublicCredentialExchange)
         );
+        assert_eq!(
+            method_policy("/rustyauth.metrics.v1.MetricsService/GetOverview"),
+            Some(MethodPolicy::BearerOrOperator(OperatorCapability::Read))
+        );
+        assert_eq!(
+            method_policy("/rustyauth.webhooks.v1.WebhookService/DeleteWebhook"),
+            Some(MethodPolicy::BearerOrOperator(
+                OperatorCapability::Administer
+            ))
+        );
+    }
+
+    #[test]
+    fn service_account_scopes_are_exact_per_rpc_method() {
+        for (path, scope) in [
+            (
+                "/rustyauth.events.v1.AuthEventService/Subscribe",
+                "events.read",
+            ),
+            (
+                "/rustyauth.identity.v1.IdentityService/GetUser",
+                "identity.read",
+            ),
+            (
+                "/rustyauth.identity.v1.IdentityService/UpdateProfile",
+                "identity.write",
+            ),
+            (
+                "/rustyauth.metrics.v1.MetricsService/GetOverview",
+                "metrics.read",
+            ),
+            (
+                "/rustyauth.webhooks.v1.WebhookService/CreateWebhook",
+                "webhooks.manage",
+            ),
+        ] {
+            assert_eq!(required_service_account_scope(path), Some(scope));
+        }
+        for path in [
+            "/rustyauth.identity.v1.IdentityService/SetIdentifierVerification",
+            "/rustyauth.organization.v1.OrganizationService/UpdateOrganization",
+            "/rustyauth.service_accounts.v1.ServiceAccountService/CreateCredential",
+            "/rustyauth.webhooks.v1.WebhookService/CreateWebhook/extra",
+            "/rustyauth.metrics.v1.MetricsService/GetUser",
+        ] {
+            assert_eq!(required_service_account_scope(path), None, "{path}");
+        }
     }
 
     /// The identity bearer token must not be able to reach identity proofing.
@@ -801,7 +1173,10 @@ mod tests {
         for token in [EVENT_TOKEN, IDENTITY_TOKEN] {
             let headers = bearer_headers(token);
             for &(_, method, policy) in METHOD_POLICIES {
-                if policy == MethodPolicy::Bearer {
+                if matches!(
+                    policy,
+                    MethodPolicy::Bearer | MethodPolicy::HandlerAuthenticatedStreaming
+                ) {
                     continue;
                 }
                 for prefix in ALL_ROUTED_PREFIXES {

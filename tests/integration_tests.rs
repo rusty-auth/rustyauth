@@ -9,6 +9,8 @@ use axum::{
     extract::ConnectInfo,
     http::{Method, Request, StatusCode, header},
 };
+use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
+use buffa::Message;
 use redis::AsyncCommands;
 use secrecy::SecretString;
 use serde_json::{Value, json};
@@ -24,10 +26,17 @@ use rustyauth::{
     backup::BackupStore,
     config::{BackupConfig, BackupServerSideEncryption, KeyRing, SigningRotationConfig},
     jwt::{JwtIssuer, validate_snapshot_keyset},
+    proto::rustyauth::analytics::v1::{
+        BucketAcknowledgementStatus, MetricSchemaVersion, SessionTokenMetrics, TelemetryBucket,
+        TelemetryBucketBatch,
+    },
     rate_limit::RateLimiter,
     store::{
-        AccountIdentifier, AccountProfile, IdentifierKind, IdentifierValue, Session, Store, User,
-        now,
+        AccountIdentifier, AccountProfile, EncryptedFleetCredential, FleetAnalyticsPolicyRecord,
+        FleetAnalyticsResidencyRecord, FleetConnectionModeRecord, FleetConnectionRecord,
+        FleetConnectionStateRecord, FleetEnvironmentKindRecord, FleetResourceKindRecord,
+        FleetRoleRecord, IdentifierKind, IdentifierValue, RemoteMutationClaim, Session, Store,
+        TelemetryOutboxRecord, User, now,
     },
 };
 
@@ -78,6 +87,7 @@ async fn clean_room_backup_restore_and_rotation() -> Result<()> {
             created_at: current,
         }],
         session_version: 7,
+        recovery_codes: Vec::new(),
         created_at: current,
         passkeys: Vec::new(),
     };
@@ -133,6 +143,7 @@ async fn clean_room_backup_restore_and_rotation() -> Result<()> {
         webauthn: Arc::new(webauthn),
         jwt: source_jwt.clone(),
         issuer: "https://auth.integration.invalid".into(),
+        deployment_role: rustyauth::config::DeploymentRole::Realm,
         rp_origin: origin.into(),
         bootstrap_token: SecretString::from("integration-bootstrap-token"),
         session_idle_seconds: 1_800,
@@ -141,6 +152,7 @@ async fn clean_room_backup_restore_and_rotation() -> Result<()> {
         identity_verification_required: true,
         local_agent_handoffs_enabled: false,
         backup: None,
+        webhook_runtime: None,
     });
 
     assert_status(
@@ -469,6 +481,396 @@ async fn clean_room_backup_restore_and_rotation() -> Result<()> {
     Ok(())
 }
 
+/// M10 exit gate: a realm can be disconnected for one complete retention
+/// window, restart on the same durable outbox, retry ambiguously, and converge
+/// to one logical central revision without touching the authentication log.
+#[tokio::test]
+#[ignore = "requires the compose.integration.yaml SableDB service"]
+async fn telemetry_survives_24_hour_outage_restart_and_exact_replay() -> Result<()> {
+    let database_url = required("RUSTYAUTH_TEST_SOURCE_SABLEDB_URL")?;
+    let redis = connection(&database_url).await?;
+    flush(redis.clone()).await?;
+    let realm_id = "qualification-realm";
+    let realm = Store::new(redis.clone(), "qualification-realm-store".into());
+    let fleet = Store::new(redis.clone(), "qualification-fleet-store".into());
+    let connection_id = Uuid::new_v4();
+    let connection = FleetConnectionRecord {
+        id: connection_id,
+        organization_id: Uuid::new_v4(),
+        project_id: Uuid::new_v4(),
+        environment_id: Uuid::new_v4(),
+        realm_id: realm_id.into(),
+        assignment_epoch: 1,
+        display_name: "Qualification realm".into(),
+        mode: FleetConnectionModeRecord::OutboundConnector,
+        management_endpoint: "http://127.0.0.1:1".into(),
+        credential: EncryptedFleetCredential {
+            wrapping_key_id: "unused-in-ledger-test".into(),
+            nonce: String::new(),
+            ciphertext: String::new(),
+        },
+        credential_hint: String::new(),
+        staged_credential: None,
+        staged_credential_hint: None,
+        credential_rotation_request_id: None,
+        deployment_version: env!("CARGO_PKG_VERSION").into(),
+        protocol_version: "1".into(),
+        capabilities: vec![("telemetry.rollups.v1".into(), 1)],
+        granted_scopes: vec!["realm.read".into(), "telemetry.export".into()],
+        issuer: "https://qualification.invalid".into(),
+        rp_id: "qualification.invalid".into(),
+        state: FleetConnectionStateRecord::Healthy,
+        last_seen_at: None,
+        created_at: now(),
+        updated_at: now(),
+        revoked_at: None,
+    };
+    let mut policy_database = redis.clone();
+    let _: () = policy_database
+        .set(
+            format!("fleet:analytics-policy:{}", connection.organization_id),
+            serde_json::to_string(&FleetAnalyticsPolicyRecord {
+                organization_id: connection.organization_id,
+                enabled: true,
+                canonical_retention_days: 35,
+                residency: FleetAnalyticsResidencyRecord::RollupsOnly,
+                max_buckets_per_minute_per_realm: 2_880,
+                updated_at: now(),
+                updated_by: None,
+            })?,
+        )
+        .await?;
+
+    // Five-minute snapshots for exactly 24 hours accumulate while Fleet is
+    // unreachable. Authentication continues to append to its own durable log.
+    let mut database = redis.clone();
+    let first_bucket_start = now().saturating_sub(24 * 60 * 60 + 600) / 300 * 300;
+    for index in 0_u64..288 {
+        let start_seconds = first_bucket_start + index * 300;
+        let batch_id = Uuid::new_v4();
+        let batch = TelemetryBucketBatch {
+            transport_schema_version: 1,
+            batch_id: batch_id.to_string(),
+            realm_id: realm_id.into(),
+            buckets: vec![TelemetryBucket {
+                realm_id: realm_id.into(),
+                assignment_epoch: 1,
+                bucket_start_unix_milliseconds: (start_seconds * 1_000) as i64,
+                bucket_width_seconds: 300,
+                revision: 1,
+                first_event_sequence: index + 1,
+                last_event_sequence: index + 1,
+                metric_schema_version: MetricSchemaVersion::V1.into(),
+                closed: true,
+                sessions_and_tokens: SessionTokenMetrics::default().into(),
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+        rustyauth::analytics::validate_batch(&batch)?;
+        let record = TelemetryOutboxRecord {
+            bucket_start: start_seconds,
+            revision: 1,
+            batch_id,
+            payload_base64url: URL_SAFE_NO_PAD.encode(batch.encode_to_vec()),
+            first_queued_at: now(),
+            attempts: 12,
+            next_attempt_at: 0,
+        };
+        let _: () = database
+            .set(
+                format!("analytics:outbox:{start_seconds:020}:{:020}", 1),
+                serde_json::to_string(&record)?,
+            )
+            .await?;
+    }
+    let auth_event = realm
+        .append_event("qualification.authentication.completed", None)
+        .await?;
+    assert_eq!(realm.telemetry_outbox(289).await?.len(), 288);
+
+    // A process restart reconstructs no in-memory queue; the same 288 records
+    // are read from SableDB. Sending each twice models a lost first ACK.
+    let restarted = Store::new(redis.clone(), "qualification-realm-store".into());
+    let queued = restarted.telemetry_outbox(288).await?;
+    assert_eq!(queued.len(), 288);
+    for record in queued {
+        let batch = rustyauth::analytics::decode_and_validate_batch(&record.payload()?)?;
+        let accepted = fleet
+            .accept_fleet_telemetry_batch(&connection, &batch)
+            .await?;
+        assert_eq!(
+            accepted.buckets[0].status.as_known(),
+            Some(BucketAcknowledgementStatus::Accepted)
+        );
+        let retried = fleet
+            .accept_fleet_telemetry_batch(&connection, &batch)
+            .await?;
+        assert_eq!(
+            retried.buckets[0].status.as_known(),
+            Some(BucketAcknowledgementStatus::AlreadyAccepted)
+        );
+        assert!(
+            restarted
+                .acknowledge_telemetry_bucket(record.bucket_start, record.revision)
+                .await?
+        );
+    }
+    assert!(restarted.telemetry_outbox(288).await?.is_empty());
+    assert_eq!(
+        realm
+            .events(auth_event.sequence.saturating_sub(1), 1)
+            .await?[0]
+            .id,
+        auth_event.id,
+        "telemetry outage and replay must not alter authentication durability"
+    );
+
+    // An old acknowledgement can remove only its exact old revision.
+    let old_start = 1_900_000_000_u64;
+    for revision in [1_u64, 2] {
+        let record = TelemetryOutboxRecord {
+            bucket_start: old_start,
+            revision,
+            batch_id: Uuid::new_v4(),
+            payload_base64url: String::new(),
+            first_queued_at: now(),
+            attempts: 0,
+            next_attempt_at: 0,
+        };
+        let _: () = database
+            .set(
+                format!("analytics:outbox:{old_start:020}:{revision:020}"),
+                serde_json::to_string(&record)?,
+            )
+            .await?;
+    }
+    assert!(restarted.acknowledge_telemetry_bucket(old_start, 1).await?);
+    let remaining = restarted.telemetry_outbox(2).await?;
+    assert_eq!(remaining.len(), 1);
+    assert_eq!(remaining[0].revision, 2);
+
+    flush(redis).await?;
+    Ok(())
+}
+
+/// M2 exit gate: hierarchy IDs do not grant access or let a caller cross an
+/// organization boundary, while inherited roles stay inside their ancestors.
+#[tokio::test]
+#[ignore = "requires the compose.integration.yaml SableDB service"]
+async fn fleet_hierarchy_rejects_cross_organization_and_project_access() -> Result<()> {
+    let database_url = required("RUSTYAUTH_TEST_SOURCE_SABLEDB_URL")?;
+    let redis = connection(&database_url).await?;
+    flush(redis.clone()).await?;
+    let store = Store::new(redis.clone(), "fleet-isolation-qualification".into());
+    let owner = Uuid::new_v4();
+    let delegated_operator = Uuid::new_v4();
+
+    let organization_a = store
+        .create_fleet_organization(
+            "organization-a".into(),
+            "Organization A".into(),
+            Uuid::new_v4(),
+            owner,
+            "isolation qualification".into(),
+        )
+        .await?;
+    let organization_b = store
+        .create_fleet_organization(
+            "organization-b".into(),
+            "Organization B".into(),
+            Uuid::new_v4(),
+            owner,
+            "isolation qualification".into(),
+        )
+        .await?;
+    let project_a = store
+        .create_fleet_project(
+            organization_a.id,
+            "project-a".into(),
+            "Project A".into(),
+            String::new(),
+            Uuid::new_v4(),
+            owner,
+            "isolation qualification".into(),
+        )
+        .await?;
+    let project_b = store
+        .create_fleet_project(
+            organization_b.id,
+            "project-b".into(),
+            "Project B".into(),
+            String::new(),
+            Uuid::new_v4(),
+            owner,
+            "isolation qualification".into(),
+        )
+        .await?;
+    let production_a = store
+        .create_fleet_environment(
+            organization_a.id,
+            project_a.id,
+            "production".into(),
+            "Production A".into(),
+            FleetEnvironmentKindRecord::Production,
+            "qualification".into(),
+            "eu-west".into(),
+            Uuid::new_v4(),
+            owner,
+            "isolation qualification".into(),
+        )
+        .await?;
+    let production_b = store
+        .create_fleet_environment(
+            organization_b.id,
+            project_b.id,
+            "production".into(),
+            "Production B".into(),
+            FleetEnvironmentKindRecord::Production,
+            "qualification".into(),
+            "us-east".into(),
+            Uuid::new_v4(),
+            owner,
+            "isolation qualification".into(),
+        )
+        .await?;
+
+    assert!(
+        store
+            .create_fleet_environment(
+                organization_a.id,
+                project_b.id,
+                "cross-boundary".into(),
+                "Must fail".into(),
+                FleetEnvironmentKindRecord::Production,
+                String::new(),
+                String::new(),
+                Uuid::new_v4(),
+                owner,
+                "negative isolation case".into(),
+            )
+            .await
+            .is_err(),
+        "a project from another organization must not be accepted as a parent"
+    );
+    assert!(
+        store
+            .update_fleet_environment(
+                organization_a.id,
+                project_a.id,
+                production_b.id,
+                "Must fail".into(),
+                FleetEnvironmentKindRecord::Production,
+                String::new(),
+                String::new(),
+                Uuid::new_v4(),
+                owner,
+                "negative isolation case".into(),
+            )
+            .await
+            .is_err(),
+        "knowing another organization's environment ID must not authorize a mutation"
+    );
+
+    store
+        .upsert_fleet_role_binding(
+            delegated_operator,
+            FleetResourceKindRecord::Organization,
+            organization_a.id,
+            FleetRoleRecord::Administrator,
+            Uuid::new_v4(),
+            owner,
+            "delegated isolation qualification".into(),
+        )
+        .await?;
+    assert_eq!(
+        store
+            .fleet_effective_role(
+                delegated_operator,
+                FleetResourceKindRecord::Environment,
+                production_a.id,
+            )
+            .await?,
+        Some(FleetRoleRecord::Administrator)
+    );
+    assert_eq!(
+        store
+            .fleet_effective_role(
+                delegated_operator,
+                FleetResourceKindRecord::Environment,
+                production_b.id,
+            )
+            .await?,
+        None,
+        "an organization-level role must never leak into a sibling organization"
+    );
+    assert!(
+        store
+            .fleet_projects(organization_a.id, false)
+            .await?
+            .iter()
+            .all(|project| project.organization_id == organization_a.id)
+    );
+    assert!(
+        store
+            .fleet_environments(organization_a.id, project_a.id, false)
+            .await?
+            .iter()
+            .all(
+                |environment| environment.organization_id == organization_a.id
+                    && environment.project_id == project_a.id
+            )
+    );
+
+    flush(redis).await?;
+    Ok(())
+}
+
+#[tokio::test]
+#[ignore = "requires the compose.integration.yaml SableDB service"]
+async fn remote_mutation_replay_fencing_survives_restart() -> Result<()> {
+    let database_url = required("RUSTYAUTH_TEST_SOURCE_SABLEDB_URL")?;
+    let redis = connection(&database_url).await?;
+    flush(redis.clone()).await?;
+    let request_id = Uuid::new_v4();
+    let first = Store::new(redis.clone(), "remote-mutation-qualification".into());
+    assert_eq!(
+        first.claim_remote_mutation(request_id, "digest-a").await?,
+        RemoteMutationClaim::Claimed
+    );
+    assert!(
+        first
+            .claim_remote_mutation(request_id, "digest-a")
+            .await
+            .is_err(),
+        "an in-flight duplicate must not execute concurrently"
+    );
+    let completed_at = first
+        .complete_remote_mutation(request_id, "digest-a", true, "passkey revoked".into())
+        .await?;
+
+    let restarted = Store::new(redis.clone(), "remote-mutation-qualification".into());
+    assert_eq!(
+        restarted
+            .claim_remote_mutation(request_id, "digest-a")
+            .await?,
+        RemoteMutationClaim::Completed {
+            completed_at,
+            succeeded: true,
+            summary: "passkey revoked".into(),
+        }
+    );
+    assert!(
+        restarted
+            .claim_remote_mutation(request_id, "digest-b")
+            .await
+            .is_err(),
+        "a request id must never be retargeted after restart"
+    );
+    flush(redis).await?;
+    Ok(())
+}
+
 fn session(user_id: Uuid, session_version: u64, auth_method: &str, created_at: u64) -> Session {
     Session {
         id: Uuid::new_v4(),
@@ -477,13 +879,17 @@ fn session(user_id: Uuid, session_version: u64, auth_method: &str, created_at: u
         current_credential_id: None,
         session_version,
         created_at,
+        step_up_at: (auth_method == "passkey").then_some(created_at),
         last_seen_at: now(),
         absolute_expires_at: now() + 3_600,
     }
 }
 
 fn session_key(token: &str) -> String {
-    format!("auth:session:{:x}", Sha256::digest(token.as_bytes()))
+    format!(
+        "auth:session:{}",
+        hex::encode(Sha256::digest(token.as_bytes()))
+    )
 }
 
 async fn request(

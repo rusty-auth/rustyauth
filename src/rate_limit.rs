@@ -1,18 +1,20 @@
 //! Fixed-window request throttling for unauthenticated and credential-bearing routes.
 //!
-//! RustyAuth has no external WAF in front of it, so brute-force and flood
-//! resistance has to live in the process. Two independent dimensions are limited:
-//! the client address, and the identifier or credential being attempted. Limiting
-//! only by address lets a botnet spread an attack across many hosts; limiting only
-//! by identifier lets one host enumerate many accounts. Both are cheap.
+//! RustyAuth cannot assume an external WAF, so brute-force and flood resistance is
+//! enforced by both a bounded process-local guard and expiring SableDB counters
+//! shared across restarts and replicas in the namespace. Two independent
+//! dimensions are limited: the client address, and the identifier or credential
+//! being attempted. Limiting only by address lets a botnet spread an attack across
+//! many hosts; limiting only by identifier lets one host enumerate many accounts.
 
 use std::{
     collections::HashMap,
     net::IpAddr,
     sync::Mutex,
-    time::{Duration, Instant},
+    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
+use redis::aio::ConnectionManager;
 use sha2::{Digest, Sha256};
 
 /// A request class, each with its own budget.
@@ -26,6 +28,10 @@ pub enum RateLimitClass {
     CredentialExchange,
     /// One-time Fleet pairing-code exchange at a realm boundary.
     PairingExchange,
+    /// Offline account-recovery code attempts.
+    Recovery,
+    /// Authenticated email or phone verification-code operations.
+    Verification,
 }
 
 impl RateLimitClass {
@@ -38,11 +44,24 @@ impl RateLimitClass {
             Self::IdentifierProbe => 10,
             Self::CredentialExchange => 60,
             Self::PairingExchange => 60,
+            Self::Recovery => 10,
+            Self::Verification => 10,
         }
     }
 
     const fn window(self) -> Duration {
         Duration::from_secs(60)
+    }
+
+    const fn key(self) -> &'static str {
+        match self {
+            Self::Ceremony => "ceremony",
+            Self::IdentifierProbe => "identifier",
+            Self::CredentialExchange => "credential",
+            Self::PairingExchange => "pairing",
+            Self::Recovery => "recovery",
+            Self::Verification => "verification",
+        }
     }
 }
 
@@ -67,6 +86,12 @@ struct Window {
 pub struct RateLimiter {
     windows: Mutex<HashMap<(RateLimitClass, [u8; 16]), Window>>,
     capacity: usize,
+    distributed: Option<DistributedRateLimiter>,
+}
+
+struct DistributedRateLimiter {
+    redis: ConnectionManager,
+    namespace: String,
 }
 
 impl RateLimiter {
@@ -76,6 +101,26 @@ impl RateLimiter {
         Self {
             windows: Mutex::new(HashMap::new()),
             capacity,
+            distributed: None,
+        }
+    }
+
+    /// Builds a limiter whose process-bounded counters are reinforced by an
+    /// expiring SableDB counter shared by every replica in the namespace.
+    ///
+    /// RustyAuth 1.0 supports one active writer, but this shared counter also
+    /// prevents a restart or active/passive failover from resetting an attacker's
+    /// budget. Datastore errors fail closed rather than silently dropping to a
+    /// process-local limit.
+    pub fn distributed(redis: ConnectionManager, namespace: &str, capacity: usize) -> Self {
+        let digest = Sha256::digest(namespace.as_bytes());
+        Self {
+            windows: Mutex::new(HashMap::new()),
+            capacity,
+            distributed: Some(DistributedRateLimiter {
+                redis,
+                namespace: hex::encode(&digest[..12]),
+            }),
         }
     }
 
@@ -83,8 +128,27 @@ impl RateLimiter {
     ///
     /// Subjects are stored as truncated digests rather than raw values so the
     /// limiter never holds email addresses or credential secrets in memory.
-    pub(crate) fn check(&self, class: RateLimitClass, subject: &str) -> RateLimitDecision {
-        self.check_at(class, subject, Instant::now())
+    pub(crate) async fn check(&self, class: RateLimitClass, subject: &str) -> RateLimitDecision {
+        let local = self.check_at(class, subject, Instant::now());
+        if !local.allowed {
+            return local;
+        }
+        let Some(distributed) = &self.distributed else {
+            return local;
+        };
+        match distributed.check(class, subject).await {
+            Ok(decision) => decision,
+            Err(error) => {
+                // A failed shared counter must never degrade into an unmetered
+                // authentication surface. Log only the class and datastore
+                // error; the subject and its derived key remain secret.
+                tracing::warn!(error = %error, class = ?class, "shared rate-limit counter failed closed");
+                RateLimitDecision {
+                    allowed: false,
+                    retry_after_seconds: class.window().as_secs(),
+                }
+            }
+        }
     }
 
     fn check_at(&self, class: RateLimitClass, subject: &str, now: Instant) -> RateLimitDecision {
@@ -127,6 +191,54 @@ impl RateLimiter {
                 .as_secs()
                 + 1,
         }
+    }
+}
+
+impl DistributedRateLimiter {
+    async fn check(
+        &self,
+        class: RateLimitClass,
+        subject: &str,
+    ) -> redis::RedisResult<RateLimitDecision> {
+        let window = class.window().as_secs();
+        let now = match SystemTime::now().duration_since(UNIX_EPOCH) {
+            Ok(value) => value.as_secs(),
+            Err(_) => {
+                return Ok(RateLimitDecision {
+                    allowed: false,
+                    retry_after_seconds: window,
+                });
+            }
+        };
+        let epoch = now / window;
+        let retry_after_seconds = window.saturating_sub(now % window).max(1);
+        let key = format!(
+            "auth:rate-limit:{}:{}:{}:{epoch}",
+            self.namespace,
+            class.key(),
+            hex::encode(subject_key(class, subject))
+        );
+        let mut connection = self.redis.clone();
+        // Atomic pipelines return an EXEC array even when every command but one
+        // is ignored. Decode the one-element tuple explicitly; asking redis-rs
+        // for a scalar makes the limiter fail closed on every valid SableDB
+        // response because the outer array is not itself a number.
+        let (count,) = redis::pipe()
+            .atomic()
+            .cmd("INCR")
+            .arg(&key)
+            .cmd("EXPIRE")
+            .arg(&key)
+            // Retain the completed window long enough that requests straddling a
+            // boundary cannot leave permanent counter keys behind.
+            .arg(window.saturating_mul(2))
+            .ignore()
+            .query_async::<(u64,)>(&mut connection)
+            .await?;
+        Ok(RateLimitDecision {
+            allowed: count <= u64::from(class.budget()),
+            retry_after_seconds,
+        })
     }
 }
 
@@ -174,48 +286,62 @@ pub(crate) fn client_address(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use anyhow::{Context, Result};
     use std::net::Ipv4Addr;
+    use uuid::Uuid;
 
     fn address(last: u8) -> IpAddr {
         IpAddr::V4(Ipv4Addr::new(10, 0, 0, last))
     }
 
-    #[test]
-    fn requests_are_allowed_up_to_the_budget_then_refused() {
+    #[tokio::test]
+    async fn requests_are_allowed_up_to_the_budget_then_refused() {
         let limiter = RateLimiter::new(1_024);
         let budget = RateLimitClass::IdentifierProbe.budget();
         for attempt in 1..=budget {
             assert!(
                 limiter
                     .check(RateLimitClass::IdentifierProbe, "10.0.0.1")
+                    .await
                     .allowed,
                 "attempt {attempt} within budget must be allowed"
             );
         }
-        let refused = limiter.check(RateLimitClass::IdentifierProbe, "10.0.0.1");
+        let refused = limiter
+            .check(RateLimitClass::IdentifierProbe, "10.0.0.1")
+            .await;
         assert!(!refused.allowed);
         assert!(refused.retry_after_seconds > 0);
     }
 
-    #[test]
-    fn budgets_are_tracked_per_subject_and_per_class() {
+    #[tokio::test]
+    async fn budgets_are_tracked_per_subject_and_per_class() {
         let limiter = RateLimiter::new(1_024);
         for _ in 0..RateLimitClass::IdentifierProbe.budget() {
-            limiter.check(RateLimitClass::IdentifierProbe, "attacker");
+            limiter
+                .check(RateLimitClass::IdentifierProbe, "attacker")
+                .await;
         }
         assert!(
             !limiter
                 .check(RateLimitClass::IdentifierProbe, "attacker")
+                .await
                 .allowed
         );
         // A different subject must not inherit the exhausted budget.
         assert!(
             limiter
                 .check(RateLimitClass::IdentifierProbe, "bystander")
+                .await
                 .allowed
         );
         // Nor must a different class for the same subject.
-        assert!(limiter.check(RateLimitClass::Ceremony, "attacker").allowed);
+        assert!(
+            limiter
+                .check(RateLimitClass::Ceremony, "attacker")
+                .await
+                .allowed
+        );
     }
 
     #[test]
@@ -297,5 +423,58 @@ mod tests {
         assert_eq!(client_address(peer, Some(""), 1), peer);
         // Fewer entries than trusted hops means the chain is not what we expect.
         assert_eq!(client_address(peer, Some("203.0.113.9"), 3), peer);
+    }
+
+    #[tokio::test]
+    #[ignore = "requires the compose.integration.yaml SableDB service"]
+    async fn sabledb_counter_survives_process_replacement_and_is_shared() -> Result<()> {
+        let url = std::env::var("RUSTYAUTH_TEST_SOURCE_SABLEDB_URL").context(
+            "integration environment variable RUSTYAUTH_TEST_SOURCE_SABLEDB_URL is missing",
+        )?;
+        let client = redis::Client::open(url).context("create live SableDB client")?;
+        let connection = redis::aio::ConnectionManager::new(client)
+            .await
+            .context("connect to live SableDB")?;
+        let namespace = format!("rate-limit-live-{}", Uuid::new_v4());
+        let first = RateLimiter::distributed(connection.clone(), &namespace, 1_024);
+        let replacement = RateLimiter::distributed(connection, &namespace, 1_024);
+        let budget = RateLimitClass::IdentifierProbe.budget();
+        let first_shared = first
+            .distributed
+            .as_ref()
+            .expect("live limiter uses SableDB");
+        let replacement_shared = replacement
+            .distributed
+            .as_ref()
+            .expect("replacement limiter uses SableDB");
+
+        for _ in 0..budget / 2 {
+            assert!(
+                first_shared
+                    .check(RateLimitClass::IdentifierProbe, "shared-attacker")
+                    .await
+                    .context("increment the pinned SableDB rate-limit counter")?
+                    .allowed
+            );
+        }
+        for _ in budget / 2..budget {
+            assert!(
+                replacement_shared
+                    .check(RateLimitClass::IdentifierProbe, "shared-attacker")
+                    .await
+                    .context("continue the shared counter after process replacement")?
+                    .allowed,
+                "a replacement process must observe and continue the shared budget"
+            );
+        }
+        assert!(
+            !replacement_shared
+                .check(RateLimitClass::IdentifierProbe, "shared-attacker")
+                .await
+                .context("read the exhausted shared rate-limit counter")?
+                .allowed,
+            "replacing the process must not reset an attacker's budget"
+        );
+        Ok(())
     }
 }

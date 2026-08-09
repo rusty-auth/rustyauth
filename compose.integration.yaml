@@ -6,12 +6,12 @@ services:
   source-sabledb:
     image: rustyauth-sabledb:ci
     build:
-      context: ./sabledb
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: sabledb/Dockerfile
     ports:
       - "127.0.0.1:16379:6379"
     healthcheck:
-      test: ["CMD-SHELL", "timeout 2 bash -c '</dev/tcp/127.0.0.1/6379'"]
+      test: ["CMD", "/usr/local/bin/container-healthcheck", "redis", "127.0.0.1:6379"]
       interval: 2s
       timeout: 2s
       retries: 60
@@ -19,12 +19,12 @@ services:
   destination-sabledb:
     image: rustyauth-sabledb:ci
     build:
-      context: ./sabledb
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: sabledb/Dockerfile
     ports:
       - "127.0.0.1:16380:6379"
     healthcheck:
-      test: ["CMD-SHELL", "timeout 2 bash -c '</dev/tcp/127.0.0.1/6379'"]
+      test: ["CMD", "/usr/local/bin/container-healthcheck", "redis", "127.0.0.1:6379"]
       interval: 2s
       timeout: 2s
       retries: 60
@@ -54,3 +54,29 @@ services:
         mc alias set local http://minio:9000 rustyauth-test rustyauth-test-secret
         && mc mb --ignore-existing --with-lock local/rustyauth-integration
         && mc retention set --default compliance 90d local/rustyauth-integration
+
+  greptimedb:
+    image: greptime/greptimedb:v1.1.4@sha256:9726587eac95d0360755254cd59a528dbf48abfdf268478aea6a644f62afe44c
+    command:
+      - standalone
+      - start
+      - --http-addr
+      - 0.0.0.0:4000
+      - --user-provider
+      - static_user_provider:cmd:rustyauth=rustyauth-test-password
+    environment:
+      GREPTIMEDB_STANDALONE__ENABLE_TELEMETRY: "false"
+      RUSTYAUTH_GREPTIME_HEALTH_USER: rustyauth
+      RUSTYAUTH_GREPTIME_HEALTH_PASSWORD: rustyauth-test-password
+    ports:
+      - "127.0.0.1:14000:4000"
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - >-
+          credentials="$$(printf '%s' "$${RUSTYAUTH_GREPTIME_HEALTH_USER}:$${RUSTYAUTH_GREPTIME_HEALTH_PASSWORD}" | base64)" &&
+          curl --fail --silent --header "Authorization: Basic $${credentials}"
+          --data 'sql=SELECT 1' http://127.0.0.1:4000/v1/sql >/dev/null
+      interval: 2s
+      timeout: 2s
+      retries: 60

@@ -314,7 +314,7 @@ impl Store {
         };
         let events = self
             .pending_events(vec![(
-                "service_account.token.issued".to_owned(),
+                "service_account.credential.authenticated".to_owned(),
                 Some(account.id),
             )])
             .await?;

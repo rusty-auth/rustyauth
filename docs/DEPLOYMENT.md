@@ -25,6 +25,10 @@ something an attacker could read in the repository. A committed default is a pub
 entropy check in `config.rs` cannot tell a generated key from one that has been published — so generating is
 the only path, including locally.
 
+Non-secret settings come from the versioned YAML contract. The launcher derives an ignored local file from
+`rustyauth.example.yaml`; the auth container receives it at `/etc/rustyauth/config.yaml` through a read-only
+Compose config. This keeps the deployed process configuration inspectable without putting credentials in it.
+
 Compose publishes only the Dioxus gateway at `127.0.0.1:8081`. The Rust API and SableDB share an internal
 network and have no host ports. The named SableDB volume survives service replacement. Override the public
 port with `STANDALONE_DASHBOARD_PORT`; the local issuer and WebAuthn origin follow it automatically.
@@ -45,13 +49,13 @@ traffic based on readiness; use liveness for process restart decisions.
 ### Lifecycle commands
 
 ```sh
-docker compose logs -f auth sabledb
-docker compose down
-docker compose up --build -d
+scripts/local-stack standalone logs auth sabledb
+scripts/local-stack standalone down
+scripts/local-stack standalone up --detach
 ```
 
-`docker compose down --volumes` permanently deletes local identity state. Do not include `--volumes` in
-routine restart or upgrade automation.
+`scripts/local-stack standalone down --volumes` permanently deletes local identity state. Do not include
+`--volumes` in routine restart or upgrade automation.
 
 ## Railway topology
 
@@ -73,13 +77,19 @@ drill.
 Use the repository root as the source root and `Dockerfile` as the builder. Set:
 
 - healthcheck path `/healthz`;
-- public port `8080`;
-- all production variables in [Configuration](CONFIGURATION.md); and
-- `SABLEDB_URL` through a Railway private-domain resource reference.
+- one replica until multi-writer operation is qualified;
+- `RUSTYAUTH_CONFIG_YAML` to a validated production document from [Configuration](CONFIGURATION.md); and
+- every required credential as a separate sealed variable.
 
-`AUTH_ENV` has no default. A deployment that omits it fails to start rather than falling back to development
-settings, which would drop `Secure` from the session cookie, accept an HTTP relying-party origin and treat
-self-service identifiers as verified. Set `AUTH_ENV=production`.
+Railway supplies `PORT`; it deliberately overrides `spec.server.port` so public routing and the process
+listener agree. Wire `SABLEDB_URL` through a private service reference; it overrides the document's
+`spec.datastore.endpoint` placeholder and keeps any credential-bearing URL out of the YAML value. The YAML
+document may be a multiline Railway variable; it is the same schema used by Docker and other platforms rather
+than a Railway-specific configuration dialect.
+
+`spec.environment` has no default. A deployment that omits it fails to start rather than falling back to
+development settings, which would drop `Secure` from the session cookie, accept an HTTP relying-party origin
+and treat self-service identifiers as verified. Set it to `production`.
 
 The target dashboard service forwards operator authentication and RPC paths over the private network so the
 browser remains on one public origin. Configure the operator origin to the dashboard HTTPS origin and keep the
@@ -94,7 +104,8 @@ to authenticate users.
 `AUTH_OPERATOR_EMAILS` is no longer sufficient to become an operator. Browser bootstrap requires the account
 to hold a **verified** email identifier from that list, and production never marks a self-service identifier
 verified — so on a fresh deployment nothing can verify one, because verifying an identifier is itself an
-operator action. Create the first Owner from a shell on the deployed container:
+operator action. Create the first Owner by executing the RustyAuth binary in the deployed container (the
+scratch image deliberately has no shell):
 
 ```sh
 rustyauth operator find founder@example.com
@@ -112,8 +123,8 @@ operator address as an incident.
 Roles are `owner`, `administrator`, `support` and `auditor`. The account must already exist — enrol it through
 the normal bootstrap-token registration flow first.
 
-This deliberately costs shell access to the deployment rather than control of an inbox. Treat the ability to
-run `operator promote` as equivalent to Owner: anyone who can execute in the container can grant themselves
+This deliberately costs command-execution access to the deployment rather than control of an inbox. Treat the
+ability to run `operator promote` as equivalent to Owner: anyone who can execute the binary in the container can grant themselves
 the control plane. Restrict container exec the way you restrict the master key.
 
 `operator demote <user-id>` removes a grant. Removing an address from `AUTH_OPERATOR_EMAILS` does **not**
@@ -125,8 +136,10 @@ after any promotion and as part of routine access review.
 
 ### SableDB service
 
-Use `sabledb` as its source root. The Docker build checks out the immutable SableDB revision declared by
-`SABLEDB_REVISION`, currently `8bebc4a60dee404e95608b40ec5c58799e7fa820`.
+Use the repository root as the source root and `sabledb/Dockerfile` as the builder. The Docker build checks out
+the immutable SableDB revision declared by `SABLEDB_REVISION`, currently
+`8bebc4a60dee404e95608b40ec5c58799e7fa820`. That upstream revision does not commit a lockfile, so the image
+copies RustyAuth's reviewed `sabledb/Cargo.lock` before compiling with `--locked`.
 
 Requirements:
 
@@ -141,17 +154,23 @@ itself is not being presented as the public authentication layer.
 
 ### Backup bucket
 
+This section covers placement in the deployment topology. Use [Backups and disaster recovery](BACKUPS.md) for
+the complete snapshot scope, `.rauth` format, provider contract, monitoring behavior, key rotation and
+clean-room restore procedure.
+
 Inject bucket credentials into RustyAuth through Railway resource references. Do not expose them to the
 relying-party browser. Use a backup encryption key generated and escrowed outside Railway and outside the
 bucket provider account.
 
-RustyAuth creates a backup immediately after startup and at `AUTH_BACKUP_INTERVAL_SECONDS`. Each object
-contains the complete server-side workspace: durable users, identifiers, passkeys, sessions, signing state,
-organization/dashboard settings, operator grants, service accounts, credential locators, ordered events and
-Fleet organizations/projects/environments with their slug indexes, idempotency records and audit trail. The
-dashboard has no durable browser-local state; its compiled assets come from the release image. Short-lived
-WebAuthn ceremonies, agent handoffs, leases and health counters are deliberately excluded. An unknown future
-durable key family fails snapshot creation rather than silently producing an incomplete workspace backup.
+RustyAuth creates a backup immediately after startup and at `spec.backups.schedule.interval`. Each object
+contains the complete server-side namespace for that deployment. A realm object includes its durable users,
+identifiers, passkeys, sessions, signing state, organization settings, operator grants, service accounts,
+credential locators and ordered events. A Fleet object includes its central organizations, projects,
+environments, realm registrations, slug indexes, scoped roles, idempotency records and audit trail; it never
+reaches into paired realm databases. The dashboard has no durable browser-local state; its compiled assets
+come from the release image. Short-lived WebAuthn ceremonies, agent handoffs, leases and health counters are
+deliberately excluded. An unknown future durable key family fails snapshot creation rather than silently
+producing an incomplete backup.
 
 New objects are compact binary, compressed with Zstandard and protected with application-level AES-256-GCM.
 The destination must additionally provide Versioning, a default compliance-mode Object Lock rule and the
@@ -183,27 +202,47 @@ rustyauth operator demote <user-id>
 
 The RustyAuth runtime image:
 
-- contains the release binary and CA certificates only;
+- starts from `scratch` and contains the release binary, its exact dynamic libraries, CA roots, configuration
+  mount point and licence notices only;
 - contains no dashboard or JavaScript runtime;
 - runs as non-root UID/GID `10001`;
-- has no shell-owned writable application directory;
+- has no shell, package manager or writable application directory;
 - exposes port `8080`; and
 - includes project and third-party licence notices.
 
 Tagged releases publish separate `dashboard`, `control-plane`, `rustyauth` and `sabledb` images. Neither Rust
 API image contains a JavaScript dashboard runtime.
 
-The SableDB image runs as non-root UID/GID `10002` and stores data under `/var/lib/sabledb`.
+The dashboard is also scratch-based. It contains the Dioxus assets, a statically built source-pinned Caddy
+gateway and a dependency-free health probe; it has no Alpine userspace, shell, curl or package manager.
 
-The supplied Compose files additionally make every service root filesystem read-only, mount a bounded
-`noexec` temporary filesystem, drop all Linux capabilities, enable `no-new-privileges` and cap the process
-count. Preserve equivalent controls in Railway or any other production platform. They are runtime policy,
-not image properties, so publishing the same image does not automatically apply them.
+The SableDB image is scratch-based, runs as non-root UID/GID `10002`, and stores data under
+`/var/lib/sabledb`. Its dedicated probe sends Redis `PING` and requires the exact `PONG` response; the image
+does not carry a shell merely to open a TCP socket.
 
-Fleet realm-management URLs are outbound request targets. Production validation rejects literal private,
-loopback, link-local, metadata and local-name endpoints, but DNS can change after validation. Enforce an
-egress allowlist or proxy at the infrastructure boundary and deny cloud metadata and private address ranges
-there. Do not rely on URL parsing alone as an SSRF control.
+The API, SableDB and Dioxus WebAssembly release builds embed `cargo-auditable` dependency metadata. Compatible
+artifact scanners therefore recover the Cargo graph from the shipped binary instead of inferring it from a
+builder layer that is absent from the scratch image. CI separately audits the root, console and SableDB
+lockfiles and requires zero HIGH/CRITICAL findings from the checksum-pinned runtime-image scanner.
+
+The supplied Compose files additionally make every service root filesystem read-only, mount a bounded `noexec`
+temporary filesystem, drop all Linux capabilities, enable `no-new-privileges` and cap the process count.
+Preserve equivalent controls in Railway or any other production platform. They are runtime policy, not image
+properties, so publishing the same image does not automatically apply them.
+
+Run `scripts/qualify-runtime-images.sh` against the exact candidate tags before promotion. It creates an
+isolated temporary topology, proves the runtime controls and bounded gateway behavior, crosses repeated lease
+renewals, then removes only its uniquely named containers, networks and volume. The tagged-release workflow
+executes the same drill before live integration qualification.
+
+Fleet realm-management URLs and configured webhook destinations are outbound request targets. Production Fleet
+validation rejects literal private, loopback, link-local, metadata and local-name endpoints; webhook
+validation requires HTTPS, rejects URL credentials and fragments, and disables redirects. Before each
+public-endpoint RPC, Fleet resolves the hostname under a deadline, rejects the entire answer set if any
+address is non-public, and pins that answer set into a redirect-disabled TLS client so connection
+establishment cannot resolve a different address. Still enforce an egress allowlist or proxy at the
+infrastructure boundary and deny cloud metadata and unreviewed private address ranges there as independent
+defence in depth.
 
 See [Security hardening and qualification](SECURITY_HARDENING.md) for the release verification matrix and
 remaining production gates.
@@ -222,17 +261,17 @@ credential or session responses.
 RustyAuth sets these on every response it serves, including dashboard assets. Each is applied only when the
 header is absent, so a proxy that already sets one wins:
 
-| Header                         | Value                                                                                                                                                                                                                | Applies         |
-| ------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------- |
-| `Content-Security-Policy`      | `default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; frame-ancestors 'none'; form-action 'self'; base-uri 'none'; object-src 'none'` | Always          |
-| `X-Frame-Options`              | `DENY`                                                                                                                                                                                                               | Always          |
-| `Cross-Origin-Opener-Policy`   | `same-origin`                                                                                                                                                                                                        | Always          |
-| `Cross-Origin-Resource-Policy` | `same-origin`                                                                                                                                                                                                        | Always          |
-| `Permissions-Policy`           | `geolocation=(), camera=(), microphone=(), payment=()`                                                                                                                                                               | Always          |
-| `X-Content-Type-Options`       | `nosniff`                                                                                                                                                                                                            | Always          |
-| `Cache-Control`                | `no-store` unless a public artifact such as JWKS sets a narrower explicit policy                                                                                                                                     | Default         |
-| `Referrer-Policy`              | `no-referrer`                                                                                                                                                                                                        | Always          |
-| `Strict-Transport-Security`    | `max-age=63072000; includeSubDomains; preload`                                                                                                                                                                       | Production only |
+| Header                         | Value                                                                                                                                                                                                | Applies         |
+| ------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------- |
+| `Content-Security-Policy`      | `default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self'; frame-ancestors 'none'; form-action 'self'; base-uri 'none'; object-src 'none'` | Always          |
+| `X-Frame-Options`              | `DENY`                                                                                                                                                                                               | Always          |
+| `Cross-Origin-Opener-Policy`   | `same-origin`                                                                                                                                                                                        | Always          |
+| `Cross-Origin-Resource-Policy` | `same-origin`                                                                                                                                                                                        | Always          |
+| `Permissions-Policy`           | `geolocation=(), camera=(), microphone=(), payment=()`                                                                                                                                               | Always          |
+| `X-Content-Type-Options`       | `nosniff`                                                                                                                                                                                            | Always          |
+| `Cache-Control`                | `no-store` unless a public artifact such as JWKS sets a narrower explicit policy                                                                                                                     | Default         |
+| `Referrer-Policy`              | `no-referrer`                                                                                                                                                                                        | Always          |
+| `Strict-Transport-Security`    | `max-age=63072000; includeSubDomains; preload`                                                                                                                                                       | Production only |
 
 HSTS is withheld outside production on purpose. Emitting it from a `http://localhost` development origin pins
 the browser to HTTPS for that host for two years, well past the session that caused it.
@@ -270,20 +309,23 @@ Never delete or recreate the SableDB volume as an upgrade shortcut.
 
 ## Scaling
 
-Run one RustyAuth writer replica in version `0.1.0`. Multi-key operations use SableDB atomic pipelines, but
-compound mutations are additionally protected only by a process-local mutex. Cross-replica registration and
-credential mutation have not been qualified.
+Run one RustyAuth writer replica in version `0.1.0`. At startup every serving process must acquire the
+namespace's SableDB writer lease. It renews the 60-second lease every 10 seconds and shuts down if renewal
+fails or the ownership token changes. Multi-key operations use SableDB atomic pipelines and compound mutations
+also use a process-local mutex; active/active mutation has not been qualified and is unsupported.
 
 `railway.json` pins `numReplicas: 1` and `overlapSeconds: 0` so a scale-up or a rolling deploy cannot silently
 start a second writer. This narrows the window rather than removing it: `drainingSeconds` (25) is the time the
 outgoing process has between `SIGTERM` and `SIGKILL`, and for that period the old process is still finishing
 in-flight requests while the new one is live. It stops accepting new work at `SIGTERM`, so the overlap covers
 requests already in progress, not new mutations — but it is not zero. Treat a deploy as a short window in
-which the single-writer invariant is weakest, and avoid deploying during a bulk migration.
+which the outgoing process may still be draining. The replacement cannot serve while the old process retains
+the writer lease; the platform may therefore need to wait up to the lease TTL before the new instance starts.
+Avoid deploying during a bulk migration and configure health/restart policy to tolerate that bounded wait.
 
-Raising `numReplicas` above 1 is not supported in this version. Nothing in the process detects a second
-writer; the event-sequence counter is read-then-written without a compare-and-set, so a concurrent writer
-silently overwrites audit events.
+Raising `numReplicas` above 1 is not supported in this version. A second process using the same namespace
+fails startup while the lease is owned, and a process that loses ownership stops the server. The lease is a
+fence for the supported one-writer topology, not a claim that the data model is safe for active/active writes.
 
 ## Observability
 
@@ -332,6 +374,10 @@ Monitor at least:
 
 ## Clean-room recovery
 
+The authoritative step-by-step procedure, including prerequisites, failure handling and drill evidence, is in
+[Backups and disaster recovery](BACKUPS.md#clean-room-restore). The condensed commands below are retained for
+incident use.
+
 Restore never overwrites a live namespace. Provision a new, empty SableDB volume and run the same RustyAuth
 release with the original tenant ID, active master key plus any required previous master keys, and active
 backup key plus any required previous backup keys:
@@ -358,7 +404,7 @@ real authenticator and preserve the command receipts with the incident log.
 The public
 [RustyAuth Railway template](https://railway.com/new/template/rustyauth?utm_medium=integration&utm_source=button&utm_campaign=rustyauth)
 is available for evaluation and integration work. Its clean-room deployment and storage-survival checks pass:
-both services become healthy, generated secrets are applied, the private SableDB reference resolves, and
+all three services become healthy, generated secrets are applied, the private SableDB reference resolves, and
 signing state survives SableDB container replacement.
 
 Do not treat template availability or backup configuration alone as production readiness. Schedule and retain

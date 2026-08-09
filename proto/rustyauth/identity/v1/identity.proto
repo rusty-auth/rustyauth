@@ -5,6 +5,7 @@ package rustyauth.identity.v1;
 // IdentityService is a private control-plane API for trusted RustyAuth consumers.
 service IdentityService {
   rpc GetUser(GetUserRequest) returns (User);
+  rpc ListUsers(ListUsersRequest) returns (ListUsersResponse);
   rpc SearchUsers(SearchUsersRequest) returns (SearchUsersResponse);
   rpc UpdateProfile(UpdateProfileRequest) returns (User);
   rpc AddIdentifier(AddIdentifierRequest) returns (User);
@@ -59,6 +60,16 @@ message User {
 
 message GetUserRequest {
   string user_id = 1;
+}
+
+message ListUsersRequest {
+  uint32 page_size = 1;
+  string page_token = 2;
+}
+
+message ListUsersResponse {
+  repeated User users = 1;
+  string next_page_token = 2;
 }
 
 message SearchUsersRequest {

@@ -24,7 +24,7 @@ services:
       auth:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://127.0.0.1:8080/healthz"]
+      test: ["CMD", "/usr/local/bin/container-healthcheck", "http", "127.0.0.1:8080", "/healthz"]
       interval: 5s
       timeout: 3s
       retries: 20
@@ -36,14 +36,10 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+    configs:
+      - source: rustyauth_config
+        target: /etc/rustyauth/config.yaml
     environment:
-      AUTH_ENV: development
-      AUTH_TRUSTED_PROXY_HOPS: ${AUTH_TRUSTED_PROXY_HOPS:-0}
-      AUTH_ISSUER: ${AUTH_ISSUER:-http://localhost:${STANDALONE_DASHBOARD_PORT:-8081}}
-      WEBAUTHN_RP_ID: ${WEBAUTHN_RP_ID:-localhost}
-      WEBAUTHN_RP_ORIGIN: ${WEBAUTHN_RP_ORIGIN:-http://localhost:${STANDALONE_DASHBOARD_PORT:-8081}}
-      WEBAUTHN_RP_NAME: ${WEBAUTHN_RP_NAME:-RustyAuth Local}
-      SABLEDB_URL: redis://sabledb:6379
       # No defaults. A committed default is a published secret, and the entropy check
       # in src/config.rs cannot tell a generated key from a public one — so compose
       # refuses to start rather than substituting a value anyone can read in git.
@@ -52,11 +48,6 @@ services:
       BOOTSTRAP_TOKEN: ${BOOTSTRAP_TOKEN:?set it in .env, e.g. openssl rand -base64 48}
       AUTH_EVENT_RPC_TOKEN: ${AUTH_EVENT_RPC_TOKEN:?set it in .env, e.g. openssl rand -base64 48}
       AUTH_IDENTITY_RPC_TOKEN: ${AUTH_IDENTITY_RPC_TOKEN:?set it in .env, e.g. openssl rand -base64 48}
-      AUTH_OPERATOR_EMAILS: ${AUTH_OPERATOR_EMAILS:-admin@rustyauth.local}
-      SPACETIME_AUDIENCE: ${SPACETIME_AUDIENCE:-vtr-dashboard-v2-local}
-      AUTH_TENANT_ID: ${AUTH_TENANT_ID:-vtr}
-      AUTH_REALM_ID: ${AUTH_REALM_ID:-realm-local}
-      PORT: 8080
       RUST_LOG: ${RUST_LOG:-rustyauth=info,tower_http=info}
     expose: ["8080"]
     depends_on:
@@ -73,12 +64,12 @@ services:
   sabledb:
     <<: *runtime-hardening
     build:
-      context: ./sabledb
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: sabledb/Dockerfile
     volumes:
       - sabledb_data:/var/lib/sabledb
     healthcheck:
-      test: ["CMD-SHELL", "timeout 2 bash -c '</dev/tcp/127.0.0.1/6379'"]
+      test: ["CMD", "/usr/local/bin/container-healthcheck", "redis", "127.0.0.1:6379"]
       interval: 3s
       timeout: 3s
       retries: 30
@@ -89,6 +80,10 @@ networks:
   private:
     internal: true
   edge:
+
+configs:
+  rustyauth_config:
+    file: ${RUSTYAUTH_CONFIG_FILE:-./rustyauth.example.yaml}
 
 volumes:
   sabledb_data:

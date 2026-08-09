@@ -1,0 +1,73 @@
+---
+import DocsLayout from "../../layouts/DocsLayout.astro";
+
+const boundaries = [
+  ["Browser", "HTTP/JSON + @rustyauth/client", "Passkey ceremonies and secure session cookie"],
+  ["Dioxus dashboard", "Connect + Protobuf", "Operator and Fleet commands with a browser session"],
+  ["Trusted service", "Native gRPC + Protobuf", "Scoped identity, events and management integration"],
+  ["Application API", "JWT + JWKS", "Local claim verification and application authorization"],
+];
+---
+
+<DocsLayout title="Integrate an application" eyebrow="Relying-party guide" intro="Add passkey registration, sign-in and short-lived verified claims without moving application authorization into RustyAuth.">
+  <div class="doc-callout">
+    <strong>Use the stable account UUID</strong>
+    <p>Key downstream people and ownership records by the RustyAuth <code>sub</code>. Email, phone, profile names and credentials can all change.</p>
+  </div>
+
+  <h2>Choose the right surface</h2>
+  <div class="doc-table-wrap"><table><thead><tr><th>Consumer</th><th>Protocol</th><th>Purpose</th></tr></thead><tbody>{boundaries.map(([consumer, protocol, purpose]) => <tr><td>{consumer}</td><td><code>{protocol}</code></td><td>{purpose}</td></tr>)}</tbody></table></div>
+
+  <h2>1. Run the local realm</h2>
+  <pre><code>scripts/local-stack standalone up</code></pre>
+  <p>The launcher starts the public Dioxus surface, private backend and private SableDB. The public HTTP client lives in <code>packages/client</code>; complete examples live in <code>examples</code>.</p>
+
+  <h2>2. Register a passkey</h2>
+  <p>A trusted enrolment controller requests registration options, the browser calls <code>navigator.credentials.create()</code>, and RustyAuth verifies the response against server-side single-use ceremony state. For local evaluation, read the generated bootstrap value from <code>.env.standalone.local</code>.</p>
+  <pre><code>{`import { createRustyAuthClient } from "@rustyauth/client";
+
+const auth = createRustyAuthClient({ baseUrl: "http://localhost:8081" });
+
+await auth.register({
+  identifier: { type: "email", value: "ada@example.test" },
+  displayName: "Ada Lovelace",
+  bootstrapToken: localDevelopmentToken,
+});`}</code></pre>
+  <div class="doc-callout warning">
+    <strong>Bootstrap is administrative</strong>
+    <p>Never embed the bootstrap token in a production browser bundle. Replace local bootstrap registration with a reviewed invitation or provisioning boundary.</p>
+  </div>
+
+  <h2>3. Sign in</h2>
+  <p>The browser requests authentication options for a canonical email or E.164 phone, calls <code>navigator.credentials.get()</code> and submits the assertion. A successful response creates a Secure, HttpOnly, SameSite session cookie. JavaScript does not receive the durable session bearer value.</p>
+  <pre><code>{`await auth.signIn({ type: "email", value: "ada@example.test" });`}</code></pre>
+
+  <h2>4. Exchange and verify</h2>
+  <p>Call <code>POST /v1/token</code> with the browser session to receive a short-lived ES256 access token. Keep it in memory. The downstream API verifies signature and policy locally against RustyAuth's JWKS.</p>
+  <pre><code>{`GET /.well-known/jwks.json
+
+Required checks:
+  alg       == ES256
+  iss       == configured public issuer
+  aud       contains your API audience
+  exp / nbf are valid with bounded clock skew
+  tenant_id == expected isolated realm
+  sub       is a valid RustyAuth account UUID`}</code></pre>
+  <p>JWT verification proves authentication claims. Your API must still authorize the requested resource and action.</p>
+
+  <h2>5. Handle lifecycle events</h2>
+  <p>Use resumable event streaming from a trusted service for account and credential lifecycle work. Store the cursor durably and make consumers idempotent. Short-lived service-account tokens enforce <code>events.read</code> and, when a projector fetches the current safe profile, <code>identity.read</code>. Do not put private RPC credentials in browser code.</p>
+  <p>The <a href="/authentication-events">authentication events guide</a> includes working <code>grpcurl</code> commands, the signup-to-primary-database pattern, signed webhook verification, retry behavior and HTTP polling.</p>
+
+  <h2>Production checklist</h2>
+  <ol>
+    <li>Use HTTPS and exact reviewed origins.</li>
+    <li>Provision the first Owner from a deployment shell.</li>
+    <li>Replace bootstrap enrolment with a trusted product flow.</li>
+    <li>Validate every JWT claim required by your policy.</li>
+    <li>Keep access tokens in memory and sessions in HttpOnly cookies.</li>
+    <li>Issue and escrow recovery codes, and test verification-webhook plus abuse-control policy.</li>
+    <li>Run a clean-room restore drill and complete a real passkey sign-in.</li>
+  </ol>
+  <p>Continue with the <a href="/docs/api">API boundary</a>, <a href="/docs/identity-data">identity data model</a> and <a href="https://github.com/rusty-auth/rustyauth/blob/main/docs/INTEGRATION.md">complete GitHub integration guide</a>.</p>
+</DocsLayout>

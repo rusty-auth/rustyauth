@@ -27,11 +27,15 @@ generated types without adding protocol coverage.
 
 `console/` becomes the only dashboard implementation and is renamed at the product level to the RustyAuth
 Dashboard. The web build is a separate stateless service; it is not compiled into either Rust API image. The
-shared Rust application supports three client packages:
+shared Rust application supports three client targets released in phases:
 
 - separately deployed web dashboard, configured for either a standalone realm or Fleet control plane;
-- signed desktop packages; and
-- mobile packages after device credential storage and platform passkey flows are qualified.
+- desktop preview packages, promoted only after signing and platform distribution qualification; and
+- mobile previews, promoted only after device credential storage, platform passkey, signing and real-device
+  flows are qualified.
+
+RustyAuth `1.0.0` supports only the web target. Desktop, iOS and Android remain outside its GA artifact and
+support contract even though their shared feature builds and transport adapters are implemented.
 
 The SolidJS runtime and `@rustyauth/connect-solid` are retired once the Dioxus client uses live APIs and passes
 the standalone regression suite. The existing SolidJS implementation remains a temporary visual reference

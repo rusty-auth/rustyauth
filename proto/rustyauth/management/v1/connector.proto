@@ -4,10 +4,23 @@ package rustyauth.management.v1;
 
 import "rustyauth/management/v1/management.proto";
 
-// Carries commands over a realm-initiated authenticated channel. The initial
-// connection uses native gRPC over HTTP/2 with mTLS workload identity.
+// Carries telemetry and commands over a realm-initiated authenticated channel.
+// The connection uses native gRPC over HTTP/2 with TLS plus a directional,
+// pairing-derived connection proof. Production ingress may additionally
+// require mTLS workload identity.
 service RealmConnectorService {
+  // Completes a Fleet-created outbound attempt without requiring any inbound
+  // route to the realm. The short-lived realm pairing code is the transport
+  // credential and is validated against the attempt's stored digest.
+  rpc PairOutbound(OutboundPairingRequest) returns (PairingGrant);
   rpc Connect(stream ConnectorFrame) returns (stream ConnectorFrame);
+}
+
+message OutboundPairingRequest {
+  string attempt_id = 1;
+  string pairing_code = 2;
+  RealmDiscovery discovery = 3;
+  repeated string requested_scopes = 4;
 }
 
 message ConnectorFrame {

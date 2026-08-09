@@ -35,7 +35,8 @@ pub(super) async fn email_link(
         &headers,
         RateLimitClass::IdentifierProbe,
         None,
-    )?;
+    )
+    .await?;
     let subject = state
         .store
         .user_by_email(&email)

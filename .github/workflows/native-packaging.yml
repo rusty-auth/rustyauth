@@ -1,0 +1,59 @@
+name: Native preview qualification
+
+on:
+  pull_request:
+    paths:
+      - "console/**"
+      - ".github/workflows/native-packaging.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  preview-package-qualification:
+    name: ${{ matrix.name }} preview package
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: macOS
+            os: macos-14
+            package_type: macos
+          - name: Windows
+            os: windows-2025
+            package_type: msi
+          - name: Linux
+            os: ubuntu-24.04
+            package_type: deb
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        working-directory: console
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: dtolnay/rust-toolchain@75be91dd2711b583df57c31d0873b4145c89f1d9 # 1.94.1
+        with:
+          toolchain: 1.94.1
+      - uses: Swatinem/rust-cache@49a0bdc70d2e1b713ca9e2869b211fcce03d3c1c # v2
+        with:
+          workspaces: console
+      - name: Install Linux native dependencies
+        if: runner.os == 'Linux'
+        run: >-
+          sudo apt-get update && sudo apt-get install -y --no-install-recommends
+          libwebkit2gtk-4.1-dev libxdo-dev libssl-dev
+          libayatana-appindicator3-dev librsvg2-dev
+      - run: cargo install dioxus-cli --version 0.7.10 --locked
+      - name: Build host installer
+        run: >-
+          dx --locked bundle --desktop --release --no-default-features
+          --features "desktop bundle" --debug-symbols=false
+          --package-types "${{ matrix.package_type }}"
+      - name: Upload unsigned qualification package
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: rustyauth-console-${{ runner.os }}-${{ runner.arch }}-preview-unsigned
+          path: console/target/dx/rustyauth-console/bundle/**
+          if-no-files-found: error
+          retention-days: 7

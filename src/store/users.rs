@@ -10,5 +10,5 @@ pub use self::identifiers::{
 };
 pub(crate) use self::profile::forbidden_display_character;
 pub use self::profile::{AccountProfile, ProfileValidationError};
-pub use self::records::User;
+pub use self::records::{RecoveryCodeRecord, User};
 pub use self::search::{UserSearch, UserSearchPage};

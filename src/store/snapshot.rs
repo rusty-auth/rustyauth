@@ -205,7 +205,7 @@ impl Store {
 
     async fn managed_keys(&self) -> Result<Vec<String>> {
         let mut keys = BTreeSet::new();
-        for pattern in ["auth:*", "fleet:*"] {
+        for pattern in ["auth:*", "fleet:*", "analytics:*"] {
             let mut cursor = 0_u64;
             loop {
                 let mut connection = self.redis.clone();
@@ -267,6 +267,15 @@ enum SnapshotKeyPolicy {
 }
 
 fn snapshot_key_policy(key: &str) -> Result<SnapshotKeyPolicy> {
+    if matches!(
+        key,
+        "analytics:projector-cursor" | "analytics:closure-cursor"
+    ) || ["analytics:bucket:", "analytics:outbox:"]
+        .iter()
+        .any(|prefix| key.starts_with(prefix) && key.len() > prefix.len())
+    {
+        return Ok(SnapshotKeyPolicy::Include);
+    }
     if [
         "fleet:organization:",
         "fleet:organization-slug:",
@@ -278,7 +287,16 @@ fn snapshot_key_policy(key: &str) -> Result<SnapshotKeyPolicy> {
         "fleet:role-binding:",
         "fleet:role-binding-subject:",
         "fleet:idempotency:",
+        "fleet:assignment-epoch:",
         "fleet:audit:",
+        "fleet:analytics-bucket:",
+        "fleet:analytics-policy:",
+        "fleet:analytics-policy-idempotency:",
+        "fleet:analytics-quarantine:",
+        "fleet:analytics-ingestion-audit:",
+        "fleet:analytics-operator-audit:",
+        "fleet:analytics-maintenance-audit:",
+        "fleet:analytics-manifest:",
     ]
     .iter()
     .any(|prefix| key.starts_with(prefix) && key.len() > prefix.len())
@@ -287,7 +305,7 @@ fn snapshot_key_policy(key: &str) -> Result<SnapshotKeyPolicy> {
     }
     if matches!(
         key,
-        "auth:event-sequence" | "auth:jwt:keyset:v1" | ORGANIZATION_KEY
+        "auth:event-sequence" | "auth:event-min-sequence" | "auth:jwt:keyset:v1" | ORGANIZATION_KEY
     ) || [
         "auth:user:",
         "auth:email:",
@@ -295,27 +313,41 @@ fn snapshot_key_policy(key: &str) -> Result<SnapshotKeyPolicy> {
         "auth:credential:",
         "auth:session:",
         "auth:event:",
+        "auth:invitation:",
+        "auth:invitation-code:",
+        "auth:webhook:",
+        "auth:webhook-cursor:",
+        "auth:webhook-delivery:",
+        "auth:webhook-delivery-event:",
         OPERATOR_PREFIX,
         SERVICE_ACCOUNT_PREFIX,
         SERVICE_CREDENTIAL_PREFIX,
         "auth:fleet-grant:",
         "auth:fleet-grant-secret:",
+        "auth:remote-mutation:",
     ]
     .iter()
     .any(|prefix| key.starts_with(prefix))
     {
         return Ok(SnapshotKeyPolicy::Include);
     }
-    if matches!(key, "auth:jwt:active" | "auth:jwt:maintenance-lock")
-        || key == RESTORE_SENTINEL
+    if matches!(
+        key,
+        "auth:jwt:active" | "auth:jwt:maintenance-lock" | "auth:writer-lease"
+    ) || key == RESTORE_SENTINEL
         || [
             "auth:registration:",
             "auth:authentication:",
+            "auth:identifier-verification:",
             "auth:agent-handoff:",
+            "auth:rate-limit:",
             "auth:fleet-pairing:",
             "auth:backup:",
             OPERATOR_SEEN_PREFIX,
             "fleet:connection-attempt:",
+            "fleet:operations-cache:",
+            "fleet:analytics-quota:",
+            "fleet:analytics-quota-batch:",
         ]
         .iter()
         .any(|prefix| key.starts_with(prefix))
@@ -355,7 +387,39 @@ mod tests {
             SnapshotKeyPolicy::Include
         );
         assert_eq!(
+            snapshot_key_policy("auth:invitation:123").unwrap(),
+            SnapshotKeyPolicy::Include
+        );
+        assert_eq!(
+            snapshot_key_policy("auth:invitation-code:digest").unwrap(),
+            SnapshotKeyPolicy::Include
+        );
+        assert_eq!(
+            snapshot_key_policy("auth:webhook-delivery:123").unwrap(),
+            SnapshotKeyPolicy::Include
+        );
+        assert_eq!(
+            snapshot_key_policy("auth:remote-mutation:123").unwrap(),
+            SnapshotKeyPolicy::Include
+        );
+        assert_eq!(
+            snapshot_key_policy("auth:event-min-sequence").unwrap(),
+            SnapshotKeyPolicy::Include
+        );
+        assert_eq!(
             snapshot_key_policy("auth:registration:123").unwrap(),
+            SnapshotKeyPolicy::Exclude
+        );
+        assert_eq!(
+            snapshot_key_policy("auth:identifier-verification:123").unwrap(),
+            SnapshotKeyPolicy::Exclude
+        );
+        assert_eq!(
+            snapshot_key_policy("auth:rate-limit:tenant:identifier:subject:123").unwrap(),
+            SnapshotKeyPolicy::Exclude
+        );
+        assert_eq!(
+            snapshot_key_policy("fleet:operations-cache:123").unwrap(),
             SnapshotKeyPolicy::Exclude
         );
         assert!(snapshot_key_policy("auth:future-state:123").is_err());
@@ -363,7 +427,27 @@ mod tests {
             snapshot_key_policy("fleet:environment:123").unwrap(),
             SnapshotKeyPolicy::Include
         );
+        assert_eq!(
+            snapshot_key_policy(
+                "fleet:analytics-bucket:realm:00000000000000000001:00000000001722000000"
+            )
+            .unwrap(),
+            SnapshotKeyPolicy::Include
+        );
+        assert_eq!(
+            snapshot_key_policy("fleet:assignment-epoch:digest").unwrap(),
+            SnapshotKeyPolicy::Include
+        );
         assert!(snapshot_key_policy("fleet:future-state:123").is_err());
+        assert_eq!(
+            snapshot_key_policy("analytics:projector-cursor").unwrap(),
+            SnapshotKeyPolicy::Include
+        );
+        assert_eq!(
+            snapshot_key_policy("analytics:bucket:00000000001722000000").unwrap(),
+            SnapshotKeyPolicy::Include
+        );
+        assert!(snapshot_key_policy("analytics:future-state:123").is_err());
     }
 
     #[test]

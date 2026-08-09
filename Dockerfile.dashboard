@@ -7,25 +7,65 @@ RUN apt-get update \
   && rm -rf /var/lib/apt/lists/* \
   && rustup target add wasm32-unknown-unknown \
   && cargo install dioxus-cli --version 0.7.10 --locked
+RUN cargo install cargo-auditable --version 0.7.5 --locked
+
+# Dioxus invokes `cargo` itself. Put the auditable wrapper first on PATH so the
+# optimized WebAssembly carries the same dependency metadata as native binaries.
+COPY --chmod=0755 scripts/cargo-auditable-wrapper /usr/local/libexec/rustyauth/cargo
+ENV PATH="/usr/local/libexec/rustyauth:${PATH}"
 
 WORKDIR /src
 COPY console/Cargo.toml console/Cargo.lock console/build.rs console/Dioxus.toml ./console/
 COPY proto ./proto
-COPY dashboard/src/styles.css ./dashboard/src/styles.css
+COPY console/assets ./console/assets
 COPY site/public/brand ./site/public/brand
 COPY console/src ./console/src
 WORKDIR /src/console
 RUN dx build --web --release --debug-symbols=false --cargo-args="--locked"
 
-FROM caddy:2.10.2-alpine@sha256:4c6e91c6ed0e2fa03efd5b44747b625fec79bc9cd06ac5235a779726618e530d
+FROM golang:1.26.5-alpine3.23@sha256:622e56dbc11a8cfe87cafa2331e9a201877271cbff918af53d3be315f3da88cc AS gateway
+
+# The last official 2.11.4 image predates fixes in Go and several transitive
+# modules. Build the immutable upstream source with those fixed modules instead
+# of shipping known-fixable HIGH findings. Go's checksum database authenticates
+# the replacement module contents, and the selected Caddy HTTP packages are
+# tested before the binary is admitted to the scratch image.
+ARG CADDY_TAG=v2.11.4
+ARG CADDY_TAG_OBJECT=8ec11a4b7e39a5fd00da2fc5cb9b543e31fd7926
+ARG CADDY_REVISION=e2eee6a7fce366321294c9c2a79f3146891dcbdf
+RUN apk add --no-cache git
+WORKDIR /src/caddy
+RUN git init \
+  && git remote add origin https://github.com/caddyserver/caddy.git \
+  && git fetch --depth 1 origin "refs/tags/$CADDY_TAG:refs/tags/$CADDY_TAG" \
+  && test "$(git rev-parse "refs/tags/$CADDY_TAG")" = "$CADDY_TAG_OBJECT" \
+  && git checkout --detach "$CADDY_TAG" \
+  && test "$(git rev-parse HEAD)" = "$CADDY_REVISION"
+RUN go get golang.org/x/text@v0.39.0 google.golang.org/grpc@v1.82.1 \
+  && go mod tidy \
+  && CGO_ENABLED=0 go test ./cmd/... ./modules/caddyhttp/... \
+  && CGO_ENABLED=0 go build -trimpath \
+     -ldflags='-s -w -X github.com/caddyserver/caddy/v2.CustomVersion=v2.11.4-rustyauth.1' \
+     -o /usr/local/bin/caddy ./cmd/caddy
+
+COPY container-healthcheck /src/container-healthcheck
+WORKDIR /src/container-healthcheck
+RUN go test ./... \
+  && CGO_ENABLED=0 go build -trimpath -ldflags='-s -w' -o /usr/local/bin/container-healthcheck .
+
+FROM scratch
 LABEL org.opencontainers.image.title="RustyAuth Dashboard" \
       org.opencontainers.image.description="Stateless Dioxus web dashboard and bounded same-origin gateway" \
       org.opencontainers.image.source="https://github.com/rusty-auth/rustyauth" \
       org.opencontainers.image.licenses="Apache-2.0"
-RUN setcap -r /usr/bin/caddy \
-  && addgroup -S -g 10001 rustyauth-dashboard \
-  && adduser -S -D -H -u 10001 -G rustyauth-dashboard rustyauth-dashboard
-COPY dashboard/Caddyfile /etc/caddy/Caddyfile
+COPY --from=gateway /usr/local/bin/caddy /usr/local/bin/caddy
+COPY --from=gateway /usr/local/bin/container-healthcheck /usr/local/bin/container-healthcheck
+COPY --from=gateway /src/caddy/LICENSE /usr/share/licenses/caddy/LICENSE
+COPY console/Caddyfile /etc/caddy/Caddyfile
 COPY --chown=10001:10001 --from=build /src/console/target/dx/rustyauth-console/release/web/public /srv
+ENV XDG_CONFIG_HOME=/tmp/caddy/config \
+    XDG_DATA_HOME=/tmp/caddy/data
 USER 10001:10001
 EXPOSE 8080
+ENTRYPOINT ["/usr/local/bin/caddy"]
+CMD ["run", "--config", "/etc/caddy/Caddyfile", "--adapter", "caddyfile"]

@@ -15,7 +15,7 @@ use uuid::Uuid;
 use crate::{
     app_state::AppState,
     rate_limit::RateLimitClass,
-    store::{AuthenticationCeremony, IdentifierValue, SessionOrigin, now},
+    store::{AuthenticationCeremony, AuthenticationPurpose, IdentifierValue, SessionOrigin, now},
 };
 
 use super::{
@@ -23,6 +23,7 @@ use super::{
     dto::{AuthenticationVerifyInput, IdentifierLookupInput, IdentifierRequest},
     error::ApiError,
     guard::{require_origin, require_rate_limit},
+    record_telemetry_event,
     session::token_response,
     validate::lookup_identifier_ref,
 };
@@ -47,7 +48,8 @@ pub(super) async fn authentication_options(
         &headers,
         RateLimitClass::IdentifierProbe,
         None,
-    )?;
+    )
+    .await?;
     let user = state
         .store
         .user_by_identifier(&identifier)
@@ -66,6 +68,8 @@ pub(super) async fn authentication_options(
     let ceremony = AuthenticationCeremony {
         id: Uuid::new_v4(),
         user_id: user.id,
+        purpose: AuthenticationPurpose::SignIn,
+        initiating_session_id: None,
         expires_at: now().saturating_add(CEREMONY_SECONDS),
         state: ceremony_state,
     };
@@ -74,6 +78,12 @@ pub(super) async fn authentication_options(
         .save_authentication(&ceremony)
         .await
         .map_err(ApiError::internal)?;
+    record_telemetry_event(
+        state.store.clone(),
+        "authentication.options.started",
+        Some(user.id),
+        json!({ "flow": "passkey" }),
+    );
     Ok(Json(
         json!({ "ceremonyId": ceremony.id, "options": options }),
     ))
@@ -85,18 +95,61 @@ pub(super) async fn authentication_verify(
     headers: HeaderMap,
     Json(input): Json<AuthenticationVerifyInput>,
 ) -> Result<Response, ApiError> {
+    let started = std::time::Instant::now();
     require_origin(&state, &headers)?;
-    require_rate_limit(&state, peer, &headers, RateLimitClass::Ceremony, None)?;
-    let ceremony = state
-        .store
-        .take_authentication(input.ceremony_id)
-        .await
-        .map_err(|_| ApiError::unauthorized("authentication ceremony is invalid or expired"))?;
-    let result = state
+    require_rate_limit(&state, peer, &headers, RateLimitClass::Ceremony, None).await?;
+    let ceremony = match state.store.take_authentication(input.ceremony_id).await {
+        Ok(ceremony) => ceremony,
+        Err(_) => {
+            record_authentication_outcome(
+                &state,
+                None,
+                "authentication.failed",
+                "challengeExpired",
+                started,
+            );
+            return Err(ApiError::unauthorized(
+                "authentication ceremony is invalid or expired",
+            ));
+        }
+    };
+    if ceremony.purpose != AuthenticationPurpose::SignIn || ceremony.initiating_session_id.is_some()
+    {
+        record_authentication_outcome(
+            &state,
+            Some(ceremony.user_id),
+            "authentication.denied",
+            "policyDenied",
+            started,
+        );
+        return Err(ApiError::unauthorized(
+            "authentication ceremony is invalid or expired",
+        ));
+    }
+    let result = match state
         .webauthn
         .finish_passkey_authentication(&input.response, &ceremony.state)
-        .map_err(|_| ApiError::unauthorized("passkey verification failed"))?;
+    {
+        Ok(result) => result,
+        Err(_) => {
+            record_authentication_outcome(
+                &state,
+                Some(ceremony.user_id),
+                "authentication.failed",
+                "invalidCredential",
+                started,
+            );
+            return Err(ApiError::unauthorized("passkey verification failed"));
+        }
+    };
     if !result.user_verified() {
+        record_authentication_outcome(
+            &state,
+            Some(ceremony.user_id),
+            "authentication.denied",
+            "policyDenied",
+            started,
+        );
         return Err(ApiError::unauthorized("passkey did not verify the user"));
     }
     let user = state
@@ -116,7 +169,33 @@ pub(super) async fn authentication_verify(
         )
         .await
         .map_err(ApiError::internal)?;
+    record_authentication_outcome(
+        &state,
+        Some(user.id),
+        "authentication.completed",
+        "success",
+        started,
+    );
     token_response(&state, &user, &session, &session_token, StatusCode::OK)
+}
+
+fn record_authentication_outcome(
+    state: &AppState,
+    subject: Option<Uuid>,
+    event_type: &'static str,
+    outcome_class: &'static str,
+    started: std::time::Instant,
+) {
+    record_telemetry_event(
+        state.store.clone(),
+        event_type,
+        subject,
+        json!({
+            "flow": "passkey",
+            "outcomeClass": outcome_class,
+            "latencyMilliseconds": started.elapsed().as_millis().min(u128::from(u64::MAX)) as u64,
+        }),
+    );
 }
 
 fn lookup_identifier(

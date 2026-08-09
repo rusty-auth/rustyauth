@@ -1,8 +1,8 @@
 # 0004: Federated Fleet Analytics with trusted rollup ingestion
 
-**Status:** Proposed; activation is gated on completion of the main Fleet roadmap through M8
+**Status:** Accepted; M9 semantic lock and M10 realm export completed on 9 August 2026
 
-**Date:** 8 August 2026
+**Date:** 8 August 2026; accepted 9 August 2026
 
 ## Context
 
@@ -16,9 +16,12 @@ shared analytics service by default would also expand residency, retention, brea
 beyond what bounded operational metrics require.
 
 RustyAuth already has the right control-plane primitives: stable realm identity, an authoritative hierarchy
-registry, environment-scoped credentials, outbound mTLS connectors, source-tagged read models and a rule that
-missing realms remain visibly stale rather than becoming zero. The analytics feature should extend those
-boundaries rather than create a parallel connection system.
+registry, environment-scoped public-endpoint credentials, a versioned outbound-connector contract,
+source-tagged read models and a rule that missing realms remain visibly stale rather than becoming zero. The
+outbound runtime was not served at activation, so M10 owned that adapter and its connection identity. M10 now
+carries telemetry frames over native gRPC using TLS plus a directional proof derived from the pairing
+credential; production ingress may additionally enforce mTLS workload identity. The analytics feature extends
+the existing boundary rather than creating a parallel identity system.
 
 GreptimeDB is a Rust time-series and observability database with SQL/PromQL, object-storage support,
 deduplicating time-series keys, external Parquet tables and continuous Flow aggregations. It is a better fit
@@ -30,9 +33,10 @@ schema drift and cross-cloud availability.
 
 ### Activate only after Fleet is shipped
 
-Federated Fleet Analytics is a post-Fleet program. Production implementation begins only after M8 of the main
-roadmap passes and Fleet is described as shipped in the README and release notes. Planning and non-customer
-benchmarks may occur earlier, but no realm emits central telemetry merely to prepare for the feature.
+Federated Fleet Analytics is a post-Fleet program. The maintainer confirmed Fleet delivery and activated M9
+on 9 August 2026. M10 later passed its projector, outbox, authenticated-transport and failure-isolation gates,
+so newly paired realms advertise and may emit `telemetry.rollups.v1`. Customer-facing hierarchical analytics
+remain gated by central storage and read milestones.
 
 ### Project bounded rollups locally
 
@@ -46,8 +50,9 @@ the realm's existing storage and failure boundary; exporter failure never blocks
 
 ### Ingest through the Fleet trust boundary
 
-The normal hot path uses the existing realm-initiated management connection or a dedicated streaming service
-with the same mTLS identity, realm binding, limits and interceptors. A realm never writes to GreptimeDB.
+The normal hot path uses telemetry batch/ack frames on the existing realm-initiated
+`RealmConnectorService.Connect` stream, bound to the paired connection proof, limits and realm identity. A
+realm never writes to GreptimeDB.
 
 The Fleet ingestion gateway resolves organization, project and environment from the authenticated realm and
 Fleet registry. It stamps those IDs and an assignment epoch on accepted facts. Hierarchy fields supplied by

@@ -3,8 +3,8 @@
 A static page — `index.html` plus `main.js`, no build step, no dependencies — that walks the full browser flow
 against a local RustyAuth at `http://localhost:8081`:
 
-1. register a passkey (initial enrolment needs the administrative bootstrap token; the input is prefilled with
-   the public dev fixture `vtr-local-enrolment-only` from `.env.example`);
+1. register a passkey (initial enrolment needs the administrative bootstrap token generated in the ignored
+   `.env.standalone.local`);
 2. sign in with the same email;
 3. mint a short-lived token with `POST /v1/token` and show its decoded claims;
 4. sign out.
@@ -15,21 +15,22 @@ WebAuthn and RustyAuth's CORS policy are bound to one exact browser origin. This
 `http://localhost:8000`, so the stack must be started with that as the relying-party origin (variables from
 `docs/CONFIGURATION.md`):
 
+From the repository root:
+
 ```sh
-WEBAUTHN_RP_ORIGIN=http://localhost:8000 docker compose up --build
+STANDALONE_RP_ORIGIN=http://localhost:8000 scripts/local-stack standalone up
 ```
 
-- `WEBAUTHN_RP_ORIGIN` must be the exact origin serving this page — `http://localhost:8000`, no trailing
-  slash. Compose's default is `http://localhost:8081`, which only fits the same-origin dashboard.
-- `WEBAUTHN_RP_ID` must equal the host of that origin. The default `localhost` is already right, so it needs
-  no change. Ports 8000 and 8081 are also the same _site_, which is what lets the `SameSite=Strict` session
+- The RP origin must be the exact origin serving this page — `http://localhost:8000`, no trailing slash. The
+  launcher's default is `http://localhost:8081`, which fits the same-origin dashboard.
+- The RP ID must equal the host of that origin. The local value `localhost` is already right, so it needs no
+  change. Ports 8000 and 8081 are also the same _site_, which is what lets the `SameSite=Strict` session
   cookie flow between them.
-- `AUTH_ISSUER` stays `http://localhost:8081`; the issuer and the relying-party application may be different
+- The public issuer stays `http://localhost:8081`; the issuer and relying-party application may be different
   origins.
 
-If you run the stack from a `.env` file instead, set `WEBAUTHN_RP_ORIGIN=http://localhost:8000` there.
-Changing the RP origin does not invalidate existing local passkeys as long as `WEBAUTHN_RP_ID` stays
-`localhost`.
+Copy `BOOTSTRAP_TOKEN` from `.env.standalone.local` into the example's input only for this local evaluation.
+Changing the RP origin does not invalidate existing local passkeys as long as the RP ID remains `localhost`.
 
 ## 2. Serve this directory
 
@@ -48,3 +49,6 @@ Then open <http://localhost:8000>. Register, sign in, mint a token — then past
 
 Note: the page decodes the JWT payload for display only. A real downstream service must verify the signature
 against `/.well-known/jwks.json`; that is what the verify-jwt-node example shows.
+
+Never copy the local bootstrap value into source code, logs or a production browser bundle. Production
+enrolment needs a reviewed invitation or provisioning boundary.

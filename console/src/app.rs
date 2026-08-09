@@ -7,33 +7,38 @@ use crate::fixtures::{
     preview_fleet_environments, preview_fleet_organizations, preview_fleet_projects,
     preview_organization, preview_service_accounts, preview_users, preview_webhooks,
 };
-use crate::fleet_client;
+use crate::fleet_client::{self, DeploymentRole, EnrollmentCredential};
 use crate::models::{NavKey, OrganizationView, ServiceAccountView, UserView, WebhookView};
-use crate::proto::rustyauth::fleet::v1::{
-    AuditEvent, ConnectionState, Environment as FleetEnvironment, EnvironmentKind, FleetOverview,
-    Organization as FleetOrganization, Project as FleetProject, RealmConnection,
+use crate::proto::rustyauth::analytics::v1::{
+    AnalyticsMetric, AnalyticsOverview, AnalyticsPolicy, AnalyticsScope, AnalyticsScopeKind,
+    AuthenticationFunnel, CompareScopesResponse, FailureBreakdown, MetricSeries,
 };
+use crate::proto::rustyauth::fleet::v1::{
+    AuditEvent, ConnectionMode, ConnectionState, Environment as FleetEnvironment, EnvironmentKind,
+    FleetOverview, FleetRealmOperations, Organization as FleetOrganization,
+    Project as FleetProject, RealmConnection,
+};
+use crate::proto::rustyauth::management::v1::RemoteMutationOperation;
 
-const DASHBOARD_STYLES: &str = include_str!("../../dashboard/src/styles.css");
 const BRAND_LOCKUP: &[u8] = include_bytes!("../../site/public/brand/rustyauth-lockup.png");
 const BRAND_LOCKUP_DARK: &[u8] =
     include_bytes!("../../site/public/brand/rustyauth-lockup-dark.png");
 const BRAND_MARK: &[u8] = include_bytes!("../../site/public/brand/rustyauth-mark.png");
 const BRAND_MARK_TRANSPARENT: &[u8] =
     include_bytes!("../../site/public/brand/rustyauth-mark-transparent.png");
-const OPERATOR_PAPER: &[u8] = include_bytes!("../../site/public/brand/operator-paper-v1.webp");
 
 #[derive(Clone, Copy, PartialEq)]
 enum AppView {
     Dashboard(DashboardMode),
     SignIn(SignInVariant),
     Setup,
+    Recovery,
 }
 
 #[derive(Clone, Copy, PartialEq)]
 enum DashboardMode {
     Preview,
-    Live,
+    Live(DeploymentRole),
 }
 
 #[derive(Clone, Copy, PartialEq)]
@@ -50,49 +55,51 @@ pub fn App() -> Element {
     let mut mobile_nav = use_signal(|| false);
     let mut organization = use_signal(preview_organization);
     let accounts = use_signal(preview_service_accounts);
-    let paper_uri = format!(
-        "data:image/webp;base64,{}",
-        base64::engine::general_purpose::STANDARD.encode(OPERATOR_PAPER)
-    );
-    let embedded_styles = format!(
-        "{}\n.auth-copy h1 {{ width: 110%; max-width: none; transform: scaleX(0.925); transform-origin: left top; }}\n.aperture-copy h1 {{ width: 107.53%; transform: scaleX(0.93); transform-origin: left top; }}",
-        DASHBOARD_STYLES.replace("/brand/operator-paper-v1.webp", &paper_uri)
-    );
-
     rsx! {
-        style { dangerous_inner_html: embedded_styles }
+        document::Stylesheet { href: asset!("/assets/styles.css") }
         match view() {
             AppView::SignIn(SignInVariant::Classic) => rsx! {
                 SignInScreen {
-                    on_authenticated: move |_| {
-                        active.set(NavKey::FleetOverview);
-                        navigate_to(&mut view, AppView::Dashboard(DashboardMode::Live));
+                    on_authenticated: move |role| {
+                        active.set(if role == DeploymentRole::Realm { NavKey::Overview } else { NavKey::FleetOverview });
+                        navigate_to(&mut view, AppView::Dashboard(DashboardMode::Live(role)));
                     },
                     on_preview: move |_| {
                         active.set(NavKey::FleetOverview);
                         navigate_to(&mut view, AppView::Dashboard(DashboardMode::Preview));
                     },
                     on_setup: move |_| navigate_to(&mut view, AppView::Setup),
+                    on_recovery: move |_| navigate_to(&mut view, AppView::Recovery),
                 }
             },
             AppView::SignIn(SignInVariant::Aperture) => rsx! {
                 ApertureSignInScreen {
-                    on_authenticated: move |_| {
-                        active.set(NavKey::FleetOverview);
-                        navigate_to(&mut view, AppView::Dashboard(DashboardMode::Live));
+                    on_authenticated: move |role| {
+                        active.set(if role == DeploymentRole::Realm { NavKey::Overview } else { NavKey::FleetOverview });
+                        navigate_to(&mut view, AppView::Dashboard(DashboardMode::Live(role)));
                     },
                     on_preview: move |_| {
                         active.set(NavKey::FleetOverview);
                         navigate_to(&mut view, AppView::Dashboard(DashboardMode::Preview));
                     },
                     on_setup: move |_| navigate_to(&mut view, AppView::Setup),
+                    on_recovery: move |_| navigate_to(&mut view, AppView::Recovery),
                 }
             },
             AppView::Setup => rsx! {
                 OperatorSetupScreen {
-                    on_registered: move |_| {
-                        active.set(NavKey::FleetOverview);
-                        navigate_to(&mut view, AppView::Dashboard(DashboardMode::Live));
+                    on_registered: move |role| {
+                        active.set(if role == DeploymentRole::Realm { NavKey::Overview } else { NavKey::FleetOverview });
+                        navigate_to(&mut view, AppView::Dashboard(DashboardMode::Live(role)));
+                    },
+                    on_back: move |_| navigate_to(&mut view, AppView::SignIn(SignInVariant::Classic)),
+                }
+            },
+            AppView::Recovery => rsx! {
+                OperatorRecoveryScreen {
+                    on_recovered: move |role| {
+                        active.set(if role == DeploymentRole::Realm { NavKey::Security } else { NavKey::FleetOverview });
+                        navigate_to(&mut view, AppView::Dashboard(DashboardMode::Live(role)));
                     },
                     on_back: move |_| navigate_to(&mut view, AppView::SignIn(SignInVariant::Classic)),
                 }
@@ -110,13 +117,14 @@ pub fn App() -> Element {
                     Sidebar {
                         active: active(),
                         preview: mode == DashboardMode::Preview,
+                        deployment_role: match mode { DashboardMode::Live(role) => Some(role), DashboardMode::Preview => None },
                         mobile_open: mobile_nav(),
                         on_navigate: move |key| {
                             active.set(key);
                             mobile_nav.set(false);
                         },
                         on_sign_out: move |_| {
-                            if mode == DashboardMode::Live {
+                            if matches!(mode, DashboardMode::Live(_)) {
                                 spawn(async move {
                                     let _ = fleet_client::sign_out().await;
                                     navigate_to(&mut view, AppView::SignIn(SignInVariant::Classic));
@@ -132,7 +140,7 @@ pub fn App() -> Element {
                             on_menu: move |_| mobile_nav.toggle(),
                             on_navigate: move |key| active.set(key),
                             on_sign_out: move |_| {
-                                if mode == DashboardMode::Live {
+                                if matches!(mode, DashboardMode::Live(_)) {
                                     spawn(async move {
                                         let _ = fleet_client::sign_out().await;
                                         navigate_to(&mut view, AppView::SignIn(SignInVariant::Classic));
@@ -147,8 +155,14 @@ pub fn App() -> Element {
                                 preview: mode == DashboardMode::Preview,
                                 on_connect: move |_| navigate_to(&mut view, AppView::SignIn(SignInVariant::Classic)),
                             }
-                            match active() {
-                                NavKey::FleetOverview | NavKey::Organizations | NavKey::Projects | NavKey::Environments | NavKey::Connections | NavKey::Audit => rsx! {
+                            if mode == DashboardMode::Live(DeploymentRole::Realm) {
+                                RealmWorkspace {
+                                    active: active(),
+                                    on_navigate: move |key| active.set(key),
+                                    on_session_revoked: move |_| navigate_to(&mut view, AppView::SignIn(SignInVariant::Classic)),
+                                }
+                            } else { match active() {
+                                NavKey::FleetOverview | NavKey::Organizations | NavKey::Projects | NavKey::Environments | NavKey::Connections | NavKey::Audit | NavKey::Metrics => rsx! {
                                     FleetWorkspace { mode, active: active(), on_navigate: move |key| active.set(key) }
                                 },
                                 NavKey::Overview => rsx! {
@@ -167,8 +181,8 @@ pub fn App() -> Element {
                                 },
                                 NavKey::ServiceAccounts => rsx! { ServiceAccountsPage { accounts: accounts() } },
                                 NavKey::Webhooks => rsx! { WebhooksPage {} },
-                                NavKey::Metrics => rsx! { MetricsPage {} },
-                            }
+                                NavKey::Security => rsx! { section { class: "panel empty-panel", h2 { "Account security is available on a live realm." } } },
+                            } }
                         }
                     }
                 }
@@ -188,13 +202,16 @@ fn initial_app_view() -> AppView {
             return AppView::Dashboard(DashboardMode::Preview);
         }
         if search.contains("fleet=1") {
-            return AppView::Dashboard(DashboardMode::Live);
+            return AppView::Dashboard(DashboardMode::Live(DeploymentRole::FleetControlPlane));
         }
         if search.contains("login=aperture") {
             return AppView::SignIn(SignInVariant::Aperture);
         }
         if search.contains("setup=1") {
             return AppView::Setup;
+        }
+        if search.contains("recovery=1") {
+            return AppView::Recovery;
         }
     }
 
@@ -210,10 +227,14 @@ fn navigate_to(view: &mut Signal<AppView>, next: AppView) {
     {
         let path = match next {
             AppView::Dashboard(DashboardMode::Preview) => "/?preview=1",
-            AppView::Dashboard(DashboardMode::Live) => "/?fleet=1",
+            AppView::Dashboard(DashboardMode::Live(DeploymentRole::FleetControlPlane)) => {
+                "/?fleet=1"
+            }
+            AppView::Dashboard(DashboardMode::Live(DeploymentRole::Realm)) => "/?realm=1",
             AppView::SignIn(SignInVariant::Classic) => "/",
             AppView::SignIn(SignInVariant::Aperture) => "/?login=aperture",
             AppView::Setup => "/?setup=1",
+            AppView::Recovery => "/?recovery=1",
         };
         let _ = history.replace_state_with_url(&wasm_bindgen::JsValue::NULL, "", Some(path));
     }
@@ -226,16 +247,59 @@ fn png_data(bytes: &[u8]) -> String {
     )
 }
 
+#[cfg(target_arch = "wasm32")]
+fn operator_credential_initial() -> String {
+    "admin@rustyauth.local".into()
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn operator_credential_initial() -> String {
+    String::new()
+}
+
+#[cfg(target_arch = "wasm32")]
+const fn operator_credential_ui() -> (&'static str, &'static str, &'static str, &'static str) {
+    (
+        "Operator email",
+        "email",
+        "username webauthn",
+        "Continue with passkey",
+    )
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+const fn operator_credential_ui() -> (&'static str, &'static str, &'static str, &'static str) {
+    (
+        "Native-console token",
+        "password",
+        "off",
+        "Connect this device",
+    )
+}
+
+#[cfg(target_arch = "wasm32")]
+const fn operator_credential_missing() -> &'static str {
+    "Enter the operator email bound to your passkey."
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+const fn operator_credential_missing() -> &'static str {
+    "Paste the short-lived token minted from the browser dashboard."
+}
+
 #[component]
 fn SignInScreen(
-    on_authenticated: EventHandler<()>,
+    on_authenticated: EventHandler<DeploymentRole>,
     on_preview: EventHandler<()>,
     on_setup: EventHandler<()>,
+    on_recovery: EventHandler<()>,
 ) -> Element {
-    let mut email = use_signal(|| "admin@rustyauth.local".to_string());
+    let mut email = use_signal(operator_credential_initial);
     let mut error = use_signal(String::new);
     let mut authenticating = use_signal(|| false);
     let brand_mark = png_data(BRAND_MARK);
+    let (credential_label, credential_type, credential_autocomplete, submit_label) =
+        operator_credential_ui();
 
     rsx! {
         main { class: "auth-stage",
@@ -255,25 +319,28 @@ fn SignInScreen(
                 form { onsubmit: move |event| {
                     event.prevent_default();
                     if email().trim().is_empty() {
-                        error.set("Enter the operator email bound to your passkey.".to_string());
+                        error.set(operator_credential_missing().to_string());
                     } else {
                         authenticating.set(true);
                         error.set(String::new());
                         let operator_email = email().trim().to_owned();
                         spawn(async move {
                             match fleet_client::authenticate_passkey(&operator_email).await {
-                                Ok(()) => on_authenticated.call(()),
+                                Ok(()) => match fleet_client::deployment_role().await {
+                                    Ok(role) => on_authenticated.call(role),
+                                    Err(reason) => error.set(reason.0),
+                                },
                                 Err(reason) => error.set(reason.0),
                             }
                             authenticating.set(false);
                         });
                     }
                 },
-                    label { r#for: "operator-email", "Operator email" }
+                    label { r#for: "operator-email", "{credential_label}" }
                     input {
                         id: "operator-email",
-                        r#type: "email",
-                        autocomplete: "username webauthn",
+                        r#type: credential_type,
+                        autocomplete: credential_autocomplete,
                         value: email(),
                         required: true,
                         oninput: move |event| {
@@ -289,7 +356,7 @@ fn SignInScreen(
                     }
                     button { class: "button primary wide", r#type: "submit", disabled: authenticating(),
                         Icon { icon: TablerIcon::ShieldCheck, size: 18 }
-                        if authenticating() { "Waiting for passkey…" } else { "Continue with passkey" }
+                        if authenticating() { "Verifying…" } else { "{submit_label}" }
                     }
                 }
                 div { class: "auth-divider", span { "Local evaluation" } }
@@ -297,11 +364,20 @@ fn SignInScreen(
                     "Open populated preview "
                     Icon { icon: TablerIcon::ArrowUpRight, size: 17 }
                 }
-                button { class: "auth-setup-link", r#type: "button", onclick: move |_| on_setup.call(()),
-                    "Set up the first operator passkey"
+                if cfg!(target_arch = "wasm32") {
+                    button { class: "auth-setup-link", r#type: "button", onclick: move |_| on_setup.call(()),
+                        "Set up the first operator passkey"
+                    }
+                    button { class: "auth-setup-link", r#type: "button", onclick: move |_| on_recovery.call(()),
+                        "Recover access with an offline code"
+                    }
                 }
                 p { class: "auth-footnote",
-                    "Only users listed in " code { "AUTH_OPERATOR_EMAILS" } " can bootstrap operator access."
+                    if cfg!(target_arch = "wasm32") {
+                        "Only users listed in " code { "AUTH_OPERATOR_EMAILS" } " can bootstrap operator access."
+                    } else {
+                        "Tokens expire after at most 15 minutes and remain bound to the passkey that minted them."
+                    }
                 }
             }
             aside { class: "auth-aside",
@@ -317,10 +393,89 @@ fn SignInScreen(
 }
 
 #[component]
-fn OperatorSetupScreen(on_registered: EventHandler<()>, on_back: EventHandler<()>) -> Element {
+fn OperatorRecoveryScreen(
+    on_recovered: EventHandler<DeploymentRole>,
+    on_back: EventHandler<()>,
+) -> Element {
+    let mut email = use_signal(String::new);
+    let mut recovery_code = use_signal(String::new);
+    let mut label = use_signal(|| "Recovered passkey".to_string());
+    let mut error = use_signal(String::new);
+    let mut recovering = use_signal(|| false);
+    let brand_mark = png_data(BRAND_MARK);
+
+    rsx! {
+        main { class: "auth-stage",
+            section { class: "auth-card setup-card",
+                header { class: "auth-brand",
+                    img { src: brand_mark, width: "48", height: "48", alt: "" }
+                    div { strong { "Rusty" span { "Auth" } } small { "Offline account recovery" } }
+                }
+                div { class: "auth-copy",
+                    p { class: "eyebrow", "One-time recovery" }
+                    h1 { "Replace a lost authenticator." }
+                    p { "Use one offline recovery code to enrol a new passkey. Existing sessions and all remaining recovery codes will be revoked." }
+                }
+                form { onsubmit: move |event| {
+                    event.prevent_default();
+                    if email().trim().is_empty() || recovery_code().trim().is_empty() || label().trim().is_empty() {
+                        error.set("Email, recovery code, and passkey label are required.".into());
+                        return;
+                    }
+                    recovering.set(true);
+                    error.set(String::new());
+                    let account_email = email().trim().to_owned();
+                    let code = recovery_code().trim().to_owned();
+                    let passkey_label = label().trim().to_owned();
+                    recovery_code.set(String::new());
+                    spawn(async move {
+                        match fleet_client::recover_operator_passkey(&account_email, &code, &passkey_label).await {
+                            Ok(()) => match fleet_client::deployment_role().await {
+                                Ok(role) => on_recovered.call(role),
+                                Err(reason) => error.set(reason.0),
+                            },
+                            Err(reason) => error.set(reason.0),
+                        }
+                        recovering.set(false);
+                    });
+                },
+                    label { r#for: "recovery-email", "Account email" }
+                    input { id: "recovery-email", r#type: "email", autocomplete: "username", value: email(), required: true, oninput: move |event| email.set(event.value()) }
+                    label { r#for: "recovery-code", "Offline recovery code" }
+                    input { id: "recovery-code", r#type: "password", autocomplete: "one-time-code", value: recovery_code(), required: true, oninput: move |event| recovery_code.set(event.value()) }
+                    label { r#for: "recovery-label", "New passkey label" }
+                    input { id: "recovery-label", value: label(), maxlength: 100, required: true, oninput: move |event| label.set(event.value()) }
+                    if !error().is_empty() {
+                        p { class: "form-error", role: "alert", Icon { icon: TablerIcon::AlertTriangle, size: 16 } "{error}" }
+                    }
+                    button { class: "button primary wide", r#type: "submit", disabled: recovering(),
+                        Icon { icon: TablerIcon::ShieldCheck, size: 18 }
+                        if recovering() { "Creating replacement passkey…" } else { "Recover account" }
+                    }
+                }
+                button { class: "auth-setup-link", r#type: "button", onclick: move |_| on_back.call(()), "Back to operator sign in" }
+            }
+            aside { class: "auth-aside",
+                p { class: "eyebrow", "Containment" }
+                div { class: "boundary-stack",
+                    AuthBoundaryItem { icon: TablerIcon::Key, label: "Recovery code", detail: "Consumed exactly once" }
+                    AuthBoundaryItem { icon: TablerIcon::ShieldCheck, label: "New passkey", detail: "User-verified enrolment", class: "accent" }
+                    AuthBoundaryItem { icon: TablerIcon::Logout, label: "Old sessions", detail: "Revoked on success", class: "dark" }
+                }
+            }
+        }
+    }
+}
+
+#[component]
+fn OperatorSetupScreen(
+    on_registered: EventHandler<DeploymentRole>,
+    on_back: EventHandler<()>,
+) -> Element {
     let mut email = use_signal(|| "admin@rustyauth.local".to_string());
     let mut display_name = use_signal(|| "Local owner".to_string());
     let mut bootstrap_token = use_signal(String::new);
+    let mut invitation_code = use_signal(String::new);
     let mut error = use_signal(String::new);
     let mut registering = use_signal(|| false);
     let brand_mark = png_data(BRAND_MARK);
@@ -339,19 +494,29 @@ fn OperatorSetupScreen(on_registered: EventHandler<()>, on_back: EventHandler<()
                 }
                 form { onsubmit: move |event| {
                     event.prevent_default();
-                    if email().trim().is_empty() || display_name().trim().is_empty() || bootstrap_token().trim().is_empty() {
-                        error.set("Complete all fields before creating the operator passkey.".into());
+                    let has_bootstrap = !bootstrap_token().trim().is_empty();
+                    let has_invitation = !invitation_code().trim().is_empty();
+                    if email().trim().is_empty() || display_name().trim().is_empty() || has_bootstrap == has_invitation {
+                        error.set("Complete the identity fields and provide exactly one invitation or development bootstrap token.".into());
                         return;
                     }
                     registering.set(true);
                     error.set(String::new());
                     let operator_email = email().trim().to_owned();
                     let operator_name = display_name().trim().to_owned();
-                    let token = bootstrap_token().trim().to_owned();
+                    let enrolment = if has_invitation {
+                        EnrollmentCredential::ProductionInvitation(invitation_code().trim().to_owned())
+                    } else {
+                        EnrollmentCredential::DevelopmentBootstrap(bootstrap_token().trim().to_owned())
+                    };
                     bootstrap_token.set(String::new());
+                    invitation_code.set(String::new());
                     spawn(async move {
-                        match fleet_client::register_operator_passkey(&operator_email, &operator_name, &token).await {
-                            Ok(()) => on_registered.call(()),
+                        match fleet_client::register_operator_passkey(&operator_email, &operator_name, &enrolment).await {
+                            Ok(()) => match fleet_client::deployment_role().await {
+                                Ok(role) => on_registered.call(role),
+                                Err(reason) => error.set(reason.0),
+                            },
                             Err(reason) => error.set(reason.0),
                         }
                         registering.set(false);
@@ -361,8 +526,11 @@ fn OperatorSetupScreen(on_registered: EventHandler<()>, on_back: EventHandler<()
                     input { id: "setup-name", value: display_name(), required: true, autocomplete: "name", oninput: move |event| display_name.set(event.value()) }
                     label { r#for: "setup-email", "Allowlisted operator email" }
                     input { id: "setup-email", r#type: "email", value: email(), required: true, autocomplete: "username", oninput: move |event| email.set(event.value()) }
-                    label { r#for: "setup-token", "Bootstrap token" }
-                    input { id: "setup-token", r#type: "password", value: bootstrap_token(), required: true, autocomplete: "off", oninput: move |event| bootstrap_token.set(event.value()) }
+                    label { r#for: "setup-invitation", "Production invitation code" }
+                    input { id: "setup-invitation", r#type: "password", value: invitation_code(), autocomplete: "off", oninput: move |event| { invitation_code.set(event.value()); bootstrap_token.set(String::new()); } }
+                    div { class: "auth-divider", span { "or local development" } }
+                    label { r#for: "setup-token", "Development bootstrap token" }
+                    input { id: "setup-token", r#type: "password", value: bootstrap_token(), autocomplete: "off", oninput: move |event| { bootstrap_token.set(event.value()); invitation_code.set(String::new()); } }
                     if !error().is_empty() {
                         p { class: "form-error", role: "alert", Icon { icon: TablerIcon::AlertTriangle, size: 16 } "{error}" }
                     }
@@ -372,7 +540,7 @@ fn OperatorSetupScreen(on_registered: EventHandler<()>, on_back: EventHandler<()
                     }
                 }
                 button { class: "auth-setup-link", r#type: "button", onclick: move |_| on_back.call(()), "Back to operator sign in" }
-                p { class: "auth-footnote", "Local setup reads the token from " code { ".env.fleet.local" } ". Production should use a reviewed invitation controller." }
+                p { class: "auth-footnote", "Production invitations are identifier-bound and one-time. Local setup may read the bootstrap token from " code { ".env.fleet.local" } "." }
             }
             aside { class: "auth-aside",
                 p { class: "eyebrow", "Credential path" }
@@ -409,15 +577,18 @@ fn AuthBoundaryItem(
 
 #[component]
 fn ApertureSignInScreen(
-    on_authenticated: EventHandler<()>,
+    on_authenticated: EventHandler<DeploymentRole>,
     on_preview: EventHandler<()>,
     on_setup: EventHandler<()>,
+    on_recovery: EventHandler<()>,
 ) -> Element {
-    let mut email = use_signal(|| "admin@rustyauth.local".to_string());
+    let mut email = use_signal(operator_credential_initial);
     let mut error = use_signal(String::new);
     let mut authenticating = use_signal(|| false);
     let brand_lockup = png_data(BRAND_LOCKUP_DARK);
     let emboss_mark = png_data(BRAND_MARK_TRANSPARENT);
+    let (credential_label, credential_type, credential_autocomplete, submit_label) =
+        operator_credential_ui();
 
     rsx! {
         main { class: "aperture-auth-stage",
@@ -450,25 +621,28 @@ fn ApertureSignInScreen(
                     form { onsubmit: move |event| {
                         event.prevent_default();
                         if email().trim().is_empty() {
-                            error.set("Enter the operator email bound to your passkey.".to_string());
+                            error.set(operator_credential_missing().to_string());
                         } else {
                             authenticating.set(true);
                             error.set(String::new());
                             let operator_email = email().trim().to_owned();
                             spawn(async move {
                                 match fleet_client::authenticate_passkey(&operator_email).await {
-                                    Ok(()) => on_authenticated.call(()),
+                                    Ok(()) => match fleet_client::deployment_role().await {
+                                        Ok(role) => on_authenticated.call(role),
+                                        Err(reason) => error.set(reason.0),
+                                    },
                                     Err(reason) => error.set(reason.0),
                                 }
                                 authenticating.set(false);
                             });
                         }
                     },
-                        label { r#for: "aperture-operator-email", "Operator email" }
+                        label { r#for: "aperture-operator-email", "{credential_label}" }
                         input {
                             id: "aperture-operator-email",
-                            r#type: "email",
-                            autocomplete: "username webauthn",
+                            r#type: credential_type,
+                            autocomplete: credential_autocomplete,
                             value: email(),
                             required: true,
                             oninput: move |event| {
@@ -484,7 +658,7 @@ fn ApertureSignInScreen(
                         }
                         button { class: "aperture-submit", r#type: "submit", disabled: authenticating(),
                             Icon { icon: TablerIcon::ShieldCheck, size: 19 }
-                            span { if authenticating() { "Waiting for passkey…" } else { "Continue with passkey" } }
+                            span { if authenticating() { "Verifying…" } else { "{submit_label}" } }
                         }
                     }
                     div { class: "aperture-divider", span { "Local evaluation" } }
@@ -494,6 +668,9 @@ fn ApertureSignInScreen(
                     }
                     button { class: "aperture-setup-link", r#type: "button", onclick: move |_| on_setup.call(()),
                         "Set up the first operator passkey"
+                    }
+                    button { class: "aperture-setup-link", r#type: "button", onclick: move |_| on_recovery.call(()),
+                        "Recover access with an offline code"
                     }
                     p { class: "aperture-footnote",
                         "Only users listed in " code { "AUTH_OPERATOR_EMAILS" } " can bootstrap operator access."
@@ -523,6 +700,7 @@ fn ApertureBoundaryItem(
 fn Sidebar(
     active: NavKey,
     preview: bool,
+    deployment_role: Option<DeploymentRole>,
     mobile_open: bool,
     on_navigate: EventHandler<NavKey>,
     on_sign_out: EventHandler<()>,
@@ -557,48 +735,50 @@ fn Sidebar(
             div { class: "instance-switcher",
                 span { class: "instance-mark", "FL" }
                 div {
-                    strong { "RustyAuth Fleet" }
+                    strong { if deployment_role == Some(DeploymentRole::Realm) { "RustyAuth Realm" } else { "RustyAuth Fleet" } }
                     small { if preview { "Sample control plane" } else { "Connected control plane" } }
                 }
                 Icon { icon: TablerIcon::ChevronRight, size: 16 }
             }
             nav { class: "side-nav", aria_label: "Control plane",
-                p { "Workspace" }
-                NavButton {
+                if deployment_role != Some(DeploymentRole::Realm) {
+                    p { "Workspace" }
+                    NavButton {
                     active: active == NavKey::FleetOverview,
                     icon: TablerIcon::LayoutDashboard,
                     label: "Fleet overview",
                     onclick: move |_| on_navigate.call(NavKey::FleetOverview),
                 }
-                NavButton {
+                    NavButton {
                     active: active == NavKey::Organizations,
                     icon: TablerIcon::Building,
                     label: "Organizations",
                     onclick: move |_| on_navigate.call(NavKey::Organizations),
                 }
-                NavButton {
+                    NavButton {
                     active: active == NavKey::Projects,
                     icon: TablerIcon::LayoutDashboard,
                     label: "Projects",
                     onclick: move |_| on_navigate.call(NavKey::Projects),
                 }
-                NavButton {
+                    NavButton {
                     active: active == NavKey::Environments,
                     icon: TablerIcon::Database,
                     label: "Environments",
                     onclick: move |_| on_navigate.call(NavKey::Environments),
                 }
-                NavButton {
+                    NavButton {
                     active: active == NavKey::Connections,
                     icon: TablerIcon::Webhook,
                     label: "Connections",
                     onclick: move |_| on_navigate.call(NavKey::Connections),
                 }
-                NavButton {
+                    NavButton {
                     active: active == NavKey::Audit,
                     icon: TablerIcon::ChartHistogram,
                     label: "Audit log",
                     onclick: move |_| on_navigate.call(NavKey::Audit),
+                    }
                 }
                 p { "Realm operations" }
                 NavButton {
@@ -637,6 +817,14 @@ fn Sidebar(
                     icon: TablerIcon::ChartHistogram,
                     label: "Metrics",
                     onclick: move |_| on_navigate.call(NavKey::Metrics),
+                }
+                if deployment_role == Some(DeploymentRole::Realm) {
+                    NavButton {
+                        active: active == NavKey::Security,
+                        icon: TablerIcon::ShieldCheck,
+                        label: "Account security",
+                        onclick: move |_| on_navigate.call(NavKey::Security),
+                    }
                 }
             }
             div { class: "sidebar-foot",
@@ -888,7 +1076,740 @@ enum FleetMutation {
     Connection {
         endpoint: String,
         pairing_code: String,
+        outbound: bool,
     },
+}
+
+#[component]
+fn RealmWorkspace(
+    active: NavKey,
+    on_navigate: EventHandler<NavKey>,
+    on_session_revoked: EventHandler<()>,
+) -> Element {
+    use crate::proto::rustyauth::{
+        identity::v1::User as RealmUser,
+        metrics::v1::{AuthenticationFunnel, FailureBreakdown, MetricSeries, MetricsOverview},
+        organization::v1::{Operator, Organization},
+        service_accounts::v1::ServiceAccount,
+        webhooks::v1::Webhook,
+    };
+
+    let mut organization = use_signal(|| None::<Organization>);
+    let mut operator = use_signal(|| None::<Operator>);
+    let mut users = use_signal(Vec::<RealmUser>::new);
+    let mut accounts = use_signal(Vec::<ServiceAccount>::new);
+    let mut webhooks = use_signal(Vec::<Webhook>::new);
+    let mut metrics_overview = use_signal(MetricsOverview::default);
+    let mut metric_attempts = use_signal(MetricSeries::default);
+    let mut metric_funnel = use_signal(AuthenticationFunnel::default);
+    let mut metric_failures = use_signal(FailureBreakdown::default);
+    let mut metric_period_seconds = use_signal(|| 24 * 60 * 60_i64);
+    let mut loading = use_signal(|| true);
+    let mut error = use_signal(String::new);
+    let mut invitation_type = use_signal(|| "email".to_string());
+    let mut invitation_value = use_signal(String::new);
+    let mut invitation_code = use_signal(String::new);
+    let mut organization_name = use_signal(String::new);
+    let mut service_account_name = use_signal(String::new);
+    let mut service_account_description = use_signal(String::new);
+    let mut service_account_scopes = use_signal(|| "identity.read".to_string());
+    let mut service_credential_secret = use_signal(String::new);
+    let mut webhook_name = use_signal(String::new);
+    let mut webhook_url = use_signal(String::new);
+    let mut webhook_events = use_signal(|| "identity.created,session.created".to_string());
+    let mut webhook_secret = use_signal(String::new);
+    let mut webhook_operation = use_signal(String::new);
+    let mut recovery_codes = use_signal(Vec::<String>::new);
+    let mut verification_identifier = use_signal(String::new);
+    let mut verification_challenge =
+        use_signal(|| None::<fleet_client::IdentifierVerificationChallenge>);
+    let mut verification_code = use_signal(String::new);
+    let mut security_notice = use_signal(String::new);
+    let mut device_token = use_signal(|| None::<fleet_client::DeviceToken>);
+
+    use_effect(move || {
+        let selected_metric_period = metric_period_seconds();
+        spawn(async move {
+            loading.set(true);
+            let result = async {
+                let new_organization = fleet_client::realm_organization().await?;
+                let new_operator = fleet_client::current_operator().await?;
+                let new_users = fleet_client::users().await?;
+                let new_accounts = fleet_client::service_accounts().await?;
+                let new_webhooks = fleet_client::webhooks().await?;
+                let new_metrics = fleet_client::realm_metrics(selected_metric_period).await?;
+                Ok::<_, fleet_client::ClientError>((
+                    new_organization,
+                    new_operator,
+                    new_users,
+                    new_accounts,
+                    new_webhooks,
+                    new_metrics,
+                ))
+            }
+            .await;
+            match result {
+                Ok((
+                    new_organization,
+                    new_operator,
+                    new_users,
+                    new_accounts,
+                    new_webhooks,
+                    new_metrics,
+                )) => {
+                    organization_name.set(new_organization.name.clone());
+                    organization.set(Some(new_organization));
+                    verification_identifier.set(new_operator.email.clone());
+                    operator.set(Some(new_operator));
+                    users.set(new_users);
+                    accounts.set(new_accounts);
+                    webhooks.set(new_webhooks);
+                    metrics_overview.set(new_metrics.overview);
+                    metric_attempts.set(new_metrics.attempts);
+                    metric_funnel.set(new_metrics.funnel);
+                    metric_failures.set(new_metrics.failures);
+                    error.set(String::new());
+                }
+                Err(reason) => error.set(reason.0),
+            }
+            loading.set(false);
+        });
+    });
+
+    let save_organization = move |_| {
+        let name = organization_name().trim().to_owned();
+        if name.is_empty() {
+            error.set("Organization name is required.".into());
+            return;
+        }
+        spawn(async move {
+            let result = async {
+                fleet_client::step_up_passkey().await?;
+                fleet_client::update_realm_organization(&name).await
+            }
+            .await;
+            match result {
+                Ok(record) => {
+                    organization.set(Some(record));
+                    error.set(String::new());
+                }
+                Err(reason) => error.set(reason.0),
+            }
+        });
+    };
+    let issue_invitation = move |_| {
+        let kind = invitation_type();
+        let value = invitation_value().trim().to_owned();
+        if value.is_empty() {
+            error.set("Invitation identifier is required.".into());
+            return;
+        }
+        invitation_code.set(String::new());
+        spawn(async move {
+            let result = async {
+                fleet_client::step_up_passkey().await?;
+                fleet_client::create_invitation(&kind, &value, 86_400).await
+            }
+            .await;
+            match result {
+                Ok(response) => {
+                    invitation_code.set(response.invitation_code);
+                    invitation_value.set(String::new());
+                    error.set(String::new());
+                }
+                Err(reason) => error.set(reason.0),
+            }
+        });
+    };
+    let create_service_account = move |_| {
+        let name = service_account_name().trim().to_owned();
+        let description = service_account_description().trim().to_owned();
+        let scopes = comma_separated(&service_account_scopes());
+        if name.is_empty() || scopes.is_empty() {
+            error.set("Service-account name and at least one scope are required.".into());
+            return;
+        }
+        spawn(async move {
+            let result = async {
+                fleet_client::step_up_passkey().await?;
+                fleet_client::create_service_account(&name, &description, scopes).await
+            }
+            .await;
+            match result {
+                Ok(record) => {
+                    accounts.write().insert(0, record);
+                    service_account_name.set(String::new());
+                    service_account_description.set(String::new());
+                    error.set(String::new());
+                }
+                Err(reason) => error.set(reason.0),
+            }
+        });
+    };
+    let create_webhook = move |_| {
+        let name = webhook_name().trim().to_owned();
+        let url = webhook_url().trim().to_owned();
+        let events = comma_separated(&webhook_events());
+        if name.is_empty() || url.is_empty() || events.is_empty() {
+            error.set("Webhook name, HTTPS URL, and at least one event are required.".into());
+            return;
+        }
+        webhook_secret.set(String::new());
+        spawn(async move {
+            let result = async {
+                fleet_client::step_up_passkey().await?;
+                fleet_client::create_webhook(&name, &url, events).await
+            }
+            .await;
+            match result {
+                Ok(response) => {
+                    if let Some(record) = response.webhook.as_option() {
+                        webhooks.write().insert(0, record.clone());
+                    }
+                    webhook_secret.set(response.signing_secret);
+                    webhook_name.set(String::new());
+                    webhook_url.set(String::new());
+                    error.set(String::new());
+                }
+                Err(reason) => error.set(reason.0),
+            }
+        });
+    };
+    let rotate_codes = move |_| {
+        recovery_codes.set(Vec::new());
+        security_notice.set(String::new());
+        spawn(async move {
+            let result = async {
+                fleet_client::step_up_passkey().await?;
+                fleet_client::rotate_recovery_codes().await
+            }
+            .await;
+            match result {
+                Ok(codes) => {
+                    recovery_codes.set(codes);
+                    security_notice.set(
+                        "The previous recovery-code set is revoked. Store this replacement set offline now."
+                            .into(),
+                    );
+                    error.set(String::new());
+                }
+                Err(reason) => error.set(reason.0),
+            }
+        });
+    };
+    let request_verification = move |_| {
+        let identifier = verification_identifier().trim().to_owned();
+        if identifier.is_empty() {
+            error.set("Enter the email identifier to verify.".into());
+            return;
+        }
+        verification_challenge.set(None);
+        verification_code.set(String::new());
+        spawn(async move {
+            match fleet_client::request_identifier_verification("email", &identifier).await {
+                Ok(challenge) => {
+                    if let Some(code) = challenge.development_code.as_ref() {
+                        verification_code.set(code.clone());
+                    }
+                    verification_challenge.set(Some(challenge));
+                    security_notice.set("A one-time verification challenge was created.".into());
+                    error.set(String::new());
+                }
+                Err(reason) => error.set(reason.0),
+            }
+        });
+    };
+    let complete_verification = move |_| {
+        let Some(challenge) = verification_challenge() else {
+            error.set("Request a verification challenge first.".into());
+            return;
+        };
+        let code = verification_code().trim().to_owned();
+        if code.is_empty() {
+            error.set("Enter the delivered verification code.".into());
+            return;
+        }
+        spawn(async move {
+            match fleet_client::complete_identifier_verification(&challenge.challenge_id, &code)
+                .await
+            {
+                Ok(()) => {
+                    verification_challenge.set(None);
+                    verification_code.set(String::new());
+                    security_notice.set("The identifier is now verified.".into());
+                    error.set(String::new());
+                }
+                Err(reason) => error.set(reason.0),
+            }
+        });
+    };
+    let revoke_sessions = move |_| {
+        spawn(async move {
+            let result = async {
+                fleet_client::step_up_passkey().await?;
+                fleet_client::revoke_all_sessions().await
+            }
+            .await;
+            match result {
+                Ok(()) => on_session_revoked.call(()),
+                Err(reason) => error.set(reason.0),
+            }
+        });
+    };
+    let mint_device_token = move |_| {
+        device_token.set(None);
+        security_notice.set(String::new());
+        spawn(async move {
+            let result = async {
+                fleet_client::step_up_passkey().await?;
+                fleet_client::mint_device_token().await
+            }
+            .await;
+            match result {
+                Ok(token) => {
+                    device_token.set(Some(token));
+                    security_notice.set(
+                        "A short-lived native-console token was minted. It is shown only in this page state."
+                            .into(),
+                    );
+                    error.set(String::new());
+                }
+                Err(reason) => error.set(reason.0),
+            }
+        });
+    };
+
+    if loading() {
+        return rsx! { section { class: "panel empty-panel", h2 { "Loading realm…" } } };
+    }
+
+    rsx! {
+        div { class: "content-stack",
+            if !error().is_empty() {
+                div { class: "inline-error", role: "alert",
+                    Icon { icon: TablerIcon::AlertTriangle, size: 18 }
+                    span { "{error}" }
+                }
+            }
+            match active {
+                NavKey::Overview => rsx! {
+                    section { class: "page-heading",
+                        div { p { class: "eyebrow", "Live realm" } h2 { "Identity operations" }
+                            p { "Current state loaded from the authorized Rust control plane." }
+                        }
+                    }
+                    section { class: "metric-grid",
+                        MetricCard { label: "Users", value: users().len().to_string(), change: "Durable accounts", tone: "good" }
+                        MetricCard { label: "Service accounts", value: accounts().len().to_string(), change: "Machine identities", tone: "neutral" }
+                        MetricCard { label: "Webhooks", value: webhooks().len().to_string(), change: "Signed destinations", tone: "neutral" }
+                    }
+                    section { class: "panel",
+                        PanelHeader { eyebrow: "Operator", title: "Authenticated control-plane session" }
+                        if let Some(current) = operator() {
+                            div { class: "operator-row",
+                                span { "{initials(&current.display_name)}" }
+                                div { strong { "{current.display_name}" } small { "{current.email}" } }
+                                StatusBadge { status: "Passkey verified" }
+                            }
+                        }
+                        div { class: "form-actions",
+                            button { class: "button secondary", onclick: move |_| on_navigate.call(NavKey::Users), "Open users" }
+                            button { class: "button secondary", onclick: move |_| on_navigate.call(NavKey::Organization), "Manage access" }
+                        }
+                    }
+                },
+                NavKey::Users => rsx! {
+                    section { class: "page-heading", div { p { class: "eyebrow", "Identity directory" } h2 { "Users" }
+                        p { "Bounded account metadata; credential material never leaves RustyAuth." }
+                    } }
+                    section { class: "panel table-panel",
+                        PanelHeader { eyebrow: "Accounts", title: format!("{} users", users().len()) }
+                        div { class: "table-scroll", table { thead { tr { th { "User" } th { "Primary identifier" } th { "Identifiers" } th { "Passkeys" } th { "Created" } th { "Support actions" } } }
+                            tbody { for user in users() {
+                                {
+                                    let display_name = user.profile.as_option().map(|profile| {
+                                        if !profile.display_name.is_empty() { profile.display_name.clone() }
+                                        else { format!("{} {}", profile.given_name, profile.family_name).trim().to_owned() }
+                                    }).filter(|value| !value.is_empty()).unwrap_or_else(|| "Unnamed account".into());
+                                    let primary = user.identifiers.iter().find(|identifier| identifier.primary).or_else(|| user.identifiers.first()).map(|identifier| identifier.value.clone()).unwrap_or_default();
+                                    let user_id = user.id.clone();
+                                    let identifiers = user.identifiers.clone();
+                                    let passkeys = user.passkeys.clone();
+                                    let passkey_count = passkeys.len();
+                                    rsx! { tr { td { strong { "{display_name}" } small { class: "mono-value", "{user.id}" } } td { "{primary}" } td { "{user.identifiers.len()}" } td { "{user.passkeys.len()}" } td { "{format_date(&user.created_at)}" }
+                                        td {
+                                            for identifier in identifiers {
+                                                {
+                                                    let target_user_id = user_id.clone();
+                                                    let target_identifier = identifier.clone();
+                                                    rsx! { button { class: "button secondary", title: "Change verification for {identifier.value}", onclick: move |_| {
+                                                        let user_id = target_user_id.clone();
+                                                        let identifier = target_identifier.clone();
+                                                        spawn(async move {
+                                                            let result = async { fleet_client::step_up_passkey().await?; fleet_client::set_identifier_verification(&user_id, &identifier, !identifier.verified).await }.await;
+                                                            match result { Ok(updated) => { if let Some(slot) = users.write().iter_mut().find(|item| item.id == updated.id) { *slot = updated; } error.set(String::new()); }, Err(reason) => error.set(reason.0) }
+                                                        });
+                                                    }, if identifier.verified { "Unverify" } else { "Verify" } } }
+                                                }
+                                            }
+                                            if passkey_count > 1 {
+                                                for passkey in passkeys {
+                                                    {
+                                                        let target_user_id = user_id.clone();
+                                                        let credential_id = passkey.credential_id.clone();
+                                                        rsx! { button { class: "button secondary", title: "Revoke {passkey.label}", onclick: move |_| {
+                                                            let user_id = target_user_id.clone();
+                                                            let credential_id = credential_id.clone();
+                                                            spawn(async move {
+                                                                let result = async { fleet_client::step_up_passkey().await?; fleet_client::revoke_user_passkey(&user_id, &credential_id).await }.await;
+                                                                match result { Ok(updated) => { if let Some(slot) = users.write().iter_mut().find(|item| item.id == updated.id) { *slot = updated; } error.set(String::new()); }, Err(reason) => error.set(reason.0) }
+                                                            });
+                                                        }, "Revoke key" } }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    } }
+                                }
+                            } }
+                        } }
+                    }
+                },
+                NavKey::Organization => rsx! {
+                    section { class: "page-heading", div { p { class: "eyebrow", "Instance ownership" } h2 { "Organization & invitations" }
+                        p { "Administrative settings and identifier-bound production enrolment." }
+                    } }
+                    section { class: "panel form-panel",
+                        PanelHeader { eyebrow: "Organization", title: organization().map(|value| value.name).unwrap_or_else(|| "Organization".into()) }
+                        label { "Display name" input { value: organization_name(), maxlength: 120, oninput: move |event| organization_name.set(event.value()) } }
+                        div { class: "form-actions", button { class: "button primary", onclick: save_organization, "Save changes" } }
+                    }
+                    section { class: "panel form-panel",
+                        PanelHeader { eyebrow: "Production enrolment", title: "Issue account invitation" }
+                        label { "Identifier type" select { value: invitation_type(), onchange: move |event| invitation_type.set(event.value()), option { value: "email", "Email" } option { value: "phone", "Phone (E.164)" } } }
+                        label { "Identifier" input { value: invitation_value(), autocomplete: "off", oninput: move |event| invitation_value.set(event.value()) } }
+                        div { class: "form-actions", button { class: "button primary", onclick: issue_invitation, "Issue 24-hour invitation" } }
+                        if !invitation_code().is_empty() {
+                            div { class: "policy-note", Icon { icon: TablerIcon::Key, size: 19 } div { strong { "Copy this code now" } code { "{invitation_code}" } small { "It cannot be shown again." } } }
+                        }
+                    }
+                },
+                NavKey::ServiceAccounts => rsx! {
+                    section { class: "page-heading", div { p { class: "eyebrow", "Machine identity" } h2 { "Service accounts" } p { "Live, redacted account and credential state." } } }
+                    section { class: "panel form-panel",
+                        PanelHeader { eyebrow: "New principal", title: "Create service account" }
+                        label { "Name" input { value: service_account_name(), maxlength: 100, oninput: move |event| service_account_name.set(event.value()) } }
+                        label { "Description" input { value: service_account_description(), maxlength: 500, oninput: move |event| service_account_description.set(event.value()) } }
+                        label { "Scopes (comma separated)" input { value: service_account_scopes(), oninput: move |event| service_account_scopes.set(event.value()) } }
+                        div { class: "form-actions", button { class: "button primary", onclick: create_service_account, "Create account" } }
+                        if !service_credential_secret().is_empty() {
+                            div { class: "policy-note", Icon { icon: TablerIcon::Key, size: 19 } div { strong { "Copy this credential now" } code { "{service_credential_secret}" } small { "It cannot be shown again." } } }
+                        }
+                    }
+                    section { class: "panel", PanelHeader { eyebrow: "Principals", title: format!("{} service accounts", accounts().len()) }
+                        for account in accounts() {
+                            {
+                                let account_for_toggle = account.clone();
+                                let enabled = account.status.as_known() == Some(crate::proto::rustyauth::service_accounts::v1::ServiceAccountStatus::Active);
+                                let account_status: &'static str = if enabled { "Active" } else { "Disabled" };
+                                let account_id = account.id.clone();
+                                let credential_account_id = account.id.clone();
+                                let credentials = account.credentials.clone();
+                                let scopes_label = account.scopes.join(", ");
+                                rsx! { div { class: "operator-row", span { "SA" } div { strong { "{account.name}" } small { "{account.description} · {scopes_label}" } }
+                                    StatusBadge { status: account_status }
+                                    button { class: "button secondary", onclick: move |_| {
+                                        let account = account_for_toggle.clone();
+                                        spawn(async move {
+                                            let result = async { fleet_client::step_up_passkey().await?; fleet_client::set_service_account_enabled(&account, !enabled).await }.await;
+                                            match result { Ok(updated) => { if let Some(slot) = accounts.write().iter_mut().find(|item| item.id == updated.id) { *slot = updated; } error.set(String::new()); }, Err(reason) => error.set(reason.0) }
+                                        });
+                                    }, if enabled { "Disable" } else { "Enable" } }
+                                    button { class: "button secondary", onclick: move |_| {
+                                        let id = account_id.clone();
+                                        service_credential_secret.set(String::new());
+                                        spawn(async move {
+                                            let result = async { fleet_client::step_up_passkey().await?; fleet_client::create_service_credential(&id, "Dashboard credential").await }.await;
+                                            match result { Ok(response) => { service_credential_secret.set(response.secret); error.set(String::new()); }, Err(reason) => error.set(reason.0) }
+                                        });
+                                    }, "Create credential" }
+                                    for credential in credentials {
+                                        if credential.revoked_at.is_empty() {
+                                            {
+                                                let account_id = credential_account_id.clone();
+                                                let credential_id = credential.id.clone();
+                                                rsx! { button { class: "button secondary", title: "Revoke {credential.name}", onclick: move |_| {
+                                                    let account_id = account_id.clone();
+                                                    let credential_id = credential_id.clone();
+                                                    spawn(async move {
+                                                        let result = async { fleet_client::step_up_passkey().await?; fleet_client::revoke_service_credential(&account_id, &credential_id).await?; fleet_client::service_accounts().await }.await;
+                                                        match result { Ok(records) => { accounts.set(records); error.set(String::new()); }, Err(reason) => error.set(reason.0) }
+                                                    });
+                                                }, "Revoke {credential.secret_hint}" } }
+                                            }
+                                        }
+                                    }
+                                } }
+                            }
+                        }
+                    }
+                },
+                NavKey::Webhooks => rsx! {
+                    section { class: "page-heading", div { p { class: "eyebrow", "Event delivery" } h2 { "Signed webhooks" } p { "Live destination ownership and delivery state." } } }
+                    section { class: "panel form-panel",
+                        PanelHeader { eyebrow: "New destination", title: "Create signed webhook" }
+                        label { "Name" input { value: webhook_name(), maxlength: 100, oninput: move |event| webhook_name.set(event.value()) } }
+                        label { "HTTPS URL" input { value: webhook_url(), autocomplete: "off", oninput: move |event| webhook_url.set(event.value()) } }
+                        label { "Event types (comma separated)" input { value: webhook_events(), oninput: move |event| webhook_events.set(event.value()) } }
+                        div { class: "form-actions", button { class: "button primary", onclick: create_webhook, "Create webhook" } }
+                        if !webhook_secret().is_empty() {
+                            div { class: "policy-note", Icon { icon: TablerIcon::Key, size: 19 } div { strong { "Copy this signing secret now" } code { "{webhook_secret}" } small { "It cannot be shown again." } } }
+                        }
+                        if !webhook_operation().is_empty() { p { class: "policy-note", "{webhook_operation}" } }
+                    }
+                    section { class: "panel", PanelHeader { eyebrow: "Destinations", title: format!("{} webhooks", webhooks().len()) }
+                        for webhook in webhooks() {
+                            {
+                                let configuration_managed = webhook.management_source.as_known() == Some(crate::proto::rustyauth::webhooks::v1::WebhookManagementSource::Configuration);
+                                let status: &'static str = if configuration_managed { "Managed by YAML" } else { "Dashboard managed" };
+                                let test_id = webhook.id.clone();
+                                let rotate_id = webhook.id.clone();
+                                let history_id = webhook.id.clone();
+                                let delete_id = webhook.id.clone();
+                                let event_types_label = webhook.event_types.join(", ");
+                                rsx! { div { class: "operator-row", span { "WH" } div { strong { "{webhook.name}" } small { "{webhook.url} · {event_types_label}" } } StatusBadge { status }
+                                    button { class: "button secondary", onclick: move |_| { let id = test_id.clone(); spawn(async move { let result = async { fleet_client::step_up_passkey().await?; fleet_client::test_webhook(&id).await }.await; match result { Ok(delivery) => { webhook_operation.set(format!("Test delivery {}: {:?}", delivery.id, delivery.status.as_known())); error.set(String::new()); }, Err(reason) => error.set(reason.0) } }); }, "Test" }
+                                    button { class: "button secondary", onclick: move |_| { let id = history_id.clone(); spawn(async move { match fleet_client::webhook_deliveries(&id).await { Ok(deliveries) => { webhook_operation.set(format!("{} delivery records for {id}", deliveries.len())); error.set(String::new()); }, Err(reason) => error.set(reason.0) } }); }, "History" }
+                                    if !configuration_managed {
+                                        button { class: "button secondary", onclick: move |_| { let id = rotate_id.clone(); webhook_secret.set(String::new()); spawn(async move { let result = async { fleet_client::step_up_passkey().await?; fleet_client::rotate_webhook_secret(&id).await }.await; match result { Ok(response) => { webhook_secret.set(response.signing_secret); error.set(String::new()); }, Err(reason) => error.set(reason.0) } }); }, "Rotate secret" }
+                                        button { class: "button secondary", onclick: move |_| { let id = delete_id.clone(); spawn(async move { let result = async { fleet_client::step_up_passkey().await?; fleet_client::delete_webhook(&id).await }.await; match result { Ok(()) => { webhooks.write().retain(|item| item.id != id); error.set(String::new()); }, Err(reason) => error.set(reason.0) } }); }, "Delete" }
+                                    }
+                                } }
+                            }
+                        }
+                    }
+                },
+                NavKey::Metrics => rsx! {
+                    RealmMetricsPage {
+                        overview: metrics_overview(),
+                        attempts: metric_attempts(),
+                        funnel: metric_funnel(),
+                        failures: metric_failures(),
+                        period_seconds: metric_period_seconds(),
+                        on_period: move |value| metric_period_seconds.set(value),
+                    }
+                },
+                NavKey::Security => rsx! {
+                    section { class: "page-heading",
+                        div {
+                            p { class: "eyebrow", "Passkey-protected account" }
+                            h2 { "Account security & recovery" }
+                            p { "Rotate offline recovery codes, prove identifier control, or revoke every active session." }
+                        }
+                    }
+                    if !security_notice().is_empty() {
+                        div { class: "policy-note", role: "status", Icon { icon: TablerIcon::ShieldCheck, size: 19 } div { strong { "Security state changed" } small { "{security_notice}" } } }
+                    }
+                    section { class: "panel form-panel",
+                        PanelHeader { eyebrow: "Offline recovery", title: "Recovery-code set" }
+                        p { "Rotating requires a fresh passkey step-up and immediately invalidates the previous set." }
+                        div { class: "form-actions", button { class: "button primary", onclick: rotate_codes, "Rotate recovery codes" } }
+                        if !recovery_codes().is_empty() {
+                            div { class: "policy-note",
+                                Icon { icon: TablerIcon::Key, size: 19 }
+                                div {
+                                    strong { "Copy all codes now — they cannot be shown again" }
+                                    for code in recovery_codes() { code { "{code}" } }
+                                    small { "Each code is single-use. Keep them away from the devices that hold your passkeys." }
+                                }
+                            }
+                        }
+                    }
+                    if cfg!(target_arch = "wasm32") {
+                        section { class: "panel form-panel",
+                            PanelHeader { eyebrow: "Native console", title: "Connect a desktop or mobile device" }
+                            p { "A fresh passkey step-up mints a credential valid for at most 15 minutes. Revoking this passkey or all sessions invalidates it immediately." }
+                            div { class: "form-actions", button { class: "button primary", onclick: mint_device_token, "Mint native-console token" } }
+                            if let Some(token) = device_token() {
+                                div { class: "policy-note",
+                                    Icon { icon: TablerIcon::Key, size: 19 }
+                                    div {
+                                        strong { "Copy this token now — it is not shown again after leaving this page" }
+                                        code { "{token.token}" }
+                                        small { "Expires at Unix second {token.expires_at}. The native app stores it in the operating-system credential vault." }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    section { class: "panel form-panel",
+                        PanelHeader { eyebrow: "Identity proof", title: "Verify your operator email" }
+                        label { "Email identifier" input { r#type: "email", value: verification_identifier(), autocomplete: "email", oninput: move |event| verification_identifier.set(event.value()) } }
+                        div { class: "form-actions", button { class: "button secondary", onclick: request_verification, "Send verification code" } }
+                        if let Some(challenge) = verification_challenge() {
+                            p { class: "policy-note",
+                                if challenge.delivered { "The code was delivered through the configured signed webhook." }
+                                else { "Development mode returned the code locally." }
+                                " Expires at Unix second {challenge.expires_at}."
+                            }
+                            label { "Verification code" input { autocomplete: "one-time-code", value: verification_code(), oninput: move |event| verification_code.set(event.value()) } }
+                            div { class: "form-actions", button { class: "button primary", onclick: complete_verification, "Verify identifier" } }
+                        }
+                    }
+                    section { class: "panel danger-panel",
+                        PanelHeader { eyebrow: "Containment", title: "Revoke all sessions" }
+                        p { "A fresh passkey step-up is required. This browser is signed out together with every other active session." }
+                        div { class: "form-actions", button { class: "button danger", onclick: revoke_sessions, "Revoke every session" } }
+                    }
+                },
+                _ => rsx! { section { class: "panel empty-panel", h2 { "This view belongs to Fleet mode." } } },
+            }
+        }
+    }
+}
+
+#[component]
+fn RealmMetricsPage(
+    overview: crate::proto::rustyauth::metrics::v1::MetricsOverview,
+    attempts: crate::proto::rustyauth::metrics::v1::MetricSeries,
+    funnel: crate::proto::rustyauth::metrics::v1::AuthenticationFunnel,
+    failures: crate::proto::rustyauth::metrics::v1::FailureBreakdown,
+    period_seconds: i64,
+    on_period: EventHandler<i64>,
+) -> Element {
+    let success_rate = format!("{:.2}%", overview.authentication_success_rate * 100.0);
+    let latency = format!("{:.0} ms", overview.authentication_latency_p95_milliseconds);
+    let maximum_attempts = attempts
+        .points
+        .iter()
+        .map(|point| point.value)
+        .fold(0.0_f64, f64::max)
+        .max(1.0);
+    let registration_completion = percentage(
+        funnel.registrations_completed,
+        funnel.registration_options_started,
+    );
+    let authentication_completion = percentage(
+        funnel.authentications_completed,
+        funnel.authentication_options_started,
+    );
+    let total_failures = failures
+        .failures
+        .iter()
+        .fold(0_u64, |total, failure| total.saturating_add(failure.count));
+
+    rsx! {
+        div { class: "content-stack",
+            section { class: "page-heading",
+                div {
+                    p { class: "eyebrow", "Live realm telemetry" }
+                    h2 { "Authentication metrics" }
+                    p { "Durable five-minute aggregates; identity and credential dimensions remain inside the realm." }
+                }
+                div { class: "segmented",
+                    for (label, seconds) in [("24 hours", 86_400_i64), ("7 days", 604_800_i64), ("28 days", 2_419_200_i64)] {
+                        button {
+                            r#type: "button",
+                            class: if period_seconds == seconds { "active" } else { "" },
+                            onclick: move |_| on_period.call(seconds),
+                            "{label}"
+                        }
+                    }
+                }
+            }
+            section { class: "metric-grid metrics-full",
+                MetricCard { label: "Authentication attempts", value: overview.authentication_attempts.to_string(), change: "Selected period", tone: "neutral" }
+                MetricCard { label: "Success rate", value: success_rate.clone(), change: "Completed / attempts", tone: "good" }
+                MetricCard { label: "Latency p95", value: latency, change: "Merged histogram", tone: "neutral" }
+                MetricCard { label: "Active users", value: overview.active_users.to_string(), change: "Distinct realm accounts", tone: "neutral" }
+            }
+            div { class: "overview-grid metrics-grid",
+                section { class: "panel volume-panel",
+                    PanelHeader { eyebrow: "Authentication attempts", title: "Volume" }
+                    if attempts.points.is_empty() {
+                        div { class: "empty-state", p { "No authentication activity in this period." } }
+                    } else {
+                        div { class: "bar-chart tall", aria_label: "Authentication attempts over time",
+                            for point in attempts.points {
+                                {
+                                    let height = ((point.value / maximum_attempts) * 100.0).round() as u16;
+                                    let height = ((height.max(5) + 2) / 5 * 5).min(100);
+                                    rsx! { span { class: "bar-height-{height}", title: "{point.starts_at} · {point.value:.0}" } }
+                                }
+                            }
+                        }
+                    }
+                    div { class: "chart-legend",
+                        span { i { class: "copper" } "Durable projected events" }
+                        strong { "{success_rate} success" }
+                    }
+                }
+                section { class: "panel",
+                    PanelHeader { eyebrow: "Passkey funnel", title: "Ceremony completion" }
+                    LiveFunnelRow { label: "Registration options", value: funnel.registration_options_started, percent: 100 }
+                    LiveFunnelRow { label: "Registrations completed", value: funnel.registrations_completed, percent: registration_completion }
+                    LiveFunnelRow { label: "Authentication options", value: funnel.authentication_options_started, percent: 100 }
+                    LiveFunnelRow { label: "Authentications completed", value: funnel.authentications_completed, percent: authentication_completion }
+                }
+            }
+            section { class: "panel failure-panel",
+                PanelHeader { eyebrow: "Failure analysis", title: "Bounded rejection classes" }
+                if failures.failures.is_empty() {
+                    div { class: "empty-state", p { "No classified authentication failures in this period." } }
+                } else {
+                    div { class: "failure-grid",
+                        for failure in failures.failures {
+                            LiveFunnelRow {
+                                label: failure.error_class,
+                                value: failure.count,
+                                percent: percentage(failure.count, total_failures),
+                            }
+                        }
+                    }
+                }
+            }
+            section { class: "panel",
+                PanelHeader { eyebrow: "Operations", title: "Delivery and recovery posture" }
+                div { class: "metric-grid",
+                    MetricCard { label: "Registrations", value: overview.registrations.to_string(), change: "Completed", tone: "neutral" }
+                    MetricCard { label: "Service accounts", value: overview.active_service_accounts.to_string(), change: "Active", tone: "neutral" }
+                    MetricCard { label: "Webhook backlog", value: overview.webhook_delivery_backlog.to_string(), change: "Pending or retrying", tone: if overview.webhook_delivery_backlog == 0 { "good" } else { "warning" } }
+                    MetricCard { label: "Backup", value: if overview.backup_healthy { "Healthy".to_string() } else { "Attention".to_string() }, change: if overview.last_backup_at.is_empty() { "No successful backup".to_string() } else { overview.last_backup_at }, tone: if overview.backup_healthy { "good" } else { "warning" } }
+                }
+            }
+        }
+    }
+}
+
+#[component]
+fn LiveFunnelRow(label: String, value: u64, percent: u16) -> Element {
+    rsx! {
+        div { class: "funnel-row",
+            div { strong { "{label}" } span { "{value}" } }
+            meter { min: 0, max: 100, value: percent, "{percent}%" }
+            small { "{percent}%" }
+        }
+    }
+}
+
+fn percentage(numerator: u64, denominator: u64) -> u16 {
+    if denominator == 0 {
+        0
+    } else {
+        numerator.saturating_mul(100).div_ceil(denominator).min(100) as u16
+    }
+}
+
+fn comma_separated(value: &str) -> Vec<String> {
+    let mut values = value
+        .split(',')
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_owned)
+        .collect::<Vec<_>>();
+    values.sort_unstable();
+    values.dedup();
+    values
 }
 
 #[component]
@@ -959,6 +1880,7 @@ fn FleetWorkspace(
     let mut dialog = use_signal(|| None::<FleetDialogKind>);
     let mut loading = use_signal(|| !preview);
     let mut error = use_signal(String::new);
+    let mut notice = use_signal(String::new);
 
     use_effect(move || {
         if preview {
@@ -1098,7 +2020,9 @@ fn FleetWorkspace(
                     environments.write().insert(0, record);
                     overview.write().environments += 1;
                 }
-                FleetMutation::Connection { endpoint, .. } => {
+                FleetMutation::Connection {
+                    endpoint, outbound, ..
+                } => {
                     let record = RealmConnection {
                         id: uuid::Uuid::new_v4().to_string(),
                         organization_id: selected_organization(),
@@ -1106,8 +2030,12 @@ fn FleetWorkspace(
                         environment_id: selected_environment(),
                         realm_id: "preview-realm".into(),
                         display_name: "Preview realm".into(),
-                        mode: crate::proto::rustyauth::fleet::v1::ConnectionMode::PublicEndpoint
-                            .into(),
+                        mode: if outbound {
+                            ConnectionMode::OutboundConnector
+                        } else {
+                            ConnectionMode::PublicEndpoint
+                        }
+                        .into(),
                         management_endpoint: endpoint,
                         deployment_version: "0.1.0".into(),
                         protocol_version: "1".into(),
@@ -1160,15 +2088,29 @@ fn FleetWorkspace(
                 FleetMutation::Connection {
                     endpoint,
                     pairing_code,
+                    outbound,
                 } => {
                     match fleet_client::begin_connection(
                         &selected_organization(),
                         &selected_project(),
                         &selected_environment(),
                         &endpoint,
+                        if outbound {
+                            ConnectionMode::OutboundConnector
+                        } else {
+                            ConnectionMode::PublicEndpoint
+                        },
+                        if outbound { &pairing_code } else { "" },
                     )
                     .await
                     {
+                        Ok(attempt) if outbound => {
+                            notice.set(format!(
+                                "Outbound attempt {} is ready. On the private realm host, provide the same code through RUSTYAUTH_FLEET_PAIRING_CODE_FILE and run: rustyauth fleet pair-outbound <control-plane-origin> {}",
+                                attempt.id, attempt.id
+                            ));
+                            Ok(())
+                        }
                         Ok(attempt) => {
                             fleet_client::complete_connection(&attempt.id, &pairing_code)
                                 .await
@@ -1349,6 +2291,13 @@ fn FleetWorkspace(
     };
 
     rsx! {
+        if !notice().is_empty() {
+            div { class: "fleet-alert", role: "status",
+                Icon { icon: TablerIcon::PlugConnected, size: 17 }
+                span { "{notice}" }
+                button { r#type: "button", onclick: move |_| notice.set(String::new()), Icon { icon: TablerIcon::X, size: 15 } }
+            }
+        }
         if !error().is_empty() {
             div { class: "fleet-alert", role: "alert",
                 Icon { icon: TablerIcon::AlertTriangle, size: 17 }
@@ -1400,6 +2349,17 @@ fn FleetWorkspace(
                 }
             },
             NavKey::Audit => rsx! { FleetAuditPage { events: audit_events() } },
+            NavKey::Metrics if preview => rsx! { MetricsPage {} },
+            NavKey::Metrics => rsx! {
+                FleetAnalyticsPage {
+                    organization_id: selected_organization(),
+                    project_id: selected_project(),
+                    environment_id: selected_environment(),
+                    projects: projects(),
+                    environments: environments(),
+                    connections: connections(),
+                }
+            },
             _ => rsx! {},
         }
         if let Some(kind) = dialog() {
@@ -1579,6 +2539,21 @@ fn FleetConnectionsPage(
     selected_environment: String,
     on_create: EventHandler<()>,
 ) -> Element {
+    let mut operations = use_signal(|| None::<FleetRealmOperations>);
+    let mut inspected_connection = use_signal(|| None::<RealmConnection>);
+    let mut inspecting = use_signal(|| None::<String>);
+    let mut inspection_error = use_signal(String::new);
+    let mut mutation_operation = use_signal(|| "revoke-user-passkey".to_string());
+    let mut mutation_target = use_signal(String::new);
+    let mut mutation_secondary = use_signal(String::new);
+    let mut mutation_reason = use_signal(String::new);
+    let mut mutation_enabled = use_signal(|| true);
+    let mut mutation_confirmed = use_signal(|| false);
+    let mut mutation_status = use_signal(String::new);
+    let mut mutating = use_signal(|| false);
+    let mut rotation_reason = use_signal(String::new);
+    let mut rotation_status = use_signal(String::new);
+    let mut rotating = use_signal(|| false);
     let visible = connections
         .into_iter()
         .filter(|record| record.environment_id == selected_environment)
@@ -1595,13 +2570,183 @@ fn FleetConnectionsPage(
             PanelHeader { eyebrow: "Connections", title: format!("{} managed realms", visible.len()) }
             if visible.is_empty() { FleetEmpty { title: "No realm connected", detail: "Generate a pairing code in the realm, then pair its management endpoint." } }
             for record in visible {
-                div { class: "fleet-row",
-                    span { class: "fleet-row-mark", Icon { icon: TablerIcon::ShieldCheck, size: 18 } }
-                    span { strong { "{record.display_name}" } small { "{record.management_endpoint}" } }
-                    span { class: if record.state == ConnectionState::Healthy { "status-badge good" } else { "status-badge warn" }, "{connection_label(record.state)}" }
-                    span { class: "mono-value", "v{record.deployment_version}" }
-                    span { "{format_time(&record.last_seen_at)}" }
+                {
+                    let inspect_record = record.clone();
+                    let inspect_id = record.id.clone();
+                    rsx! {
+                        div { class: "fleet-row",
+                            span { class: "fleet-row-mark", Icon { icon: TablerIcon::ShieldCheck, size: 18 } }
+                            span { strong { "{record.display_name}" } small { "{record.management_endpoint}" } }
+                            span { class: if record.state == ConnectionState::Healthy { "status-badge good" } else { "status-badge warn" }, "{connection_label(record.state)}" }
+                            span { class: "mono-value", "v{record.deployment_version}" }
+                            button {
+                                class: "button secondary",
+                                r#type: "button",
+                                disabled: inspecting().is_some(),
+                                onclick: move |_| {
+                                    let connection = inspect_record.clone();
+                                    let connection_id = inspect_id.clone();
+                                    spawn(async move {
+                                        inspecting.set(Some(connection_id));
+                                        match fleet_client::realm_operations(&connection, 24 * 60 * 60).await {
+                                            Ok(snapshot) => {
+                                                operations.set(Some(snapshot));
+                                                inspected_connection.set(Some(connection));
+                                                inspection_error.set(String::new());
+                                            }
+                                            Err(reason) => inspection_error.set(reason.0),
+                                        }
+                                        inspecting.set(None);
+                                    });
+                                },
+                                if inspecting().as_deref() == Some(record.id.as_str()) { "Loading…" } else { "Inspect" }
+                            }
+                        }
+                    }
                 }
+            }
+        }
+        if !inspection_error().is_empty() {
+            p { class: "form-error", role: "alert", "{inspection_error}" }
+        }
+        if let Some(operations) = operations()
+            && let Some(snapshot) = operations.snapshot.as_option()
+            && let Some(summary) = snapshot.summary.as_option()
+            && let Some(metrics) = snapshot.metrics.as_option()
+        {
+            section { class: "panel fleet-list-panel",
+                PanelHeader { eyebrow: "Live realm read", title: format!("{} operational snapshot", snapshot.realm_id) }
+                p { class: "fleet-scope-label", "Source / " strong { "{operations.source}" } " · observed {format_time(&operations.observed_at)}" }
+                section { class: "metric-grid compact",
+                    MetricCard { label: "Users", value: summary.users.to_string(), change: format!("{} passkeys", summary.passkeys), tone: "good" }
+                    MetricCard { label: "Active sessions", value: summary.active_sessions.to_string(), change: format!("{} recent auth attempts", metrics.authentication_attempts), tone: "good" }
+                    MetricCard { label: "Service accounts", value: summary.service_accounts.to_string(), change: format!("{} active", metrics.active_service_accounts), tone: "neutral" }
+                    MetricCard { label: "Webhook backlog", value: metrics.webhook_delivery_backlog.to_string(), change: if metrics.backup_healthy { "Backup healthy".to_string() } else { "Backup needs attention".to_string() }, tone: if metrics.backup_healthy { "good".to_string() } else { "warn".to_string() } }
+                }
+                div { class: "overview-grid",
+                    div {
+                        h3 { "Recent users" }
+                        if let Some(users) = snapshot.users.as_option() {
+                            for user in users.users.iter().take(5) {
+                                div { class: "posture-row", strong { "{short_id(&user.id)}" } small { {format!("{} identifiers · {} passkeys", user.identifiers.len(), user.passkeys.len())} } }
+                            }
+                            if users.users.is_empty() { p { class: "form-hint", "No users in this page." } }
+                        }
+                    }
+                    div {
+                        h3 { "Recent events" }
+                        for event in snapshot.events.iter().rev().take(5) {
+                            div { class: "posture-row", strong { "{event.r#type}" } small { "{format_time(&event.occurred_at)}" } }
+                        }
+                        if snapshot.events.is_empty() { p { class: "form-hint", "No retained events after this cursor." } }
+                    }
+                }
+                div { class: "posture-row", strong { "Signing keys" } small { "{summary.signing_key_state}" } }
+                div { class: "posture-row", strong { "Last backup" } small { "{format_time(&summary.latest_backup_at)}" } }
+                form { class: "search-panel", onsubmit: move |event| {
+                    event.prevent_default();
+                    let Some(connection) = inspected_connection() else { return; };
+                    let reason = rotation_reason();
+                    if reason.trim().len() < 10 { return; }
+                    spawn(async move {
+                        rotating.set(true);
+                        let result = async {
+                            fleet_client::step_up_passkey().await?;
+                            fleet_client::rotate_connection(&connection, &reason).await
+                        }
+                        .await;
+                        match result {
+                            Ok(updated) => {
+                                inspected_connection.set(Some(updated));
+                                rotation_status.set("Realm connector credential rotated with two-phase recovery fencing.".into());
+                                rotation_reason.set(String::new());
+                                inspection_error.set(String::new());
+                            }
+                            Err(reason) => inspection_error.set(reason.0),
+                        }
+                        rotating.set(false);
+                    });
+                },
+                    h3 { "Connector credential rotation" }
+                    p { class: "form-hint", "Stages the new credential, updates the realm, and commits only after both sides agree." }
+                    label { "Human reason" input { required: true, minlength: 10, maxlength: 500, value: rotation_reason(), oninput: move |event| rotation_reason.set(event.value()), placeholder: "Why rotation is required" } }
+                    button { class: "button secondary", r#type: "submit", disabled: rotating(), if rotating() { "Rotating…" } else { "Step up and rotate" } }
+                    if !rotation_status().is_empty() { p { class: "status-badge good", "{rotation_status}" } }
+                }
+                form { class: "search-panel", onsubmit: move |event| {
+                    event.prevent_default();
+                    let Some(connection) = inspected_connection() else { return; };
+                    if !mutation_confirmed() || mutation_reason().trim().len() < 10 { return; }
+                    let operation = match mutation_operation().as_str() {
+                        "set-service-account-enabled" => RemoteMutationOperation::SetServiceAccountEnabled,
+                        "revoke-service-account-credential" => RemoteMutationOperation::RevokeServiceAccountCredential,
+                        "pause-webhook" => RemoteMutationOperation::PauseWebhook,
+                        "delete-webhook" => RemoteMutationOperation::DeleteWebhook,
+                        _ => RemoteMutationOperation::RevokeUserPasskey,
+                    };
+                    let target = mutation_target();
+                    let secondary = mutation_secondary();
+                    let reason = mutation_reason();
+                    let enabled = mutation_enabled();
+                    spawn(async move {
+                        mutating.set(true);
+                        let result = async {
+                            fleet_client::step_up_passkey().await?;
+                            fleet_client::execute_realm_mutation(
+                                &connection,
+                                operation,
+                                &target,
+                                &secondary,
+                                enabled,
+                                &reason,
+                            )
+                            .await
+                        }
+                        .await;
+                        match result {
+                            Ok(result) => {
+                                let summary = result
+                                    .result
+                                    .as_option()
+                                    .map(|result| result.summary.clone())
+                                    .unwrap_or_else(|| "Remote mutation completed and was centrally audited.".into());
+                                mutation_status.set(summary);
+                                mutation_confirmed.set(false);
+                                inspection_error.set(String::new());
+                            }
+                            Err(reason) => inspection_error.set(reason.0),
+                        }
+                        mutating.set(false);
+                    });
+                },
+                    div {
+                        label { "Controlled remote operation"
+                            select { value: mutation_operation(), onchange: move |event| mutation_operation.set(event.value()),
+                                option { value: "revoke-user-passkey", "Revoke user passkey" }
+                                option { value: "set-service-account-enabled", "Enable or disable service account" }
+                                option { value: "revoke-service-account-credential", "Revoke service-account credential" }
+                                option { value: "pause-webhook", "Pause webhook" }
+                                option { value: "delete-webhook", "Delete webhook" }
+                            }
+                        }
+                        if mutation_operation() == "set-service-account-enabled" {
+                            label { "Desired state"
+                                select { value: if mutation_enabled() { "enabled" } else { "disabled" }, onchange: move |event| mutation_enabled.set(event.value() == "enabled"),
+                                    option { value: "enabled", "Enabled" }
+                                    option { value: "disabled", "Disabled" }
+                                }
+                            }
+                        }
+                    }
+                    label { "Target ID" input { required: true, maxlength: 1024, value: mutation_target(), oninput: move |event| mutation_target.set(event.value()) } }
+                    if matches!(mutation_operation().as_str(), "revoke-user-passkey" | "revoke-service-account-credential") {
+                        label { "Credential ID" input { required: true, maxlength: 1024, value: mutation_secondary(), oninput: move |event| mutation_secondary.set(event.value()) } }
+                    }
+                    label { "Human reason" input { required: true, minlength: 10, maxlength: 500, value: mutation_reason(), oninput: move |event| mutation_reason.set(event.value()), placeholder: "Why this production-safe change is necessary" } }
+                    label { class: "form-hint", input { r#type: "checkbox", required: true, checked: mutation_confirmed(), onchange: move |event| mutation_confirmed.set(event.checked()) } " I confirm the target and understand this is audited in Fleet and the realm." }
+                    button { class: "button primary", r#type: "submit", disabled: mutating(), if mutating() { "Applying…" } else { "Step up and apply" } }
+                }
+                if !mutation_status().is_empty() { p { class: "status-badge good", "{mutation_status}" } }
             }
         }
     }
@@ -1683,6 +2828,7 @@ fn FleetCreateDialog(
     let mut slug = use_signal(String::new);
     let mut endpoint = use_signal(|| "http://127.0.0.1:8080".to_string());
     let mut pairing_code = use_signal(String::new);
+    let mut outbound = use_signal(|| false);
     let (title, detail) = match kind {
         FleetDialogKind::Organization => {
             ("New organization", "Create an isolated tenant boundary.")
@@ -1712,14 +2858,28 @@ fn FleetCreateDialog(
                         FleetDialogKind::Organization => FleetMutation::Organization { slug: slug(), name: name() },
                         FleetDialogKind::Project => FleetMutation::Project { slug: slug(), name: name() },
                         FleetDialogKind::Environment => FleetMutation::Environment { slug: slug(), name: name() },
-                        FleetDialogKind::Connection => FleetMutation::Connection { endpoint: endpoint(), pairing_code: pairing_code() },
+                        FleetDialogKind::Connection => FleetMutation::Connection { endpoint: endpoint(), pairing_code: pairing_code(), outbound: outbound() },
                     };
                     on_submit.call(mutation);
                 },
                     if kind == FleetDialogKind::Connection {
-                        label { "Management endpoint" input { r#type: "url", required: true, value: endpoint(), oninput: move |event| endpoint.set(event.value()) } }
+                        label { "Connection mode"
+                            select { value: if outbound() { "outbound" } else { "public" }, onchange: move |event| outbound.set(event.value() == "outbound"),
+                                option { value: "public", "Public realm endpoint" }
+                                option { value: "outbound", "Private outbound connector" }
+                            }
+                        }
+                        if !outbound() {
+                            label { "Management endpoint" input { r#type: "url", required: true, value: endpoint(), oninput: move |event| endpoint.set(event.value()) } }
+                        }
                         label { "Single-use pairing code" input { r#type: "password", required: !preview, placeholder: if preview { "Optional in preview" } else { "rpair_…" }, value: pairing_code(), oninput: move |event| pairing_code.set(event.value()) } }
-                        p { class: "form-hint", "The code is sent to the control plane once and is never stored by this dashboard." }
+                        p { class: "form-hint",
+                            if outbound() {
+                                "Fleet stores only the code digest. Complete the returned attempt from the private realm host; no inbound realm route is required."
+                            } else {
+                                "The code is sent to the realm once and is never stored by this dashboard."
+                            }
+                        }
                     } else {
                         label { "Name" input { required: true, maxlength: 120, value: name(), oninput: move |event| name.set(event.value()) } }
                         label { "Slug" input { required: true, maxlength: 63, pattern: "[a-z0-9]+(?:-[a-z0-9]+)*", value: slug(), oninput: move |event| slug.set(event.value().to_lowercase().replace(' ', "-")) } }
@@ -1803,10 +2963,10 @@ fn OverviewPage(
                         for (index, value) in AUTH_VOLUME.iter().enumerate() {
                             {
                                 let height = (f32::from(*value) / 1.6).round() as u16;
-                                let delay = 70 + index * 18;
+                                let height = ((height + 2) / 5 * 5).clamp(5, 100);
                                 rsx! {
                                     span {
-                                        style: "height: {height}%; animation-delay: {delay}ms",
+                                        class: "bar-height-{height}",
                                         title: "{index}:00 · {value} authentications",
                                     }
                                 }
@@ -2009,16 +3169,14 @@ fn UserTable(users: Vec<UserView>, on_select: EventHandler<UserView>) -> Element
                 span { "Last active" }
                 span {}
             }
-            for (index, user) in users.into_iter().enumerate() {
+            for user in users {
                 {
                     let selected_user = user.clone();
-                    let delay = index * 28;
                     rsx! {
                         button {
                             r#type: "button",
                             class: "table-row",
                             aria_label: "Open {user.name} account",
-                            style: "animation-delay: {delay}ms",
                             onclick: move |_| on_select.call(selected_user.clone()),
                             span { class: "user-cell",
                                 i { "{initials(user.name)}" }
@@ -2528,6 +3686,599 @@ fn WebhookEditorDrawer(webhook: Option<WebhookView>, on_close: EventHandler<()>)
     }
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum AnalyticsPresentationState {
+    Loading,
+    Forbidden,
+    Error,
+    Disabled,
+    Unsupported,
+    Stale,
+    Partial,
+    Empty,
+    Ready,
+}
+
+fn analytics_presentation_state(
+    has_organization: bool,
+    loading: bool,
+    error: &str,
+    overview: &AnalyticsOverview,
+    policy: &AnalyticsPolicy,
+    series_points: usize,
+) -> AnalyticsPresentationState {
+    if loading {
+        return AnalyticsPresentationState::Loading;
+    }
+    if !error.is_empty() {
+        let message = error.to_ascii_lowercase();
+        return if ["forbidden", "permission", "not authorized", "unauthorized"]
+            .iter()
+            .any(|needle| message.contains(needle))
+        {
+            AnalyticsPresentationState::Forbidden
+        } else {
+            AnalyticsPresentationState::Error
+        };
+    }
+    if !has_organization {
+        return AnalyticsPresentationState::Empty;
+    }
+    if !policy.enabled {
+        return AnalyticsPresentationState::Disabled;
+    }
+    let coverage = overview.coverage.first().cloned().unwrap_or_default();
+    if coverage.unsupported_realms > 0 && coverage.expected_realms == 0 {
+        return AnalyticsPresentationState::Unsupported;
+    }
+    if coverage.stale_realms > 0 {
+        return AnalyticsPresentationState::Stale;
+    }
+    if coverage.partial {
+        return AnalyticsPresentationState::Partial;
+    }
+    if !overview.authentication.is_set() && series_points == 0 {
+        return AnalyticsPresentationState::Empty;
+    }
+    AnalyticsPresentationState::Ready
+}
+
+#[component]
+fn FleetAnalyticsPage(
+    organization_id: String,
+    project_id: String,
+    environment_id: String,
+    projects: Vec<FleetProject>,
+    environments: Vec<FleetEnvironment>,
+    connections: Vec<RealmConnection>,
+) -> Element {
+    let has_organization = !organization_id.is_empty();
+    let mut period_seconds = use_signal(|| 86_400_i64);
+    let mut analytics = use_signal(AnalyticsOverview::default);
+    let mut series = use_signal(MetricSeries::default);
+    let mut funnel = use_signal(AuthenticationFunnel::default);
+    let mut failures = use_signal(FailureBreakdown::default);
+    let mut policy = use_signal(AnalyticsPolicy::default);
+    let mut comparison = use_signal(CompareScopesResponse::default);
+    let mut mutating_policy = use_signal(|| false);
+    let mut policy_status = use_signal(String::new);
+    let mut loading = use_signal(|| true);
+    let mut error = use_signal(String::new);
+
+    use_effect(move || {
+        let period = period_seconds();
+        let organization_id = organization_id.clone();
+        let project_id = project_id.clone();
+        let environment_id = environment_id.clone();
+        let projects = projects.clone();
+        let environments = environments.clone();
+        let connections = connections.clone();
+        spawn(async move {
+            if organization_id.is_empty() {
+                analytics.set(AnalyticsOverview::default());
+                error.set(String::new());
+                loading.set(false);
+                return;
+            }
+            loading.set(true);
+            let project = (!project_id.is_empty()).then_some(project_id.as_str());
+            let environment = (!environment_id.is_empty()).then_some(environment_id.as_str());
+            let result = async {
+                let overview = fleet_client::analytics_overview(
+                    &organization_id,
+                    project,
+                    environment,
+                    None,
+                    period,
+                )
+                .await?;
+                let volume = fleet_client::analytics_series(
+                    &organization_id,
+                    project,
+                    environment,
+                    None,
+                    period,
+                    AnalyticsMetric::AuthenticationAttempts,
+                )
+                .await?;
+                let registration_funnel = fleet_client::analytics_funnel(
+                    &organization_id,
+                    project,
+                    environment,
+                    None,
+                    period,
+                )
+                .await?;
+                let failure_breakdown = fleet_client::analytics_failures(
+                    &organization_id,
+                    project,
+                    environment,
+                    None,
+                    period,
+                )
+                .await?;
+                let organization_policy = fleet_client::analytics_policy(&organization_id).await?;
+                let scopes = comparison_scopes(
+                    &organization_id,
+                    &project_id,
+                    &environment_id,
+                    &projects,
+                    &environments,
+                    &connections,
+                );
+                let scope_comparison = if scopes.len() >= 2 {
+                    fleet_client::analytics_compare(scopes, period).await?
+                } else {
+                    CompareScopesResponse::default()
+                };
+                Ok::<_, fleet_client::ClientError>((
+                    overview,
+                    volume,
+                    registration_funnel,
+                    failure_breakdown,
+                    organization_policy,
+                    scope_comparison,
+                ))
+            }
+            .await;
+            match result {
+                Ok((
+                    overview,
+                    volume,
+                    registration_funnel,
+                    failure_breakdown,
+                    organization_policy,
+                    scope_comparison,
+                )) => {
+                    analytics.set(overview);
+                    series.set(volume);
+                    funnel.set(registration_funnel);
+                    failures.set(failure_breakdown);
+                    policy.set(organization_policy);
+                    comparison.set(scope_comparison);
+                    error.set(String::new());
+                }
+                Err(reason) => error.set(reason.0),
+            }
+            loading.set(false);
+        });
+    });
+
+    let snapshot = analytics();
+    let authentication = snapshot
+        .authentication
+        .as_option()
+        .cloned()
+        .unwrap_or_default();
+    let coverage = snapshot.coverage.first().cloned().unwrap_or_default();
+    let success_rate = percentage(
+        authentication.success_rate_numerator,
+        authentication.success_rate_denominator,
+    );
+    let chart_points = series().points;
+    let funnel_snapshot = funnel();
+    let failures_snapshot = failures();
+    let comparison_snapshot = comparison();
+    let maximum_attempts = chart_points
+        .iter()
+        .map(|point| point.numerator)
+        .max()
+        .unwrap_or(1)
+        .max(1);
+    let policy_snapshot = policy();
+    let presentation_state = analytics_presentation_state(
+        has_organization,
+        loading(),
+        &error(),
+        &snapshot,
+        &policy_snapshot,
+        chart_points.len(),
+    );
+    let authentication_available = snapshot.authentication.is_set();
+    let attempts_value = if authentication_available {
+        authentication.attempts.to_string()
+    } else {
+        "Unavailable".into()
+    };
+    let success_rate_value = if authentication_available {
+        format!("{success_rate}%")
+    } else {
+        "Unavailable".into()
+    };
+    let reporting_value = if coverage.total_realms > 0 {
+        format!(
+            "{} / {}",
+            coverage.reporting_realms, coverage.expected_realms
+        )
+    } else {
+        "Unavailable".into()
+    };
+
+    rsx! {
+        div { class: "content-stack",
+            section { class: "page-heading",
+                div {
+                    p { class: "eyebrow", "Fleet Analytics V1" }
+                    h2 { "Hierarchy analytics" }
+                    p { "Authorized, identity-free rollups with explicit coverage, bounded failures, and policy status." }
+                }
+                div { class: "segmented",
+                    for (label, seconds) in [("24 hours", 86_400_i64), ("7 days", 604_800_i64), ("28 days", 2_419_200_i64)] {
+                        button {
+                            r#type: "button",
+                            class: if period_seconds() == seconds { "active" } else { "" },
+                            onclick: move |_| period_seconds.set(seconds),
+                            "{label}"
+                        }
+                    }
+                }
+            }
+            if presentation_state == AnalyticsPresentationState::Forbidden {
+                div { class: "fleet-alert", role: "alert", Icon { icon: TablerIcon::AlertTriangle, size: 17 } span { "You do not have permission to view analytics for this hierarchy." } }
+            } else if presentation_state == AnalyticsPresentationState::Error {
+                div { class: "fleet-alert", role: "alert", Icon { icon: TablerIcon::AlertTriangle, size: 17 } span { "{error}" } }
+            }
+            if presentation_state == AnalyticsPresentationState::Loading {
+                div { class: "fleet-loading", span {} "Loading canonical Fleet analytics…" }
+            }
+            if presentation_state == AnalyticsPresentationState::Disabled {
+                div { class: "fleet-alert", role: "status", Icon { icon: TablerIcon::InfoCircle, size: 17 } span { "Central analytics is disabled by organization policy. Realm authentication and Fleet management remain available." } }
+            } else if presentation_state == AnalyticsPresentationState::Unsupported {
+                div { class: "fleet-alert", role: "status", Icon { icon: TablerIcon::InfoCircle, size: 17 } span { "The realms in this hierarchy do not advertise Fleet Analytics V1." } }
+            } else if presentation_state == AnalyticsPresentationState::Stale {
+                div { class: "fleet-alert", role: "status", Icon { icon: TablerIcon::AlertTriangle, size: 17 } span { "Stale result: {coverage.stale_realms} expected realm(s) missed the last complete window." } }
+            } else if presentation_state == AnalyticsPresentationState::Partial {
+                div { class: "fleet-alert", role: "status",
+                    Icon { icon: TablerIcon::AlertTriangle, size: 17 }
+                    span { "Partial result: {coverage.reporting_realms} reporting, {coverage.stale_realms} stale, {coverage.disabled_realms} disabled, {coverage.unsupported_realms} unsupported." }
+                }
+            } else if presentation_state == AnalyticsPresentationState::Empty {
+                div { class: "empty-state", role: "status", p { "No analytics sources are available for the selected hierarchy and window." } }
+            }
+            section { class: "metric-grid metrics-full",
+                MetricCard { label: "Authentication attempts", value: attempts_value, change: "Selected hierarchy", tone: "neutral" }
+                MetricCard { label: "Success rate", value: success_rate_value, change: "Ratio of summed counts", tone: if authentication_available && success_rate >= 95 { "good" } else if authentication_available { "warning" } else { "neutral" } }
+                MetricCard { label: "Reporting realms", value: reporting_value, change: "Registry-derived coverage", tone: if coverage.total_realms > 0 && coverage.reporting_realms == coverage.expected_realms { "good" } else if coverage.total_realms > 0 { "warning" } else { "neutral" } }
+                MetricCard { label: "Authentication p95", value: if authentication.latency_p95_available { format!("{} ms", authentication.latency_p95_upper_bound_milliseconds) } else { "Unavailable".into() }, change: "Merged histogram", tone: "neutral" }
+            }
+            div { class: "overview-grid metrics-grid",
+                section { class: "panel volume-panel",
+                    PanelHeader { eyebrow: "Authentication attempts", title: "Effective-granularity volume" }
+                    if chart_points.is_empty() {
+                        div { class: "empty-state", p { "No reporting realm supplied this metric in the selected window." } }
+                    } else {
+                        div { class: "bar-chart tall", aria_label: "Fleet authentication attempts over time",
+                            for point in chart_points {
+                                {
+                                    let height = point.numerator.saturating_mul(100).div_ceil(maximum_attempts) as u16;
+                                    let height = ((height.max(5) + 2) / 5 * 5).min(100);
+                                    let title = format!("{} · {}", format_millisecond_time(point.starts_at_unix_milliseconds), point.numerator);
+                                    rsx! { span { class: "bar-height-{height}", title: "{title}" } }
+                                }
+                            }
+                        }
+                    }
+                    div { class: "chart-legend",
+                        span { i { class: "copper" } "{snapshot.source}" }
+                        strong { "{success_rate}% success" }
+                    }
+                }
+                section { class: "panel",
+                    PanelHeader { eyebrow: "Registration", title: "Bounded funnel" }
+                    if funnel_snapshot.stages.is_empty() {
+                        div { class: "empty-state", p { "Registration telemetry is unavailable for this scope." } }
+                    } else {
+                        for stage in funnel_snapshot.stages {
+                            LiveFunnelRow { label: stage.stage, value: stage.count, percent: percentage(stage.count, authentication.attempts.max(1)) }
+                        }
+                    }
+                }
+            }
+            div { class: "overview-grid metrics-grid",
+                section { class: "panel",
+                    PanelHeader { eyebrow: "Failure contribution", title: "Bounded failure classes" }
+                    if failures_snapshot.failures.is_empty() {
+                        div { class: "empty-state", p { "No classified authentication failures were reported." } }
+                    } else {
+                        for failure in failures_snapshot.failures {
+                            LiveFunnelRow {
+                                label: failure_label(failure.failure_class.as_known()),
+                                value: failure.count,
+                                percent: (failure.contribution * 100.0).round().clamp(0.0, 100.0) as u16,
+                            }
+                        }
+                    }
+                }
+                section { class: "panel",
+                    PanelHeader { eyebrow: "Organization policy", title: "Retention and residency" }
+                    div { class: "connection-list",
+                        article { class: "connection-row",
+                            div { strong { "Central analytics" } small { "Organization-controlled" } }
+                            span { class: if policy_snapshot.enabled { "status-badge good" } else { "status-badge warn" }, if policy_snapshot.enabled { "Enabled" } else { "Disabled" } }
+                            small { "{policy_snapshot.canonical_retention_days} day canonical retention" }
+                        }
+                        article { class: "connection-row",
+                            div { strong { "Residency" } small { "Archive path remains policy-bound" } }
+                            span { class: "status-badge", "{residency_label(policy_snapshot.residency_mode.as_known())}" }
+                            small { "{policy_snapshot.max_buckets_per_minute_per_realm} buckets/minute/realm" }
+                        }
+                    }
+                    button {
+                        r#type: "button",
+                        class: "button secondary",
+                        disabled: mutating_policy(),
+                        onclick: move |_| {
+                            let current = policy();
+                            mutating_policy.set(true);
+                            policy_status.set(String::new());
+                            spawn(async move {
+                                match fleet_client::update_analytics_policy(&current, !current.enabled).await {
+                                    Ok(updated) => {
+                                        let state = if updated.enabled { "enabled" } else { "disabled" };
+                                        policy.set(updated);
+                                        policy_status.set(format!("Central analytics {state}."));
+                                    }
+                                    Err(reason) => policy_status.set(reason.0),
+                                }
+                                mutating_policy.set(false);
+                            });
+                        },
+                        if mutating_policy() { "Saving…" } else if policy_snapshot.enabled { "Disable central analytics" } else { "Enable central analytics" }
+                    }
+                    if !policy_status().is_empty() {
+                        p { class: "field-hint", role: "status", "{policy_status}" }
+                    }
+                }
+            }
+            section { class: "panel",
+                PanelHeader { eyebrow: "Sibling comparison", title: "Trace contribution within the selected hierarchy" }
+                if comparison_snapshot.comparisons.is_empty() {
+                    div { class: "empty-state", p { "Select a hierarchy level with at least two children to compare contribution." } }
+                } else {
+                    div { class: "connection-list",
+                        for item in comparison_snapshot.comparisons {
+                            {
+                                let scope = item.scope.as_option().cloned().unwrap_or_default();
+                                let metrics = item.authentication.as_option().cloned().unwrap_or_default();
+                                let rate = percentage(metrics.success_rate_numerator, metrics.success_rate_denominator);
+                                let label = comparison_scope_label(&scope);
+                                rsx! {
+                                    article { class: "connection-row",
+                                        div { strong { "{label}" } small { "Authorized sibling scope" } }
+                                        span { class: "status-badge", "{metrics.attempts} attempts" }
+                                        small { "{rate}% success" }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            section { class: "panel",
+                PanelHeader { eyebrow: "Coverage", title: "Missing telemetry is never rendered as zero" }
+                div { class: "connection-list",
+                    article { class: "connection-row",
+                        div { strong { "Expected" } small { "Reporting + stale" } }
+                        span { class: "status-badge", "{coverage.expected_realms}" }
+                        small { "Total registry scope: {coverage.total_realms}" }
+                    }
+                    article { class: "connection-row",
+                        div { strong { "Last complete window" } small { "Minimum across reporting realms" } }
+                        span { class: if coverage.last_complete_window_start_unix_milliseconds > 0 { "status-badge good" } else { "status-badge warn" },
+                            "{format_millisecond_time(coverage.last_complete_window_start_unix_milliseconds)}"
+                        }
+                        small { "Disabled: {coverage.disabled_realms} · Unsupported: {coverage.unsupported_realms}" }
+                    }
+                }
+            }
+        }
+    }
+}
+
+fn format_millisecond_time(value: i64) -> String {
+    time::OffsetDateTime::from_unix_timestamp_nanos(i128::from(value).saturating_mul(1_000_000))
+        .ok()
+        .and_then(|value| {
+            value
+                .format(&time::format_description::well_known::Rfc3339)
+                .ok()
+        })
+        .unwrap_or_else(|| "Unavailable".into())
+}
+
+fn failure_label(
+    value: Option<crate::proto::rustyauth::analytics::v1::FailureClass>,
+) -> &'static str {
+    use crate::proto::rustyauth::analytics::v1::FailureClass;
+    match value {
+        Some(FailureClass::InvalidCredential) => "Invalid credential",
+        Some(FailureClass::ChallengeExpired) => "Challenge expired",
+        Some(FailureClass::OriginRejected) => "Origin rejected",
+        Some(FailureClass::PolicyDenied) => "Policy denied",
+        Some(FailureClass::RateLimited) => "Rate limited",
+        Some(FailureClass::StoreUnavailable) => "Store unavailable",
+        Some(FailureClass::UpstreamUnavailable) => "Upstream unavailable",
+        Some(FailureClass::Internal) => "Internal",
+        Some(FailureClass::Other) => "Other",
+        _ => "Unknown",
+    }
+}
+
+fn residency_label(
+    value: Option<crate::proto::rustyauth::analytics::v1::AnalyticsResidencyMode>,
+) -> &'static str {
+    use crate::proto::rustyauth::analytics::v1::AnalyticsResidencyMode;
+    match value {
+        Some(AnalyticsResidencyMode::RollupsOnly) => "Rollups only",
+        Some(AnalyticsResidencyMode::CustomerOwnedArchive) => "Customer-owned archive",
+        Some(AnalyticsResidencyMode::CentralLandingArchive) => "Central landing archive",
+        _ => "Unspecified",
+    }
+}
+
+fn comparison_scopes(
+    organization_id: &str,
+    project_id: &str,
+    environment_id: &str,
+    projects: &[FleetProject],
+    environments: &[FleetEnvironment],
+    connections: &[RealmConnection],
+) -> Vec<AnalyticsScope> {
+    if !environment_id.is_empty() {
+        return connections
+            .iter()
+            .filter(|connection| connection.environment_id == environment_id)
+            .take(8)
+            .map(|connection| AnalyticsScope {
+                kind: AnalyticsScopeKind::Realm.into(),
+                organization_id: organization_id.into(),
+                project_id: project_id.into(),
+                environment_id: environment_id.into(),
+                connection_id: connection.id.clone(),
+                ..Default::default()
+            })
+            .collect();
+    }
+    if !project_id.is_empty() {
+        return environments
+            .iter()
+            .filter(|environment| environment.project_id == project_id)
+            .take(8)
+            .map(|environment| AnalyticsScope {
+                kind: AnalyticsScopeKind::Environment.into(),
+                organization_id: organization_id.into(),
+                project_id: project_id.into(),
+                environment_id: environment.id.clone(),
+                ..Default::default()
+            })
+            .collect();
+    }
+    projects
+        .iter()
+        .filter(|project| project.organization_id == organization_id)
+        .take(8)
+        .map(|project| AnalyticsScope {
+            kind: AnalyticsScopeKind::Project.into(),
+            organization_id: organization_id.into(),
+            project_id: project.id.clone(),
+            ..Default::default()
+        })
+        .collect()
+}
+
+fn comparison_scope_label(scope: &AnalyticsScope) -> String {
+    match scope.kind.as_known() {
+        Some(AnalyticsScopeKind::Project) => format!("Project {}", short_id(&scope.project_id)),
+        Some(AnalyticsScopeKind::Environment) => {
+            format!("Environment {}", short_id(&scope.environment_id))
+        }
+        Some(AnalyticsScopeKind::Realm) => format!("Realm {}", short_id(&scope.connection_id)),
+        Some(AnalyticsScopeKind::Organization) => {
+            format!("Organization {}", short_id(&scope.organization_id))
+        }
+        Some(AnalyticsScopeKind::Fleet) => "Fleet".into(),
+        _ => "Unknown scope".into(),
+    }
+}
+
+#[cfg(test)]
+mod analytics_presentation_tests {
+    use super::{AnalyticsPresentationState, analytics_presentation_state};
+    use crate::proto::rustyauth::analytics::v1::{
+        AnalyticsOverview, AnalyticsPolicy, AuthenticationAggregate, ReportingCoverage,
+    };
+
+    fn enabled_policy() -> AnalyticsPolicy {
+        AnalyticsPolicy {
+            enabled: true,
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn analytics_states_never_collapse_missing_or_denied_data_into_zero() {
+        let policy = enabled_policy();
+        let empty = AnalyticsOverview::default();
+        assert_eq!(
+            analytics_presentation_state(true, true, "", &empty, &policy, 0),
+            AnalyticsPresentationState::Loading
+        );
+        assert_eq!(
+            analytics_presentation_state(true, false, "Permission denied", &empty, &policy, 0),
+            AnalyticsPresentationState::Forbidden
+        );
+        assert_eq!(
+            analytics_presentation_state(true, false, "", &empty, &policy, 0),
+            AnalyticsPresentationState::Empty
+        );
+
+        let mut disabled = policy.clone();
+        disabled.enabled = false;
+        assert_eq!(
+            analytics_presentation_state(true, false, "", &empty, &disabled, 0),
+            AnalyticsPresentationState::Disabled
+        );
+
+        let mut unsupported = empty.clone();
+        unsupported.coverage.push(ReportingCoverage {
+            total_realms: 2,
+            unsupported_realms: 2,
+            ..Default::default()
+        });
+        assert_eq!(
+            analytics_presentation_state(true, false, "", &unsupported, &policy, 0),
+            AnalyticsPresentationState::Unsupported
+        );
+
+        let mut partial = empty.clone();
+        partial.coverage.push(ReportingCoverage {
+            total_realms: 2,
+            expected_realms: 2,
+            reporting_realms: 1,
+            partial: true,
+            ..Default::default()
+        });
+        assert_eq!(
+            analytics_presentation_state(true, false, "", &partial, &policy, 1),
+            AnalyticsPresentationState::Partial
+        );
+
+        let mut stale = partial.clone();
+        stale.coverage[0].stale_realms = 1;
+        assert_eq!(
+            analytics_presentation_state(true, false, "", &stale, &policy, 1),
+            AnalyticsPresentationState::Stale
+        );
+
+        let mut ready = empty;
+        ready.authentication = AuthenticationAggregate::default().into();
+        assert_eq!(
+            analytics_presentation_state(true, false, "", &ready, &policy, 1),
+            AnalyticsPresentationState::Ready
+        );
+    }
+}
+
 #[component]
 fn MetricsPage() -> Element {
     let mut range = use_signal(|| "24 hours");
@@ -2568,7 +4319,8 @@ fn MetricsPage() -> Element {
                         for (index, value) in AUTH_VOLUME.iter().enumerate() {
                             {
                                 let height = (f32::from(*value) / 1.6).round() as u16;
-                                rsx! { span { style: "height: {height}%", title: "{index}:00 · {value}" } }
+                                let height = ((height + 2) / 5 * 5).clamp(5, 100);
+                                rsx! { span { class: "bar-height-{height}", title: "{index}:00 · {value}" } }
                             }
                         }
                     }

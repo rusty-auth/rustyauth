@@ -6,6 +6,7 @@ fn main() {
 
     connectrpc_build::Config::new()
         .files(&[
+            "proto/rustyauth/analytics/v1/analytics.proto",
             "proto/rustyauth/events/v1/events.proto",
             "proto/rustyauth/fleet/v1/fleet.proto",
             "proto/rustyauth/identity/v1/identity.proto",

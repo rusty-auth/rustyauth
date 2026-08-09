@@ -112,13 +112,17 @@ fn migrate_legacy(
     let ciphertext = URL_SAFE_NO_PAD
         .decode(&legacy.encrypted_private_key)
         .context("decode legacy encrypted signing key")?;
+    let nonce: [u8; 12] = nonce
+        .try_into()
+        .map_err(|_| anyhow::anyhow!("legacy signing-key nonce must contain exactly 12 bytes"))?;
+    let nonce = aes_gcm::aead::Nonce::<Aes256Gcm>::from(nonce);
     let mut private_der = None;
     for key_id in master_keys.key_ids() {
         let key = master_keys
             .get(key_id)
             .expect("key returned by key_ids must resolve");
         let cipher = Aes256Gcm::new_from_slice(key).expect("validated AES-256 key");
-        if let Ok(value) = cipher.decrypt(nonce.as_slice().into(), ciphertext.as_slice()) {
+        if let Ok(value) = cipher.decrypt(&nonce, ciphertext.as_slice()) {
             private_der = Some(value);
             break;
         }
@@ -160,7 +164,7 @@ pub(super) fn validate_keyset(keyset: &StoredKeySet, master_keys: &KeyRing) -> R
 #[cfg(test)]
 mod tests {
     use super::*;
-    use p256::{ecdsa::SigningKey, elliptic_curve::rand_core::OsRng, pkcs8::EncodePrivateKey};
+    use p256::{ecdsa::SigningKey, elliptic_curve::Generate as _, pkcs8::EncodePrivateKey};
     use serde_json::json;
     use uuid::Uuid;
     use zeroize::Zeroize;
@@ -170,7 +174,7 @@ mod tests {
     #[test]
     fn legacy_key_migration_preserves_kid_and_signing_material() {
         let keys = KeyRing::new("master", [6; 32], Vec::new()).unwrap();
-        let signing = SigningKey::random(&mut OsRng);
+        let signing = SigningKey::generate();
         let mut private_der = signing.to_pkcs8_der().unwrap().as_bytes().to_vec();
         let cipher = Aes256Gcm::new_from_slice(keys.active().1).unwrap();
         let nonce = [9_u8; 12];
@@ -178,7 +182,7 @@ mod tests {
             .encrypt((&nonce).into(), private_der.as_slice())
             .unwrap();
         let kid = Uuid::new_v4().to_string();
-        let point = signing.verifying_key().to_encoded_point(false);
+        let point = signing.verifying_key().to_sec1_point(false);
         let legacy = LegacyStoredKey {
             kid: kid.clone(),
             public_jwk: json!({

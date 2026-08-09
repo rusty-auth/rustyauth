@@ -148,6 +148,50 @@ Deno.test("register sends bootstrap headers and the mapped attestation", async (
   });
 });
 
+Deno.test("production registration sends an invitation only in the options body", async () => {
+  const { fetch, calls } = stubFetch([
+    jsonResponse(200, { ceremonyId: "ceremony-invite", options: CREATION_OPTIONS }),
+    jsonResponse(201, TOKEN_RESPONSE),
+  ]);
+  const client = createRustyAuthClient({
+    baseUrl: "https://auth.example.com",
+    fetch,
+    ceremonies: {
+      create: () => Promise.resolve(fakeRegistrationCredential()),
+      get: () => Promise.reject(new Error("unexpected get")),
+    },
+  });
+
+  await client.register({
+    identifier: { type: "email", value: "person@example.com" },
+    invitationCode: "rinv_secret-once",
+  });
+
+  assertEquals(calls[0].body, {
+    identifier: { type: "email", value: "person@example.com" },
+    invitationCode: "rinv_secret-once",
+  });
+  assertEquals("x-bootstrap-token" in calls[0].headers, false);
+  assertEquals("x-bootstrap-token" in calls[1].headers, false);
+  assertEquals("invitationCode" in (calls[1].body as Record<string, unknown>), false);
+});
+
+Deno.test("registration refuses ambiguous enrolment authority before sending a request", async () => {
+  const { fetch, calls } = stubFetch([]);
+  const client = createRustyAuthClient({ baseUrl: "https://auth.example.com", fetch });
+  await assertRejects(
+    () =>
+      client.register({
+        identifier: { type: "email", value: "person@example.com" },
+        bootstrapToken: "development",
+        invitationCode: "production",
+      }),
+    Error,
+    "exactly one",
+  );
+  assertEquals(calls.length, 0);
+});
+
 Deno.test("signIn maps the assertion and never sends a bootstrap token", async () => {
   const { fetch, calls } = stubFetch([
     jsonResponse(200, { ceremonyId: "ceremony-2", options: REQUEST_OPTIONS }),
@@ -207,6 +251,60 @@ Deno.test("addPasskey posts the label and accepts the 204 verify", async () => {
   assertEquals("x-bootstrap-token" in calls[0].headers, false);
   assertEquals(calls[1].url, "http://localhost:8081/v1/passkeys/registration/add/verify");
   assertEquals((calls[1].body as { ceremonyId: string }).ceremonyId, "ceremony-3");
+});
+
+Deno.test("step-up, recovery, verification and account-wide revocation use hardened routes", async () => {
+  const { fetch, calls } = stubFetch([
+    jsonResponse(200, { ceremonyId: "step-up", options: REQUEST_OPTIONS }),
+    new Response(null, { status: 204 }),
+    jsonResponse(200, { ceremonyId: "recovery", options: CREATION_OPTIONS }),
+    jsonResponse(200, TOKEN_RESPONSE),
+    jsonResponse(200, { recoveryCodes: ["rrc_one", "rrc_two"] }),
+    jsonResponse(200, {
+      challengeId: "challenge-1",
+      expiresAt: 123,
+      delivered: true,
+      developmentCode: null,
+    }),
+    new Response(null, { status: 204 }),
+    new Response(null, { status: 204 }),
+  ]);
+  const client = createRustyAuthClient({
+    baseUrl: "https://auth.example.com",
+    fetch,
+    ceremonies: {
+      create: () => Promise.resolve(fakeRegistrationCredential()),
+      get: () => Promise.resolve(fakeAssertionCredential()),
+    },
+  });
+
+  await client.stepUp();
+  await client.recoverAccount({
+    identifier: { type: "email", value: "person@example.com" },
+    recoveryCode: "rrc_one",
+    label: "Replacement key",
+  });
+  assertEquals(await client.rotateRecoveryCodes(), ["rrc_one", "rrc_two"]);
+  const challenge = await client.requestIdentifierVerification({
+    type: "phone",
+    value: "+447700900123",
+  });
+  await client.completeIdentifierVerification({ challengeId: challenge.challengeId, code: "123456" });
+  await client.revokeAllSessions();
+
+  assertEquals(
+    calls.map((call) => new URL(call.url).pathname),
+    [
+      "/v1/passkeys/step-up/options",
+      "/v1/passkeys/step-up/verify",
+      "/v1/passkeys/recovery/options",
+      "/v1/passkeys/recovery/verify",
+      "/v1/account/recovery-codes",
+      "/v1/account/identifiers/verification/request",
+      "/v1/account/identifiers/verification/verify",
+      "/v1/sessions/revoke-all",
+    ],
+  );
 });
 
 Deno.test("session endpoints use the right methods, paths and bodies", async () => {

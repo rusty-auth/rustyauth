@@ -1,0 +1,75 @@
+{
+	admin off
+	auto_https off
+}
+
+(security_headers) {
+	header {
+		Content-Security-Policy "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self'; frame-ancestors 'none'; form-action 'self'; base-uri 'none'; object-src 'none'"
+		Cross-Origin-Opener-Policy "same-origin"
+		Cross-Origin-Resource-Policy "same-origin"
+		Permissions-Policy "geolocation=(), camera=(), microphone=(), payment=()"
+		Referrer-Policy "no-referrer"
+		Strict-Transport-Security "max-age=63072000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		-Server
+		defer
+	}
+}
+
+:{$PORT:8080} {
+	log {
+		format json
+	}
+
+	encode zstd gzip
+	import security_headers
+
+	handle /healthz {
+		header Content-Type application/json
+		respond `{"status":"ok"}` 200
+	}
+
+	handle /readyz {
+		reverse_proxy {$RUSTYAUTH_API_UPSTREAM:http://control-plane:8080}
+	}
+
+	@auth path \
+ /v1/passkeys/registration/options \
+ /v1/passkeys/registration/verify \
+ /v1/passkeys/authentication/options \
+ /v1/passkeys/authentication/verify \
+ /v1/passkeys/step-up/options \
+ /v1/passkeys/step-up/verify \
+ /v1/passkeys/recovery/options \
+ /v1/passkeys/recovery/verify \
+ /v1/device-tokens \
+ /v1/account/recovery-codes \
+ /v1/account/identifiers/verification/request \
+ /v1/account/identifiers/verification/verify \
+ /v1/sessions/revoke-all \
+ /v1/sign-out \
+ /.well-known/openid-configuration \
+ /.well-known/jwks.json \
+ /.well-known/passkey-auth
+	handle @auth {
+		reverse_proxy {$RUSTYAUTH_API_UPSTREAM:http://control-plane:8080}
+	}
+
+	@rpc path_regexp rpc ^/rustyauth\.(analytics\.v1\.AnalyticsService|fleet\.v1\.FleetService|identity\.v1\.IdentityService|management\.v1\.RealmManagementService|metrics\.v1\.MetricsService|organization\.v1\.OrganizationService|service_accounts\.v1\.ServiceAccountService|webhooks\.v1\.WebhookService)/[A-Za-z0-9]+$
+	handle @rpc {
+		reverse_proxy {$RUSTYAUTH_API_UPSTREAM:http://control-plane:8080}
+	}
+
+	handle {
+		root * /srv
+		try_files {path} /index.html
+		file_server
+	}
+
+	handle_errors {
+		import security_headers
+		respond "{err.status_code} {err.status_text}" {err.status_code}
+	}
+}

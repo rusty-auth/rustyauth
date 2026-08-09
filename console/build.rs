@@ -5,7 +5,17 @@ fn main() {
     unsafe { std::env::set_var("PROTOC", protoc) };
 
     connectrpc_build::Config::new()
-        .files(&["../proto/rustyauth/fleet/v1/fleet.proto"])
+        .files(&[
+            "../proto/rustyauth/analytics/v1/analytics.proto",
+            "../proto/rustyauth/events/v1/events.proto",
+            "../proto/rustyauth/fleet/v1/fleet.proto",
+            "../proto/rustyauth/identity/v1/identity.proto",
+            "../proto/rustyauth/management/v1/management.proto",
+            "../proto/rustyauth/metrics/v1/metrics.proto",
+            "../proto/rustyauth/organization/v1/organization.proto",
+            "../proto/rustyauth/service_accounts/v1/service_accounts.proto",
+            "../proto/rustyauth/webhooks/v1/webhooks.proto",
+        ])
         .includes(&["../proto"])
         .include_file("_connectrpc.rs")
         .compile()

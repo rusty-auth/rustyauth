@@ -1,13 +1,150 @@
 ---
 import DocsLayout from "../../layouts/DocsLayout.astro";
-const variables = [["AUTH_ISSUER", "Public RustyAuth origin"], ["WEBAUTHN_RP_ORIGIN", "Exact dashboard and passkey origin"], ["WEBAUTHN_RP_ID", "Exact host of the browser origin"], ["SABLEDB_URL", "Private Valkey-protocol URL"], ["AUTH_MASTER_KEY_HEX", "Active key wrapping signing material"], ["BOOTSTRAP_TOKEN", "Administrative enrolment credential"], ["AUTH_EVENT_RPC_TOKEN", "Private event-stream bearer credential"], ["AUTH_IDENTITY_RPC_TOKEN", "Private identity-control bearer credential"], ["AUTH_OPERATOR_EMAILS", "Emails allowed to bootstrap the owner operator"], ["SPACETIME_AUDIENCE", "Expected downstream audience"], ["AUTH_TENANT_ID", "Stable tenant identifier"]];
+
+const ownership = [
+  ["RustyAuth policy", "rustyauth.yaml", "Issuer, relying party, lifetimes, backups and webhook desired state"],
+  ["Deployment topology", "Platform IaC", "Image, services, private network, volumes, bucket and health checks"],
+  ["Credentials", "Secret store", "Master keys, bootstrap/RPC tokens, datastore and backup credentials"],
+  ["Identity state", "RustyAuth + SableDB", "Users, passkeys, sessions, grants and generated signing keys"],
+];
+
+const precedence = [
+  ["1", "--config <path>", "Explicit operator-selected document"],
+  ["2", "RUSTYAUTH_CONFIG_YAML", "Multiline YAML for Railway and variable-only platforms"],
+  ["3", "RUSTYAUTH_CONFIG_FILE", "Path supplied by the deployment environment"],
+  ["4", "/etc/rustyauth/config.yaml", "Conventional read-only container mount"],
+  ["5", "Environment variables", "Backwards-compatible legacy contract"],
+];
+
+const secrets = [
+  ["AUTH_MASTER_KEY_HEX or KMS ciphertext", "Wraps persisted signing-key material"],
+  ["BOOTSTRAP_TOKEN", "Administrative initial-enrolment credential"],
+  ["AUTH_EVENT_RPC_TOKEN", "Private realm event-stream credential"],
+  ["AUTH_IDENTITY_RPC_TOKEN", "Private realm identity-control credential"],
+  ["AUTH_BACKUP_ACCESS_KEY_ID", "Backup storage access identifier"],
+  ["AUTH_BACKUP_SECRET_ACCESS_KEY", "Backup storage secret"],
+  ["AUTH_BACKUP_ENCRYPTION_KEY_HEX or KMS ciphertext", "Portable application-level backup key"],
+];
 ---
-<DocsLayout title="Configuration" eyebrow="Fail-closed startup" intro="Security-critical settings are validated before RustyAuth accepts traffic.">
-  <h2>Core variables</h2><div class="variable-list">{variables.map(([name, purpose]) => <div><code>{name}</code><p>{purpose}</p></div>)}</div>
-  <h2>Origin policy</h2><p>RustyAuth compares exact origins. Production wildcard origins are rejected because WebAuthn relying-party identity and browser cookies both depend on a stable boundary.</p>
-  <h2>Operator bootstrap</h2><p>The first passkey-authenticated account whose canonical email appears in <code>AUTH_OPERATOR_EMAILS</code> becomes the owner. Leaving the value empty disables dashboard operator access.</p>
-  <h2>SableDB boundary</h2><p>The production SableDB hostname must resolve on the private network. The process refuses configurations that imply a public production database endpoint.</p>
-  <h2>Signing rotation</h2><p>Signing keys rotate automatically with safe JWKS prepublication and retired-key overlap. To rotate the master key, place the new value in <code>AUTH_MASTER_KEY_HEX</code> and keep the old value temporarily in <code>AUTH_MASTER_PREVIOUS_KEYS_HEX</code>. RustyAuth derives key IDs and rewraps private material automatically.</p>
-  <h2>Scheduled backups</h2><p>Provide the six required <code>AUTH_BACKUP_*</code> storage and encryption values to enable a verified backup at startup and every six hours by default. New snapshots use compact binary encoding, Zstandard and application-level AES-256-GCM. The bucket must also prove Versioning, compliance-mode Object Lock retention and the configured SSE policy. Use <code>AUTH_BACKUP_RPO_SECONDS</code>, <code>AUTH_BACKUP_RETENTION_DAYS</code> and <code>AUTH_BACKUP_SSE_KMS_KEY_ID</code> to pin those operational guarantees. During backup-key rotation, retain old keys temporarily in <code>AUTH_BACKUP_PREVIOUS_KEYS_HEX</code>.</p>
-  <div class="doc-callout warning"><strong>Protect secrets</strong><p>Signing keys, bootstrap values and production credentials belong in your deployment platform's encrypted secret store, never in committed environment files.</p></div>
+
+<DocsLayout title="Configuration" eyebrow="Configuration as code" intro="Use one reviewed, versioned YAML contract everywhere while keeping infrastructure, secrets and identity state in their proper owners.">
+  <div class="docs-status-strip" aria-label="Configuration contract status">
+    <div><small>API version</small><strong>rustyauth.dev/v1alpha1</strong></div>
+    <div><small>Document scope</small><strong>One running process</strong></div>
+    <div><small>Validation</small><strong>Fail closed before bind</strong></div>
+  </div>
+
+  <h2>One contract for every environment</h2>
+  <p>A document configures exactly one Realm or Fleet control-plane process. Keep one file per environment so production cannot silently inherit development policy, and review changes alongside deployment code.</p>
+  <pre><code>{`deploy/
+  development/rustyauth.yaml
+  staging/rustyauth.yaml
+  production/rustyauth.yaml`}</code></pre>
+  <p>Unknown fields, kinds and API versions are rejected. Durations use readable values such as <code>30s</code>, <code>5m</code>, <code>6h</code>, <code>7d</code> and <code>90d</code>.</p>
+
+  <h2>Realm example</h2>
+  <pre><code>{`apiVersion: rustyauth.dev/v1alpha1
+kind: Realm
+metadata:
+  tenantId: payments
+  realmId: payments-production
+spec:
+  environment: production
+  server:
+    bind: 0.0.0.0
+    port: 8080
+    publicIssuer: https://auth.example.com
+    trustedProxyHops: 1
+  datastore:
+    endpoint: redis://sabledb.railway.internal:6379
+  relyingParty:
+    id: app.example.com
+    origin: https://app.example.com
+    name: Example Account
+  tokens:
+    audience: payments-api
+    accessTtl: 5m
+  sessions:
+    idleTimeout: 30m
+    absoluteTimeout: 7d
+  webhooks:
+    - id: application-lifecycle
+      name: Application lifecycle
+      endpoint: https://api.example.com/hooks/rustyauth
+      enabled: true
+      eventTypes:
+        - identity.created
+        - session.created
+  backups:
+    enabled: false`}</code></pre>
+
+  <h2>What IaC owns</h2>
+  <p>The application document complements Terraform, Pulumi, Railway or Compose; it does not replace them. Credentials and user state never belong in committed YAML.</p>
+  <div class="doc-table-wrap"><table><thead><tr><th>Concern</th><th>Owner</th><th>Examples</th></tr></thead><tbody>{ownership.map(([concern, owner, examples]) => <tr><td>{concern}</td><td><code>{owner}</code></td><td>{examples}</td></tr>)}</tbody></table></div>
+
+  <h2>Generate and validate</h2>
+  <pre><code>{`rustyauth config example realm > rustyauth.yaml
+rustyauth config validate rustyauth.yaml
+rustyauth --config rustyauth.yaml`}</code></pre>
+  <p><code>config validate</code> uses the same parser and policy checks as service startup, but substitutes non-credential validation material so pull-request jobs do not need production secrets. Its JSON summary omits datastore details and every credential.</p>
+  <pre><code>{`for config in deploy/*/rustyauth.yaml; do
+  rustyauth config validate "$config"
+done`}</code></pre>
+  <p>The checked-in <a href="https://github.com/rusty-auth/rustyauth/blob/main/schemas/rustyauth-config-v1alpha1.schema.json">JSON Schema</a> provides editor completion. Start from the <a href="https://github.com/rusty-auth/rustyauth/blob/main/rustyauth.example.yaml">local example</a> or the <a href="https://github.com/rusty-auth/rustyauth/blob/main/examples/config/realm-production.yaml">production example with backups and webhooks</a>.</p>
+
+  <h2>Configuration source precedence</h2>
+  <div class="doc-table-wrap"><table><thead><tr><th>Order</th><th>Source</th><th>Use</th></tr></thead><tbody>{precedence.map(([order, source, use]) => <tr><td>{order}</td><td><code>{source}</code></td><td>{use}</td></tr>)}</tbody></table></div>
+  <p>Configure only one of <code>RUSTYAUTH_CONFIG_YAML</code> and <code>RUSTYAUTH_CONFIG_FILE</code>. An explicit <code>--config</code> path wins because it is an operator action for that invocation.</p>
+
+  <h2>Docker and Kubernetes</h2>
+  <p>The container automatically loads <code>/etc/rustyauth/config.yaml</code>; no wrapper entrypoint is required.</p>
+  <pre><code>{`services:
+  auth:
+    image: ghcr.io/rusty-auth/rustyauth:v0.1.0
+    configs:
+      - source: rustyauth
+        target: /etc/rustyauth/config.yaml
+    environment:
+      AUTH_MASTER_KEY_HEX_FILE: /run/secrets/master-key
+      BOOTSTRAP_TOKEN_FILE: /run/secrets/bootstrap-token
+
+configs:
+  rustyauth:
+    file: ./deploy/production/rustyauth.yaml`}</code></pre>
+  <p>On Kubernetes, mount the document from a <code>ConfigMap</code> at the same path and expose credentials from <code>Secret</code> objects through fixed environment names or their <code>_FILE</code> companions.</p>
+
+  <h2>Railway</h2>
+  <p>Set the complete document as the multiline <code>RUSTYAUTH_CONFIG_YAML</code> service variable. Railway's injected <code>PORT</code> overrides <code>spec.server.port</code>, and a private <code>SABLEDB_URL</code> service reference may replace a credential-bearing datastore endpoint. Keep generated keys and tokens as separate sealed variables.</p>
+  <p><code>railway.json</code> still owns build, health, replica and restart policy. The RustyAuth YAML owns application behavior, so the same document remains understandable outside Railway. Continue with the <a href="/docs/deployment">deployment guide</a>.</p>
+
+  <h2>Secrets stay separate</h2>
+  <div class="variable-list">{secrets.map(([name, purpose]) => <div><code>{name}</code><p>{purpose}</p></div>)}</div>
+  <p>Every secret accepts a corresponding <code>_FILE</code> input for container secret mounts. Supplying both forms for the same value is rejected. Backup credentials are required only when the YAML enables backups; Fleet control planes do not require the Realm event and identity RPC tokens.</p>
+  <div class="doc-callout warning"><strong>Never commit credentials</strong><p>If a SableDB URL embeds a password, inject the complete value through <code>SABLEDB_URL</code> or <code>SABLEDB_URL_FILE</code>. It safely overrides the non-secret endpoint placeholder.</p></div>
+
+  <h2>IaC-managed webhooks</h2>
+  <p>Realm documents can declare stable webhook IDs, HTTPS endpoints, enabled state and event types under <code>spec.webhooks</code>. These resources are authoritative, not initial defaults. API responses identify their management source, and the dashboard labels them <strong>Managed by YAML</strong>, disables destination controls and directs operators back to the deployment file. Dashboard-created destinations remain dashboard-managed.</p>
+  <p>This single-writer rule prevents UI edits from being silently reversed on the next deploy. Operational actions such as testing, delivery inspection and signing-secret rotation remain separate from desired-state ownership.</p>
+  <div class="doc-callout"><strong>Durable delivery is implemented on current main</strong><p>Startup reconciles configured destinations before the worker sends. Deliveries are signed over the timestamp and exact body, recorded durably, retried with bounded backoff and replayable while the source event remains retained. Pin the release or commit you evaluate because RustyAuth remains a pre-release.</p></div>
+
+  <h2>Backup schedules</h2>
+  <pre><code>{`backups:
+  enabled: true
+  destination:
+    endpoint: https://s3.eu-west-2.amazonaws.com
+    region: eu-west-2
+    bucket: example-rustyauth-backups
+    serverSideEncryption:
+      mode: aws-kms
+      kmsKeyId: arn:aws:kms:eu-west-2:123456789012:key/<key-id>
+  schedule:
+    interval: 6h
+    recoveryPointObjective: 6h
+  retention: 90d
+  alertAfterFailures: 2`}</code></pre>
+  <p>Storage credentials and the portable encryption key remain secret inputs. The bucket must separately enforce Versioning, compliance-mode Object Lock and the configured provider-side encryption policy. Use the exact KMS key ID returned by the provider; the checked-in AWS stack exposes its key ARN as an output.</p>
+  <p>Continue to <a href="/docs/recovery">Backups and disaster recovery</a> for snapshot coverage, the binary <code>.rauth</code> format, S3 verification, alerting and the clean-room restore procedure.</p>
+
+  <h2>Complete reference</h2>
+  <p>Use the repository's <a href="https://github.com/rusty-auth/rustyauth/blob/main/docs/CONFIGURATION.md">normative configuration reference</a> for every field, validation bound, legacy environment variable and deployment caveat. The application and CLI use the same parser described there.</p>
 </DocsLayout>

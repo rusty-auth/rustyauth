@@ -2,7 +2,7 @@
 
 **Status:** Active delivery plan
 
-**Updated:** 8 August 2026
+**Updated:** 9 August 2026
 
 RustyAuth is pre-release security infrastructure. This roadmap is ordered by security and dependency gates,
 not calendar promises. A capability is shipped only when it appears in the README status matrix and release
@@ -28,19 +28,22 @@ The controlling architecture decisions are:
 - [ADR 0004: Federated Fleet Analytics with trusted rollup ingestion](decisions/0004-federated-fleet-analytics.md)
 - [Federated Fleet Analytics delivery program](FLEET_ANALYTICS.md)
 
-ADR 0004 and the analytics program are planned post-Fleet work. They do not activate until M8 below is
-complete and Fleet is identified as shipped in the README and release notes.
+ADR 0004 and the analytics program are post-Fleet work. The maintainer confirmed Fleet delivery and completed
+M9's semantic compatibility gate and M10's realm projection/export gate on 9 August 2026. Paired realms now
+advertise `telemetry.rollups.v1`, project locally and export over the realm-initiated connector. M11–M13 now
+provide private GreptimeDB canonical/derived serving, the delegated hierarchy API, Dioxus journeys and signed
+Parquet recovery. M14 production qualification, independent review and canary evidence remain open.
 
 ## Transport contract
 
 One generated Protobuf contract serves all clients. Binary Protobuf is the default wire format:
 
-| Channel                                     | Transport                                         | Credential boundary                                      |
-| ------------------------------------------- | ------------------------------------------------- | -------------------------------------------------------- |
-| Dioxus web -> Rust control plane            | Same-origin Connect through the dashboard gateway | Passkey-backed Secure, HttpOnly, SameSite session cookie |
-| Dioxus desktop/mobile -> Rust control plane | Connect or native gRPC                            | Short-lived device token in the OS vault                 |
-| Fleet control plane -> public realm         | Native gRPC or Connect over HTTPS/HTTP2           | Revocable environment-scoped credential                  |
-| Private realm -> connector gateway          | Bidirectional native gRPC over HTTP/2             | mTLS workload identity and signed commands               |
+| Channel                                             | Transport                                         | Credential boundary                                      |
+| --------------------------------------------------- | ------------------------------------------------- | -------------------------------------------------------- |
+| Dioxus web -> Rust control plane                    | Same-origin Connect through the dashboard gateway | Passkey-backed Secure, HttpOnly, SameSite session cookie |
+| Dioxus desktop/mobile preview -> Rust control plane | Connect or native gRPC                            | Short-lived device token in the OS vault                 |
+| Fleet control plane -> public realm                 | Native gRPC or Connect over HTTPS/HTTP2           | Revocable environment-scoped credential                  |
+| Realm -> Fleet telemetry gateway                    | Bidirectional native gRPC over HTTP/2             | TLS plus a pairing-derived, connection-scoped proof      |
 
 The pinned ConnectRPC server handles Connect, gRPC and gRPC-Web with the same request limits, authorization
 interceptors and audit policy. TLS, authentication, authorization and replay protection remain mandatory;
@@ -62,7 +65,7 @@ binary encoding alone is not a security boundary.
 
 ### M1 — Fleet contract and durable identities
 
-**State:** functional slice complete; compatibility gate pending
+**State:** complete; generated compatibility and dual-protocol gates pass
 
 - Add a stable realm ID that is independent of issuer, RP ID and the legacy `AUTH_TENANT_ID` label.
 - Add versioned Fleet Protobufs for organizations, projects, environments, connections, memberships, role
@@ -76,7 +79,7 @@ stable identity and capabilities across restarts.
 
 ### M2 — Authorized Fleet registry
 
-**State:** functional slice complete; isolation qualification pending
+**State:** complete; hierarchy, delegation, audit and isolation gates pass
 
 - Persist organizations, projects, environments, memberships and scoped role bindings in the Fleet datastore.
 - Enforce parent-child integrity, normalized slugs, uniqueness, immutable IDs and soft deletion.
@@ -91,7 +94,7 @@ and all isolation rejection tests pass.
 
 ### M3 — Pairing and realm connection lifecycle
 
-**State:** public-endpoint slice complete; connector and hardening pending
+**State:** complete; public and realm-initiated connector lifecycles are qualified
 
 - Add realm discovery with protocol version, stable realm ID, issuer, RP ID, deployment version and explicit
   capability versions.
@@ -107,7 +110,7 @@ users, issuer, RP ID, sessions, signing keys or standalone availability.
 
 ### M4 — Live Dioxus control-plane journeys
 
-**State:** web slice complete; native credential adapters pending
+**State:** complete; web and native transport/vault adapters share the live journeys
 
 - Replace preview-only sign-in with real passkey registration, authentication, sign-out and session recovery.
 - Add a binary Connect client with cookies on web and a platform transport adapter for native builds.
@@ -122,7 +125,7 @@ realm, reload the application and recover the same authorized state from durable
 
 ### M5 — Read-only Fleet operations
 
-**State:** in progress
+**State:** complete; bounded source-tagged operations and partial/stale states are live
 
 - Aggregate bounded deployment, authentication, signing-key, backup and connection-health summaries.
 - Fetch selected-realm users, events, service accounts, webhooks and metrics on demand.
@@ -135,7 +138,7 @@ identity data or leaking data across organization boundaries.
 
 ### M6 — Controlled remote administration
 
-**State:** in progress
+**State:** implemented; production approval/canary qualification remains under M8
 
 - Separate read and mutation grants.
 - Require recent passkey step-up and a human reason for sensitive production mutations.
@@ -147,26 +150,26 @@ identity data or leaking data across organization boundaries.
 **Exit gate:** every remote mutation is scoped, stepped-up, idempotent, revocable and dual-audited; failure of
 Fleet never interrupts user authentication in a realm.
 
-### M7 — SolidJS retirement and cross-platform release
+### M7 — SolidJS retirement, web GA and native preview
 
-**State:** in progress; production artifacts split, native release gates pending
+**State:** complete for 1.0; web is the supported GA client and native clients are explicit previews
 
 - Complete the local dashboard RPC regression suite in Dioxus.
-- Move the visual source assets and styles into the Dioxus-owned package boundary.
-- Remove SolidJS, Vite and `@rustyauth/connect-solid` from production builds and CI.
+- Keep the visual source assets and styles inside the Dioxus-owned package boundary.
+- Keep SolidJS, Vite and `@rustyauth/connect-solid` out of product sources, builds and CI.
 - Publish the Dioxus web release as its own stateless dashboard image with a bounded same-origin Connect
   gateway to the configured private API service.
 - Publish separate Fleet control-plane and realm-backend images.
-- Add signed desktop packages and OS-vault device credentials.
-- Qualify mobile passkey/device flows before publishing iOS or Android packages.
+- Keep desktop/mobile feature builds and OS-vault device credentials available for preview qualification.
+- Do not publish desktop, iOS or Android packages as part of `1.0.0`.
 
 **Exit gate:** no production artifact contains the SolidJS runtime; dashboard, control-plane and realm-backend
-images are independently deployable; and web/desktop/mobile feature builds use the same screens, models and
-authorization semantics.
+images are independently deployable; the supported web client passes its live regression suite; and native
+feature builds remain clearly labelled, ephemeral, unsigned previews outside the GA support contract.
 
 ### M8 — Production operations and release
 
-**State:** in progress; CI publishing and local templates implemented, production qualification pending
+**State:** implementation and local container qualification complete; published-artifact and independent gates pending
 
 - Harden supplied containers with non-root users, read-only roots, dropped capabilities, no-new-privileges,
   bounded process counts and private database networking.
@@ -186,16 +189,32 @@ authorization semantics.
 **Exit gate:** a clean Railway deployment can create, pair, operate, back up, restore, upgrade and disconnect
 a realm using published images and documented procedures.
 
+## Post-1.0 program — Native distribution
+
+Desktop, iOS and Android reuse the Dioxus screens, models, binary protocol and native device-session/vault
+adapters implemented before 1.0, but they are not 1.0 release artifacts or supported clients. A future native
+release must separately:
+
+- sign, notarize and publish supported macOS, Windows and Linux packages;
+- qualify clean install, update, rollback and removal on each supported architecture;
+- accept the Apple toolchain terms under owner authority and qualify iOS passkey/device-vault flows on real
+  hardware with an authorized team/profile;
+- pin the Android SDK/NDK and qualify the same flows on real hardware with an authorized keystore; and
+- add machine-readable release evidence before any preview package is promoted to a supported channel.
+
+Unsigned preview packages remain pull-request/manual workflow artifacts with seven-day retention. They never
+run on, attach to or block server/container/web GA tags.
+
 ## Post-Fleet program — Federated Fleet Analytics
 
-The milestones below remain inactive until M8's exit gate passes. Their complete contracts, workstreams,
-qualification matrix and definition of done are maintained in
-[Federated Fleet Analytics delivery program](FLEET_ANALYTICS.md). The main roadmap records them here so Fleet
-completion has one explicit next program rather than an implicit expansion of M5.
+The milestones below activated on 9 August 2026. Their complete contracts, workstreams, qualification matrix
+and definition of done are maintained in [Federated Fleet Analytics delivery program](FLEET_ANALYTICS.md). The
+main roadmap records them here so Fleet completion has one explicit next program rather than an implicit
+expansion of M5.
 
 ### M9 — Analytics activation and semantic lock
 
-**State:** gated by M8
+**State:** complete on 9 August 2026
 
 - Revalidate ADR 0004 against the shipped connector, hierarchy, authorization and recovery implementation.
 - Lock metric names, units, histogram boundaries, allowed dimensions, bucket closure and correction semantics.
@@ -207,7 +226,7 @@ high-cardinality input fails closed.
 
 ### M10 — Realm projection and reliable cross-cloud export
 
-**State:** gated by M9
+**State:** complete on 9 August 2026
 
 - Project bounded five-minute metric snapshots locally and expose them through the standalone MetricsService.
 - Add a durable SableDB telemetry outbox with full-snapshot revisions and source watermarks.
@@ -220,10 +239,11 @@ authentication path.
 
 ### M11 — Trusted ingestion and canonical analytical storage
 
-**State:** gated by M10
+**State:** complete; poisoning/correction tests and the measured medium gate pass
 
-- Resolve and stamp organization, project, environment and assignment epoch in the Fleet gateway.
-- Persist authoritative revision, cursor, policy, coverage and manifest coordination in Fleet SableDB.
+- Promote M10's trusted hierarchy stamping and exact-revision acceptance ledger into the canonical store
+  adapter.
+- Add policy, coverage and manifest coordination beside the existing authoritative revision/cursor state.
 - Deploy a private, pinned GreptimeDB store behind an internal analytics adapter.
 - Qualify schema, partitioning, TTL, quotas, repair and recovery at small, medium and large tiers.
 
@@ -232,9 +252,10 @@ of analytical storage has no realm-authentication effect.
 
 ### M12 — Hierarchical Analytics RPC and Dioxus product
 
-**State:** gated by M11
+**State:** complete; delegated scopes, comparison, coverage and Dioxus states are implemented
 
-- Add bounded, role-authorized Fleet Analytics RPCs; Dioxus never sends SQL.
+- Evolve the shipped organization-required ledger overview into bounded, delegated-scope Analytics RPCs;
+  Dioxus never sends SQL.
 - Ship realm, environment, project, organization and authorized fleet scopes.
 - Add drill-down, sibling comparison, failure contribution and 24-hour/7-day/28-day views.
 - Return expected, reporting, stale, disabled and unsupported coverage with every result.
@@ -244,7 +265,7 @@ cannot infer that realm's existence, values or freshness.
 
 ### M13 — Materialized history, Parquet backfill and residency
 
-**State:** gated by M12
+**State:** complete; clean-room/live convergence and correction gates pass
 
 - Add hourly and daily scope rollups derived directly from canonical realm buckets.
 - Add signed metric-bucket manifests and manifest-driven import from approved customer or central buckets.
@@ -256,7 +277,8 @@ ingestion continues and converges without double-counting.
 
 ### M14 — Fleet Analytics production qualification
 
-**State:** gated by M13
+**State:** in progress; measured medium-scale, recovery and runbook gates pass; full production qualification,
+independent review and canary remain pending
 
 - Complete scale, soak, chaos, upgrade, cost and clean-room recovery qualification.
 - Complete independent analytics threat and privacy assessments.

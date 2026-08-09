@@ -6,18 +6,23 @@
   "repository": "https://github.com/rusty-auth/rustyauth",
   "exports": {
     ".": "./index.ts",
+    "./rustyauth/analytics/v1/analytics_pb.ts": "./gen/rustyauth/analytics/v1/analytics_pb.ts",
     "./rustyauth/events/v1/events_pb.ts": "./gen/rustyauth/events/v1/events_pb.ts",
+    "./rustyauth/fleet/v1/fleet_pb.ts": "./gen/rustyauth/fleet/v1/fleet_pb.ts",
     "./rustyauth/identity/v1/identity_pb.ts": "./gen/rustyauth/identity/v1/identity_pb.ts",
+    "./rustyauth/management/v1/connector_pb.ts": "./gen/rustyauth/management/v1/connector_pb.ts",
+    "./rustyauth/management/v1/management_pb.ts": "./gen/rustyauth/management/v1/management_pb.ts",
     "./rustyauth/metrics/v1/metrics_pb.ts": "./gen/rustyauth/metrics/v1/metrics_pb.ts",
     "./rustyauth/organization/v1/organization_pb.ts": "./gen/rustyauth/organization/v1/organization_pb.ts",
     "./rustyauth/service_accounts/v1/service_accounts_pb.ts": "./gen/rustyauth/service_accounts/v1/service_accounts_pb.ts",
     "./rustyauth/webhooks/v1/webhooks_pb.ts": "./gen/rustyauth/webhooks/v1/webhooks_pb.ts"
   },
   "publish": {
-    "include": ["index.ts", "gen/**/*.ts", "README.md", "deno.json"]
+    "include": ["index.ts", "gen/**/*.ts", "fixtures/**/*", "schemas/**/*", "README.md", "deno.json"]
   },
   "tasks": {
-    "check": "deno check index.ts"
+    "check": "deno check index.ts",
+    "publish:dry": "deno publish --dry-run --allow-dirty"
   },
   "imports": {
     "@bufbuild/protobuf": "npm:@bufbuild/protobuf@^2.2.3"

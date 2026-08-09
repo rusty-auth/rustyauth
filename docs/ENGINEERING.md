@@ -21,12 +21,12 @@ behavior and a small operational surface—not framework novelty or speculative 
 | `src/fleet_rpc.rs`, `src/management_rpc.rs`              | Fleet hierarchy, scoped authorization and realm-management protocol           | Direct realm database access or client-held connection credentials  |
 | `src/rpc.rs`                                             | RPC composition, limits and scoped service authentication                     | Identity persistence policy                                         |
 | `src/jwt.rs`, `src/jwt/`                                 | Signing-key custody and token issuance                                        | Session validation or application authorization                     |
-| `src/config.rs`                                          | Typed configuration and deployment validation                                 | Runtime defaults that weaken production                             |
+| `src/config.rs`, `src/config/file.rs`                    | Env/secret inputs, versioned YAML and deployment validation                    | Runtime defaults that weaken production                             |
 | `src/backup.rs`, `src/backup/`                           | Logical snapshot validation, authenticated envelopes and S3 backup operations | HTTP policy or storage mutations outside the snapshot boundary      |
 | `tests/`                                                 | Integration coverage against the real compose services                        | Unit tests, which live beside their modules                         |
 | `site/src`                                               | Static public site and documentation UI                                       | Product secrets or service-side auth logic                          |
 | `console/src`                                            | Dioxus web/desktop/mobile presentation and generated Protobuf client          | Authorization policy, database access or reusable realm credentials |
-| `dashboard/src/styles.css`                               | Shared visual tokens during the Dioxus asset migration                        | Product behavior or authorization policy                            |
+| `console/assets/styles.css`                              | Dioxus dashboard visual tokens and component styling                           | Product behavior or authorization policy                            |
 | `infra/cloudflare`                                       | Cloudflare Pages and DNS control plane                                        | Application deployment or secret values                             |
 
 The current service is intentionally a single binary. New modules should represent a real security, protocol,
@@ -60,6 +60,19 @@ HTTP/RPC projection → event metadata → documentation. New durable fields req
 deserialization or an explicit migration, bounded validation, backup coverage and a decision about whether
 they belong in JWTs, API responses and administrative search. Do not expose opaque WebAuthn credential state
 merely because it exists inside the aggregate.
+
+## Backup changes
+
+[Backups and disaster recovery](BACKUPS.md) is the canonical backup contract. Any change to a managed
+SableDB key family, snapshot DTO, manifest validation, envelope magic, compression/encryption order, key-ID
+derivation, S3 metadata or posture check, scheduler health, receipt field or restore behavior must update that
+document and `site/src/pages/docs/recovery.astro` in the same pull request.
+
+When adding durable `auth:*` or `fleet:*` state, make an explicit include/exclude decision in
+`src/store/snapshot.rs`, add semantic validation in `src/backup/snapshot.rs`, and add a failure-path test. An
+unknown key family is intentionally a backup error; broadening the exporter without ownership validation
+weakens the full-workspace recovery claim. Format changes must remain backwards-readable or receive a new
+envelope magic and stable DTO.
 
 ## Rust rules
 

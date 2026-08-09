@@ -1,0 +1,36 @@
+[package]
+name = "rustyauth-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2024"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+buffa = "0.8.1"
+hex = "0.4"
+libfuzzer-sys = "0.4.13"
+rustyauth = { path = ".." }
+serde_json = "1"
+
+[[bin]]
+name = "analytics_batch"
+path = "fuzz_targets/analytics_batch.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "management_wire"
+path = "fuzz_targets/management_wire.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "archive_manifest_json"
+path = "fuzz_targets/archive_manifest_json.rs"
+test = false
+doc = false
+bench = false

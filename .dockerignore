@@ -1,7 +1,6 @@
 target
 console/target
 node_modules
-dashboard/node_modules
 site/node_modules
 .env
 .env.*.local

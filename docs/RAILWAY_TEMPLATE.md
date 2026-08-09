@@ -111,21 +111,33 @@ The same stateless image serves standalone and Fleet deployments; the upstream d
 which API surface is mounted. Public origin and WebAuthn policy remain backend configuration, not dashboard
 state.
 
-## Backend variables
+## Backend configuration and secrets
+
+The recommended template creates one multiline `RUSTYAUTH_CONFIG_YAML` service variable from the validated
+`rustyauth.dev/v1alpha1` schema. It contains the deployment role, environment, issuer, relying-party policy,
+private SableDB endpoint, token/session/key timings, operator allowlist and optional backup destination and
+schedule. Realm documents may also carry deployment-owned webhook destinations. Railway supplies `PORT`, which
+RustyAuth treats as the single non-secret platform override.
+
+This application document complements `railway.realm.json` and `railway.control-plane.json`: those files own
+Railway build, health, restart and replica policy; the YAML value owns RustyAuth runtime behavior. Existing
+templates using the environment-only contract remain compatible during migration.
 
 Every realm receives independent generated values for:
 
-- `AUTH_MASTER_KEY_HEX`;
+- `AUTH_MASTER_KEY_HEX`, or an AWS KMS-enveloped `AUTH_MASTER_KEY_KMS_CIPHERTEXT_B64` when the service has a
+  scoped workload identity;
 - `BOOTSTRAP_TOKEN`;
 - `AUTH_EVENT_RPC_TOKEN`;
 - `AUTH_IDENTITY_RPC_TOKEN`;
-- `AUTH_REALM_ID` when an externally assigned durable ID is required; and
-- optional backup encryption and S3 credentials.
+- optional plaintext or KMS-enveloped backup encryption and S3 credentials.
 
-The template wires `SABLEDB_URL` from `realm-sabledb` through Railway private service references. It never
-copies the value to the dashboard or control plane.
+The template wires `SABLEDB_URL` from `realm-sabledb` through a Railway private service reference; it safely
+overrides the YAML's `spec.datastore.endpoint` placeholder and is never copied to the dashboard or control
+plane. Bucket credentials likewise use Railway service references or sealed variables because they are
+intentionally absent from the YAML schema.
 
-Production also requires exact issuer, relying-party, audience, proxy and operator settings documented in
+Production YAML requires exact issuer, relying-party, audience, proxy and operator settings documented in
 [Configuration](CONFIGURATION.md). The backend refuses to start with development defaults in production.
 
 ## Control-plane variables

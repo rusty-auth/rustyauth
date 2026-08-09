@@ -57,7 +57,7 @@ pub(crate) struct IdentitySearchPage {
     pub(super) next_after: Option<Uuid>,
 }
 
-pub(super) fn record_to_proto(record: IdentityRecord) -> Result<ProtoUser, ConnectError> {
+pub(crate) fn record_to_proto(record: IdentityRecord) -> Result<ProtoUser, ConnectError> {
     let profile = ProtoProfile {
         given_name: record.profile.given_name.unwrap_or_default(),
         family_name: record.profile.family_name.unwrap_or_default(),

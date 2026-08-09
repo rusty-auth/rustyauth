@@ -1,0 +1,488 @@
+syntax = "proto3";
+
+package rustyauth.analytics.v1;
+
+// Durable Fleet Analytics interchange contracts. These messages are transport
+// and database neutral: realms may carry them over the Fleet connector or write
+// the same logical rows to the versioned Parquet archive.
+
+// Bounded, operator-authorized product queries. This service is mounted only
+// by Fleet; clients never receive SQL or analytical-store credentials.
+service AnalyticsService {
+  rpc GetAnalyticsOverview(GetAnalyticsOverviewRequest) returns (AnalyticsOverview);
+  rpc QueryMetricSeries(QueryMetricSeriesRequest) returns (MetricSeries);
+  rpc GetAuthenticationFunnel(GetAuthenticationFunnelRequest) returns (AuthenticationFunnel);
+  rpc GetFailureBreakdown(GetFailureBreakdownRequest) returns (FailureBreakdown);
+  rpc GetReportingCoverage(GetReportingCoverageRequest) returns (AnalyticsCoverage);
+  rpc CompareScopes(CompareScopesRequest) returns (CompareScopesResponse);
+  rpc GetAnalyticsPolicy(GetAnalyticsPolicyRequest) returns (AnalyticsPolicy);
+  rpc UpdateAnalyticsPolicy(UpdateAnalyticsPolicyRequest) returns (AnalyticsPolicy);
+}
+
+enum AnalyticsScopeKind {
+  ANALYTICS_SCOPE_KIND_UNSPECIFIED = 0;
+  ANALYTICS_SCOPE_KIND_FLEET = 1;
+  ANALYTICS_SCOPE_KIND_ORGANIZATION = 2;
+  ANALYTICS_SCOPE_KIND_PROJECT = 3;
+  ANALYTICS_SCOPE_KIND_ENVIRONMENT = 4;
+  ANALYTICS_SCOPE_KIND_REALM = 5;
+}
+
+enum AnalyticsGranularity {
+  ANALYTICS_GRANULARITY_UNSPECIFIED = 0;
+  ANALYTICS_GRANULARITY_FIVE_MINUTES = 1;
+  ANALYTICS_GRANULARITY_ONE_HOUR = 2;
+  ANALYTICS_GRANULARITY_ONE_DAY = 3;
+}
+
+enum AnalyticsMetric {
+  ANALYTICS_METRIC_UNSPECIFIED = 0;
+  ANALYTICS_METRIC_AUTHENTICATION_ATTEMPTS = 1;
+  ANALYTICS_METRIC_AUTHENTICATION_SUCCESSES = 2;
+  ANALYTICS_METRIC_AUTHENTICATION_FAILURES = 3;
+  ANALYTICS_METRIC_AUTHENTICATION_DENIALS = 4;
+  ANALYTICS_METRIC_AUTHENTICATION_SUCCESS_RATE = 5;
+  ANALYTICS_METRIC_AUTHENTICATION_P95_MILLISECONDS = 6;
+  ANALYTICS_METRIC_REGISTRATIONS_COMPLETED = 7;
+  ANALYTICS_METRIC_SESSIONS_CREATED = 8;
+  ANALYTICS_METRIC_SERVICE_ACCOUNT_CALLS = 9;
+  ANALYTICS_METRIC_WEBHOOK_FAILURES = 10;
+}
+
+enum AnalyticsWarning {
+  ANALYTICS_WARNING_UNSPECIFIED = 0;
+  ANALYTICS_WARNING_PARTIAL_COVERAGE = 1;
+  ANALYTICS_WARNING_STALE_REALMS = 2;
+  ANALYTICS_WARNING_DISABLED_REALMS = 3;
+  ANALYTICS_WARNING_UNSUPPORTED_REALMS = 4;
+  ANALYTICS_WARNING_ACTIVE_ACCOUNTS_ARE_NOT_UNIQUE_PEOPLE = 5;
+}
+
+enum AnalyticsResidencyMode {
+  ANALYTICS_RESIDENCY_MODE_UNSPECIFIED = 0;
+  ANALYTICS_RESIDENCY_MODE_ROLLUPS_ONLY = 1;
+  ANALYTICS_RESIDENCY_MODE_CUSTOMER_OWNED_ARCHIVE = 2;
+  ANALYTICS_RESIDENCY_MODE_CENTRAL_LANDING_ARCHIVE = 3;
+}
+
+message AnalyticsScope {
+  AnalyticsScopeKind kind = 1;
+  string organization_id = 2;
+  string project_id = 3;
+  string environment_id = 4;
+  // Realm scopes use the opaque Fleet connection ID. A caller-supplied realm
+  // label is never an authorization or lookup key.
+  string connection_id = 5;
+}
+
+message AnalyticsRange {
+  int64 starts_at_unix_milliseconds = 1;
+  int64 ends_at_unix_milliseconds = 2;
+  AnalyticsGranularity granularity = 3;
+}
+
+message AuthenticationAggregate {
+  uint64 attempts = 1;
+  uint64 successes = 2;
+  uint64 failures = 3;
+  uint64 denials = 4;
+  uint64 success_rate_numerator = 5;
+  uint64 success_rate_denominator = 6;
+  uint64 latency_count = 7;
+  uint64 latency_sum_milliseconds = 8;
+  uint64 latency_p95_upper_bound_milliseconds = 9;
+  bool latency_p95_available = 10;
+  uint64 active_account_observations = 11;
+}
+
+message AnalyticsOverview {
+  AnalyticsScope scope = 1;
+  AnalyticsRange effective_range = 2;
+  int64 calculated_at_unix_milliseconds = 3;
+  int64 last_complete_window_start_unix_milliseconds = 4;
+  AuthenticationAggregate authentication = 5;
+  uint64 registrations_completed = 6;
+  uint64 sessions_created = 7;
+  uint64 service_account_calls = 8;
+  uint64 webhook_deliveries = 9;
+  uint64 webhook_failures = 10;
+  repeated ReportingCoverage coverage = 11;
+  repeated AnalyticsWarning warnings = 12;
+  string source = 13;
+}
+
+message GetAnalyticsOverviewRequest {
+  AnalyticsScope scope = 1;
+  AnalyticsRange range = 2;
+}
+
+message MetricPoint {
+  int64 starts_at_unix_milliseconds = 1;
+  double value = 2;
+  uint64 numerator = 3;
+  uint64 denominator = 4;
+  bool available = 5;
+}
+
+message MetricSeries {
+  AnalyticsScope scope = 1;
+  AnalyticsRange effective_range = 2;
+  AnalyticsMetric metric = 3;
+  repeated MetricPoint points = 4;
+  repeated ReportingCoverage coverage = 5;
+  repeated AnalyticsWarning warnings = 6;
+  int64 calculated_at_unix_milliseconds = 7;
+  string source = 8;
+}
+
+message QueryMetricSeriesRequest {
+  AnalyticsScope scope = 1;
+  AnalyticsRange range = 2;
+  AnalyticsMetric metric = 3;
+}
+
+message FunnelStage {
+  string stage = 1;
+  uint64 count = 2;
+}
+
+message AuthenticationFunnel {
+  AnalyticsScope scope = 1;
+  AnalyticsRange effective_range = 2;
+  repeated FunnelStage stages = 3;
+  repeated ReportingCoverage coverage = 4;
+  repeated AnalyticsWarning warnings = 5;
+  int64 calculated_at_unix_milliseconds = 6;
+  string source = 7;
+}
+
+message GetAuthenticationFunnelRequest {
+  AnalyticsScope scope = 1;
+  AnalyticsRange range = 2;
+}
+
+message FailureBreakdownEntry {
+  FailureClass failure_class = 1;
+  uint64 count = 2;
+  double contribution = 3;
+}
+
+message FailureBreakdown {
+  AnalyticsScope scope = 1;
+  AnalyticsRange effective_range = 2;
+  repeated FailureBreakdownEntry failures = 3;
+  repeated ReportingCoverage coverage = 4;
+  repeated AnalyticsWarning warnings = 5;
+  int64 calculated_at_unix_milliseconds = 6;
+  string source = 7;
+}
+
+message GetFailureBreakdownRequest {
+  AnalyticsScope scope = 1;
+  AnalyticsRange range = 2;
+}
+
+message AnalyticsCoverage {
+  AnalyticsScope scope = 1;
+  AnalyticsRange effective_range = 2;
+  repeated ReportingCoverage families = 3;
+  repeated AnalyticsWarning warnings = 4;
+  int64 calculated_at_unix_milliseconds = 5;
+}
+
+message GetReportingCoverageRequest {
+  AnalyticsScope scope = 1;
+  AnalyticsRange range = 2;
+}
+
+message ScopeComparison {
+  AnalyticsScope scope = 1;
+  AuthenticationAggregate authentication = 2;
+  repeated ReportingCoverage coverage = 3;
+}
+
+message CompareScopesRequest {
+  repeated AnalyticsScope scopes = 1;
+  AnalyticsRange range = 2;
+}
+
+message CompareScopesResponse {
+  AnalyticsRange effective_range = 1;
+  repeated ScopeComparison comparisons = 2;
+  repeated AnalyticsWarning warnings = 3;
+  int64 calculated_at_unix_milliseconds = 4;
+  string source = 5;
+}
+
+message AnalyticsPolicy {
+  string organization_id = 1;
+  bool enabled = 2;
+  uint32 canonical_retention_days = 3;
+  AnalyticsResidencyMode residency_mode = 4;
+  uint32 max_buckets_per_minute_per_realm = 5;
+  string updated_at = 6;
+  string updated_by = 7;
+}
+
+message GetAnalyticsPolicyRequest {
+  string organization_id = 1;
+}
+
+message UpdateAnalyticsPolicyRequest {
+  string organization_id = 1;
+  bool enabled = 2;
+  uint32 canonical_retention_days = 3;
+  AnalyticsResidencyMode residency_mode = 4;
+  uint32 max_buckets_per_minute_per_realm = 5;
+  string request_id = 6;
+  string reason = 7;
+}
+
+enum MetricSchemaVersion {
+  METRIC_SCHEMA_VERSION_UNSPECIFIED = 0;
+  METRIC_SCHEMA_VERSION_V1 = 1;
+}
+
+enum MetricFamily {
+  METRIC_FAMILY_UNSPECIFIED = 0;
+  METRIC_FAMILY_AUTHENTICATION = 1;
+  METRIC_FAMILY_REGISTRATION = 2;
+  METRIC_FAMILY_SESSIONS_AND_TOKENS = 3;
+  METRIC_FAMILY_SERVICE_ACCOUNTS = 4;
+  METRIC_FAMILY_WEBHOOKS = 5;
+  METRIC_FAMILY_PLATFORM = 6;
+  METRIC_FAMILY_REALM_HEALTH = 7;
+}
+
+enum HistogramProfile {
+  HISTOGRAM_PROFILE_UNSPECIFIED = 0;
+  // Upper bounds: 5, 10, 25, 50, 100, 250, 500, 1000, 2500, 5000,
+  // 10000 milliseconds, followed by the +Inf cumulative count.
+  HISTOGRAM_PROFILE_INTERACTIVE_MILLISECONDS_V1 = 1;
+  // Upper bounds: 10, 25, 50, 100, 250, 500, 1000, 2500, 5000,
+  // 10000, 30000 milliseconds, followed by the +Inf cumulative count.
+  HISTOGRAM_PROFILE_DELIVERY_MILLISECONDS_V1 = 2;
+}
+
+enum AuthenticationFlow {
+  AUTHENTICATION_FLOW_UNSPECIFIED = 0;
+  AUTHENTICATION_FLOW_PASSKEY = 1;
+  AUTHENTICATION_FLOW_EMAIL_LINK = 2;
+  AUTHENTICATION_FLOW_RECOVERY = 3;
+}
+
+enum FailureClass {
+  FAILURE_CLASS_UNSPECIFIED = 0;
+  FAILURE_CLASS_INVALID_CREDENTIAL = 1;
+  FAILURE_CLASS_CHALLENGE_EXPIRED = 2;
+  FAILURE_CLASS_ORIGIN_REJECTED = 3;
+  FAILURE_CLASS_POLICY_DENIED = 4;
+  FAILURE_CLASS_RATE_LIMITED = 5;
+  FAILURE_CLASS_STORE_UNAVAILABLE = 6;
+  FAILURE_CLASS_UPSTREAM_UNAVAILABLE = 7;
+  FAILURE_CLASS_INTERNAL = 8;
+  // A bounded fallback for failures that cannot be represented by an older
+  // schema. No caller-controlled text accompanies this value.
+  FAILURE_CLASS_OTHER = 9;
+}
+
+enum AnalyticsServingState {
+  ANALYTICS_SERVING_STATE_UNSPECIFIED = 0;
+  ANALYTICS_SERVING_STATE_HEALTHY = 1;
+  ANALYTICS_SERVING_STATE_DEGRADED = 2;
+  ANALYTICS_SERVING_STATE_UNAVAILABLE = 3;
+}
+
+enum BucketAcknowledgementStatus {
+  BUCKET_ACKNOWLEDGEMENT_STATUS_UNSPECIFIED = 0;
+  BUCKET_ACKNOWLEDGEMENT_STATUS_ACCEPTED = 1;
+  BUCKET_ACKNOWLEDGEMENT_STATUS_ALREADY_ACCEPTED = 2;
+  BUCKET_ACKNOWLEDGEMENT_STATUS_REJECTED = 3;
+  BUCKET_ACKNOWLEDGEMENT_STATUS_QUARANTINED = 4;
+}
+
+enum BucketRejectionReason {
+  BUCKET_REJECTION_REASON_UNSPECIFIED = 0;
+  BUCKET_REJECTION_REASON_INVALID_CONTRACT = 1;
+  BUCKET_REJECTION_REASON_UNSUPPORTED_SCHEMA = 2;
+  BUCKET_REJECTION_REASON_REALM_MISMATCH = 3;
+  BUCKET_REJECTION_REASON_ASSIGNMENT_MISMATCH = 4;
+  BUCKET_REJECTION_REASON_STALE_REVISION = 5;
+  BUCKET_REJECTION_REASON_SEQUENCE_REGRESSION = 6;
+  BUCKET_REJECTION_REASON_CLOCK_SKEW = 7;
+  BUCKET_REJECTION_REASON_POLICY_DISABLED = 8;
+  BUCKET_REJECTION_REASON_RESOURCE_LIMIT = 9;
+}
+
+enum ParquetCompression {
+  PARQUET_COMPRESSION_UNSPECIFIED = 0;
+  PARQUET_COMPRESSION_ZSTD = 1;
+}
+
+// Cumulative counts use one entry per profile boundary plus a final +Inf
+// entry. Boundaries never travel as caller-supplied values.
+message LatencyHistogram {
+  HistogramProfile profile = 1;
+  uint64 count = 2;
+  uint64 sum_milliseconds = 3;
+  repeated uint64 cumulative_counts = 4;
+}
+
+message AuthenticationFlowCount {
+  AuthenticationFlow flow = 1;
+  uint64 attempts = 2;
+  uint64 successes = 3;
+  uint64 failures = 4;
+  uint64 denials = 5;
+}
+
+message AuthenticationFailureCount {
+  FailureClass failure_class = 1;
+  uint64 count = 2;
+}
+
+message AuthenticationMetrics {
+  uint64 attempts = 1;
+  uint64 successes = 2;
+  uint64 failures = 3;
+  uint64 denials = 4;
+  LatencyHistogram latency = 5;
+  repeated AuthenticationFlowCount flows = 6;
+  repeated AuthenticationFailureCount failure_classes = 7;
+  // Distinct realm accounts observed in this five-minute bucket. Summing this
+  // value across buckets yields account-window observations, never unique users.
+  uint64 active_account_observations = 8;
+}
+
+message RegistrationMetrics {
+  uint64 options_started = 1;
+  uint64 ceremonies_opened = 2;
+  uint64 responses_returned = 3;
+  uint64 registrations_completed = 4;
+  uint64 challenges_expired = 5;
+}
+
+message SessionTokenMetrics {
+  uint64 sessions_created = 1;
+  uint64 sessions_revoked = 2;
+  uint64 user_tokens_issued = 3;
+  uint64 service_tokens_issued = 4;
+}
+
+message ServiceAccountMetrics {
+  uint64 calls = 1;
+  uint64 successes = 2;
+  uint64 failures = 3;
+  uint64 denials = 4;
+  uint64 credential_rotations = 5;
+}
+
+message WebhookMetrics {
+  uint64 deliveries = 1;
+  uint64 successes = 2;
+  uint64 failures = 3;
+  LatencyHistogram latency = 4;
+  uint64 backlog = 5;
+}
+
+message PlatformMetrics {
+  uint64 api_requests = 1;
+  uint64 api_errors = 2;
+  LatencyHistogram api_latency = 3;
+  uint64 sabledb_operations = 4;
+  uint64 sabledb_errors = 5;
+  LatencyHistogram sabledb_latency = 6;
+}
+
+message RealmHealthMetrics {
+  AnalyticsServingState serving_state = 1;
+  uint64 backup_age_seconds = 2;
+  uint64 signing_key_age_seconds = 3;
+  uint64 connector_lag_seconds = 4;
+}
+
+// One complete, immutable-at-a-revision five-minute realm snapshot. Optional
+// metric-family messages distinguish unsupported data from a supported zero.
+message TelemetryBucket {
+  string realm_id = 1;
+  uint64 assignment_epoch = 2;
+  int64 bucket_start_unix_milliseconds = 3;
+  uint32 bucket_width_seconds = 4;
+  uint64 revision = 5;
+  uint64 first_event_sequence = 6;
+  uint64 last_event_sequence = 7;
+  MetricSchemaVersion metric_schema_version = 8;
+  bool closed = 9;
+  AuthenticationMetrics authentication = 10;
+  RegistrationMetrics registration = 11;
+  SessionTokenMetrics sessions_and_tokens = 12;
+  ServiceAccountMetrics service_accounts = 13;
+  WebhookMetrics webhooks = 14;
+  PlatformMetrics platform = 15;
+  RealmHealthMetrics realm_health = 16;
+}
+
+message TelemetryBucketBatch {
+  // Versions the batch envelope independently from metric semantics.
+  uint32 transport_schema_version = 1;
+  string batch_id = 2;
+  string realm_id = 3;
+  repeated TelemetryBucket buckets = 4;
+}
+
+message TelemetryBucketKey {
+  string realm_id = 1;
+  uint64 assignment_epoch = 2;
+  int64 bucket_start_unix_milliseconds = 3;
+  uint32 bucket_width_seconds = 4;
+  MetricSchemaVersion metric_schema_version = 5;
+}
+
+message TelemetryBucketAcknowledgement {
+  TelemetryBucketKey key = 1;
+  uint64 revision = 2;
+  BucketAcknowledgementStatus status = 3;
+  BucketRejectionReason rejection_reason = 4;
+}
+
+message TelemetryBatchAcknowledgement {
+  string batch_id = 1;
+  repeated TelemetryBucketAcknowledgement buckets = 2;
+}
+
+// Registry-backed source coverage. expected_realms is reporting + stale;
+// total_realms additionally includes explicitly disabled and unsupported realms.
+message ReportingCoverage {
+  MetricFamily metric_family = 1;
+  uint64 total_realms = 2;
+  uint64 expected_realms = 3;
+  uint64 reporting_realms = 4;
+  uint64 stale_realms = 5;
+  uint64 disabled_realms = 6;
+  uint64 unsupported_realms = 7;
+  int64 last_complete_window_start_unix_milliseconds = 8;
+  bool partial = 9;
+}
+
+// Signed metadata for one immutable rustyauth-metric-bucket-v1 Parquet object.
+// object_key is a credential-free key relative to an approved bucket binding.
+message MetricBucketArchiveManifest {
+  uint32 manifest_schema_version = 1;
+  MetricSchemaVersion metric_schema_version = 2;
+  string manifest_id = 3;
+  string realm_id = 4;
+  uint64 assignment_epoch = 5;
+  string object_key = 6;
+  bytes content_sha256 = 7;
+  uint64 byte_length = 8;
+  uint64 row_count = 9;
+  int64 minimum_bucket_start_unix_milliseconds = 10;
+  int64 maximum_bucket_start_unix_milliseconds = 11;
+  uint64 first_event_sequence = 12;
+  uint64 last_event_sequence = 13;
+  ParquetCompression compression = 14;
+  int64 created_at_unix_milliseconds = 15;
+  string signing_key_id = 16;
+  // Raw 64-byte P-256 ECDSA signature over the canonical unsigned manifest.
+  bytes signature = 17;
+}

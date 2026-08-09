@@ -69,6 +69,32 @@ impl UserSearch {
 }
 
 impl Store {
+    pub async fn list_users(
+        &self,
+        after: Option<Uuid>,
+        page_size: usize,
+    ) -> Result<UserSearchPage> {
+        if page_size == 0 || page_size > 100 {
+            bail!("user list page size must be between 1 and 100");
+        }
+        let mut users = Vec::with_capacity(page_size.saturating_add(1));
+        for id in self
+            .candidate_ids(after, page_size.saturating_add(1))
+            .await?
+        {
+            match self.user(id).await {
+                Ok(Some(user)) => users.push(user),
+                Ok(None) => {}
+                Err(error) => {
+                    tracing::warn!(user_id = %id, error = %error, "skipping unreadable account during listing");
+                }
+            }
+        }
+        let next_after = (users.len() > page_size).then(|| users[page_size - 1].id);
+        users.truncate(page_size);
+        Ok(UserSearchPage { users, next_after })
+    }
+
     pub async fn search_users(
         &self,
         search: &UserSearch,
@@ -323,6 +349,7 @@ mod tests {
                 created_at: 100,
             }],
             session_version,
+            recovery_codes: Vec::new(),
             created_at: 100,
             passkeys: Vec::new(),
         }

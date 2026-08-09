@@ -26,38 +26,74 @@ generate_secret_file() {
   printf 'Created private local secrets in %s\n' "$destination"
 }
 
+generate_config_file() {
+  destination=$1
+  source=$2
+  default_port=$3
+  selected_port=$4
+  relying_party_origin=$5
+  temporary="${destination}.tmp"
+  sed "s#http://localhost:${default_port}#http://localhost:${selected_port}#g" \
+    "$source" > "$temporary"
+  if [ -n "$relying_party_origin" ]; then
+    sed "s#    origin: http://localhost:${selected_port}#    origin: ${relying_party_origin}#" \
+      "$temporary" > "${temporary}.origin"
+    mv "${temporary}.origin" "$temporary"
+  fi
+  mv "$temporary" "$destination"
+}
+
 case "$mode" in
   fleet)
     env_file="$repo_dir/.env.fleet.local"
+    config_file="$repo_dir/.config.fleet.local.yaml"
+    config_example="$repo_dir/rustyauth.fleet.example.yaml"
+    default_dashboard_port=5196
+    dashboard_port=${FLEET_DASHBOARD_PORT:-5196}
+    relying_party_origin=""
     compose_file="$repo_dir/compose.fleet.yaml"
     ;;
   standalone)
     env_file="$repo_dir/.env.standalone.local"
+    config_file="$repo_dir/.config.standalone.local.yaml"
+    config_example="$repo_dir/rustyauth.example.yaml"
+    default_dashboard_port=8081
+    dashboard_port=${STANDALONE_DASHBOARD_PORT:-8081}
+    relying_party_origin=${STANDALONE_RP_ORIGIN:-http://localhost:${dashboard_port}}
     compose_file="$repo_dir/compose.yaml"
     ;;
   *)
-    printf 'Usage: scripts/local-stack [fleet|standalone] [up|down|logs|ps]\n' >&2
+    printf 'Usage: scripts/local-stack [fleet|standalone] [up|down|logs|ps] [compose arguments...]\n' >&2
     exit 2
     ;;
 esac
 
 generate_secret_file "$env_file" "$mode"
+generate_config_file "$config_file" "$config_example" "$default_dashboard_port" "$dashboard_port" "$relying_party_origin"
+export RUSTYAUTH_CONFIG_FILE="$config_file"
+
+if [ "$#" -gt 0 ]; then
+  shift
+fi
+if [ "$#" -gt 0 ]; then
+  shift
+fi
 
 case "$action" in
   up)
-    exec docker compose --env-file "$env_file" -f "$compose_file" up --build
+    exec docker compose --env-file "$env_file" -f "$compose_file" up --build "$@"
     ;;
   down)
-    exec docker compose --env-file "$env_file" -f "$compose_file" down
+    exec docker compose --env-file "$env_file" -f "$compose_file" down "$@"
     ;;
   logs)
-    exec docker compose --env-file "$env_file" -f "$compose_file" logs --follow
+    exec docker compose --env-file "$env_file" -f "$compose_file" logs --follow "$@"
     ;;
   ps)
-    exec docker compose --env-file "$env_file" -f "$compose_file" ps
+    exec docker compose --env-file "$env_file" -f "$compose_file" ps "$@"
     ;;
   *)
-    printf 'Usage: scripts/local-stack [fleet|standalone] [up|down|logs|ps]\n' >&2
+    printf 'Usage: scripts/local-stack [fleet|standalone] [up|down|logs|ps] [compose arguments...]\n' >&2
     exit 2
     ;;
 esac

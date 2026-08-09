@@ -226,22 +226,55 @@ impl<S: ServiceAccountSource, A: OperatorGate, J: ServiceTokenIssuer> ServiceAcc
         if !self
             .exchange_limiter
             .check(RateLimitClass::CredentialExchange, bucket)
+            .await
             .allowed
         {
+            record_exchange_outcome(&self.store, "service_account.token.denied", None).await;
             return Err(ConnectError::new(
                 ErrorCode::ResourceExhausted,
                 "too many credential exchange attempts",
             ));
         }
-        let grant = self
+        let grant = match self
             .store
             .exchange_service_credential(request.credential, &requested_scopes)
             .await
-            .map_err(source_error)?;
-        let issued = self
+        {
+            Ok(grant) => grant,
+            Err(error) => {
+                let event_type = if matches!(
+                    error.downcast_ref::<crate::store::StorePolicyError>(),
+                    Some(crate::store::StorePolicyError::ServiceScopeDenied)
+                ) {
+                    "service_account.token.denied"
+                } else {
+                    "service_account.token.failed"
+                };
+                record_exchange_outcome(&self.store, event_type, None).await;
+                return Err(source_error(error));
+            }
+        };
+        let issued = match self
             .jwt
             .issue_service_account(grant.service_account_id, grant.scopes.clone())
-            .map_err(source_error)?;
+        {
+            Ok(issued) => issued,
+            Err(error) => {
+                record_exchange_outcome(
+                    &self.store,
+                    "service_account.token.failed",
+                    Some(grant.service_account_id),
+                )
+                .await;
+                return Err(source_error(error));
+            }
+        };
+        record_exchange_outcome(
+            &self.store,
+            "service_account.token.issued",
+            Some(grant.service_account_id),
+        )
+        .await;
         let expires_in_seconds = u32::try_from(issued.expires_in)
             .map_err(|_| ConnectError::new(ErrorCode::Internal, "token lifetime is invalid"))?;
         Response::ok(ExchangeCredentialResponse {
@@ -251,6 +284,21 @@ impl<S: ServiceAccountSource, A: OperatorGate, J: ServiceTokenIssuer> ServiceAcc
             scopes: grant.scopes,
             ..Default::default()
         })
+    }
+}
+
+async fn record_exchange_outcome<S: ServiceAccountSource>(
+    store: &S,
+    event_type: &'static str,
+    service_account_id: Option<Uuid>,
+) {
+    if let Err(error) = store
+        .record_token_exchange_outcome(event_type, service_account_id)
+        .await
+    {
+        // Metrics are explicitly fail-open: an unavailable projector or event
+        // sink must not change the credential exchange response.
+        tracing::warn!(error = %error, event_type, "record service-account exchange failure");
     }
 }
 
@@ -496,6 +544,14 @@ mod tests {
                 service_account_id: account.id,
                 scopes,
             })
+        }
+
+        async fn record_token_exchange_outcome(
+            &self,
+            _event_type: &'static str,
+            _service_account_id: Option<Uuid>,
+        ) -> Result<()> {
+            Ok(())
         }
     }
 

@@ -1,0 +1,122 @@
+---
+import DocsLayout from "../../layouts/DocsLayout.astro";
+
+const compatibility = [
+  ["Protobuf", "rustyauth.analytics.v1", "Message and closed-enum compatibility"],
+  ["Batch", "transport_schema_version = 1", "Delivery framing and resource limits"],
+  ["Metrics", "METRIC_SCHEMA_VERSION_V1", "Names, units, dimensions and arithmetic"],
+  ["Parquet", "rustyauth-metric-bucket-v1", "Portable archive and deterministic repair"],
+  ["Manifest", "manifest_schema_version = 1", "Integrity, identity and import idempotency"],
+];
+
+const families = [
+  ["Authentication", "Attempts, successes, failures, denials, active account observations", "Sum counts; derive success rate from summed counts"],
+  ["Latency", "Authentication, API, SableDB and delivery count/sum/histogram", "Merge compatible cumulative histograms before percentiles"],
+  ["Registration", "Options, ceremonies, responses, completions and expiries", "Sum every funnel stage independently"],
+  ["Sessions and tokens", "Sessions created/revoked; user/service tokens issued", "Sum counts"],
+  ["Service accounts", "Calls, outcomes, denials and credential rotations", "Sum counts"],
+  ["Webhooks", "Deliveries, outcomes, latency and latest backlog", "Sum events; latest backlog per realm"],
+  ["Platform", "API and SableDB requests, errors and latency", "Sum counts; merge histograms"],
+  ["Realm health", "Serving state, backup age, key age and connector lag", "Latest realm observation plus coverage"],
+];
+---
+
+<DocsLayout title="Fleet Analytics V1" eyebrow="Semantic contract" intro="The exact bucket, metric, privacy, coverage and archive rules that every V1 producer, importer and aggregator must enforce.">
+  <div class="docs-status-strip" aria-label="Fleet Analytics V1 status">
+    <div><small>Package</small><strong>rustyauth.analytics.v1</strong></div>
+    <div><small>Bucket width</small><strong>Five minutes</strong></div>
+    <div><small>Compatibility</small><strong>Unknown versions rejected</strong></div>
+  </div>
+
+  <div class="doc-callout success">
+    <strong>Normative for M9 and later</strong>
+    <p>The checked-in Protobuf, Parquet schema and golden fixtures are executable parts of this contract. Connector framing, GreptimeDB tables and SQL remain internal implementation details.</p>
+  </div>
+
+  <h2>Compatibility identity</h2>
+  <div class="doc-table-wrap"><table><thead><tr><th>Layer</th><th>V1 identity</th><th>Purpose</th></tr></thead><tbody>{compatibility.map(([layer, identity, purpose]) => <tr><td>{layer}</td><td><code>{identity}</code></td><td>{purpose}</td></tr>)}</tbody></table></div>
+  <p>A receiver rejects an unknown version or unknown V1 field. It never guesses a schema from release metadata, silently maps an unknown enum to “other,” or reinterprets incompatible input as V1.</p>
+
+  <h2>Window and retry contract</h2>
+  <ul>
+    <li>Every bucket is exactly five minutes, UTC-aligned and left-closed/right-open.</li>
+    <li>Event time selects the bucket; receipt time never rewrites it.</li>
+    <li>V1 sends closed buckets only. The default close grace is two minutes.</li>
+    <li>The first revision is <code>1</code>. A correction increments the revision and resends the complete snapshot.</li>
+    <li>A retry reuses the exact canonical key and revision; it never sends a counter delta.</li>
+    <li>A batch carries at most 288 buckets and encodes to at most 256 KiB.</li>
+  </ul>
+  <pre><code>{`(realm_id, assignment_epoch, bucket_start_unix_milliseconds,
+ bucket_width_seconds, metric_schema_version)`}</code></pre>
+  <p>That tuple identifies the canonical bucket. <code>revision</code> selects the accepted value for it. Event sequence bounds are both zero when no durable event contributed; otherwise they form an ordered positive range.</p>
+
+  <h2>Metric families and aggregation</h2>
+  <p>An absent family means unsupported or unavailable. A present family of zeros means supported with no observed activity. Registry-backed coverage preserves that distinction for every customer-facing result.</p>
+  <div class="doc-table-wrap"><table><thead><tr><th>Family</th><th>V1 facts</th><th>Aggregation</th></tr></thead><tbody>{families.map(([family, facts, aggregation]) => <tr><td>{family}</td><td>{facts}</td><td>{aggregation}</td></tr>)}</tbody></table></div>
+  <div class="doc-callout warning"><strong>Active account observations are not unique people</strong><p><code>active_account_observations</code> counts distinct realm accounts within one bucket. Summing it produces account-window observations: the same account can contribute in multiple windows and one person may have accounts in multiple realms.</p></div>
+
+  <h2>Required invariants</h2>
+  <pre><code>{`authentication attempts = successes + failures + denials
+service-account calls    = successes + failures + denials
+webhook deliveries       = successes + failures
+
+options_started >= ceremonies_opened
+                >= responses_returned
+                >= registrations_completed`}</code></pre>
+  <p>Authentication flow and failure-class breakdowns must exactly reproduce their headline totals. Expired registrations are outside the funnel ordering because a challenge may expire in a later window. Counters are capped at 1,000,000,000 per realm bucket, sums use checked arithmetic, and impossible relationships or duplicate enum dimensions fail closed.</p>
+
+  <h2>Fixed histogram profiles</h2>
+  <p>Each histogram contains cumulative counts for every bound and a final <code>+Inf</code> count equal to <code>count</code>. Counts must be monotonic. Percentiles use the upper bound of the first merged cumulative bucket meeting the nearest-rank threshold.</p>
+  <h3>Interactive milliseconds V1</h3>
+  <pre><code>{`5, 10, 25, 50, 100, 250, 500, 1000, 2500, 5000, 10000, +Inf`}</code></pre>
+  <p>Used for authentication, API and SableDB latency.</p>
+  <h3>Delivery milliseconds V1</h3>
+  <pre><code>{`10, 25, 50, 100, 250, 500, 1000, 2500, 5000, 10000, 30000, +Inf`}</code></pre>
+  <p>Used for webhook delivery latency. A value falling only in <code>+Inf</code> has no finite upper bound.</p>
+
+  <h2>Bounded dimensions and privacy</h2>
+  <p>V1 has no label map and accepts no caller-named dimension. A realm may send only closed Protobuf enums for authentication flow, failure class, metric family, histogram profile, serving state, acknowledgement and rejection reason, plus its stable realm identity and assignment epoch.</p>
+  <p><code>realm_id</code> is the same stable 1–64 character ASCII identifier accepted by realm configuration and Fleet pairing; it is not required to be a UUID. Batch and manifest IDs remain canonical UUID idempotency keys.</p>
+  <p>Fleet resolves organization, project and environment from the authenticated connection. Those hierarchy values are never trusted from a realm payload.</p>
+  <p>The following are prohibited in metrics, dimensions, manifests and acknowledgements:</p>
+  <ul>
+    <li>user, subject, account, credential, challenge, session, token and request IDs;</li>
+    <li>email, phone, name, IP address, user agent and arbitrary path values;</li>
+    <li>RP assertions, public keys, cookies, secrets and secret hints;</li>
+    <li>webhook URLs, error messages and caller-defined labels; and</li>
+    <li>presigned URLs or object-store credentials.</li>
+  </ul>
+  <p>Batch and manifest UUIDs are transport idempotency keys, not queryable dimensions. Event sequences are watermarks.</p>
+
+  <h2>Coverage arithmetic</h2>
+  <pre><code>{`expected_realms = reporting_realms + stale_realms
+total_realms    = expected_realms + disabled_realms + unsupported_realms
+partial         = reporting_realms < expected_realms`}</code></pre>
+  <p>Coverage is metric-family-specific. The last complete window is zero when no complete common window exists; otherwise it is a UTC-aligned five-minute instant.</p>
+
+  <h2>Signed Parquet archive</h2>
+  <p>A V1 archive uses Zstandard Parquet with one row per complete bucket snapshot and revision. Physical Parquet bytes are not golden because writer metadata and page layout may differ; the versioned logical-row schema fixes field IDs, enum numbers and meaning.</p>
+  <p>After publication, the object is immutable. Its manifest binds the exact schema versions, realm, assignment epoch, credential-free object key, SHA-256 digest, byte length, row count, bucket and sequence ranges, creation time, signing-key ID and raw 64-byte P-256 signature.</p>
+  <pre><code>{`rustyauth.analytics.metric-bucket-manifest.v1
+NUL
+deterministic protobuf manifest with signature unset`}</code></pre>
+  <p>The importer verifies the approved bucket binding, signature, digest, size, row count, time and sequence ranges before reading a row, then records manifest identity and digest for retry idempotency. V1 has no raw-event or subject-level archive row.</p>
+
+  <h2>Deterministic scope results</h2>
+  <ul>
+    <li>Derive every numerical scope directly from canonical realm buckets for the requested assignment epochs.</li>
+    <li>Calculate rates from summed numerators and denominators; never average child percentages.</li>
+    <li>Merge compatible cumulative histograms before calculating percentiles.</li>
+    <li>Select the latest accepted gauge per realm before scope summation or classification.</li>
+    <li>On correction, recompute the affected time range from the highest accepted revisions.</li>
+  </ul>
+
+  <h2>Change policy and executable references</h2>
+  <p>Adding an enum is additive to Protobuf but requires a new metric schema before a realm emits it. A changed unit, histogram boundary, aggregation rule, invariant, Parquet meaning or privacy rule always requires a new metric schema. Field numbers and Parquet field IDs are never reused.</p>
+  <ul>
+    <li><a href="https://github.com/rusty-auth/rustyauth/blob/main/docs/FLEET_ANALYTICS_V1.md">Normative V1 repository document</a></li>
+    <li><a href="https://github.com/rusty-auth/rustyauth/blob/main/proto/rustyauth/analytics/v1/analytics.proto">Protobuf contract</a></li>
+    <li><a href="https://github.com/rusty-auth/rustyauth/blob/main/packages/protocol/schemas/analytics/v1/metric-bucket-v1.parquet.schema.json">Parquet logical schema</a></li>
+    <li><a href="https://github.com/rusty-auth/rustyauth/tree/main/packages/protocol/fixtures/analytics/v1">Golden compatibility fixtures</a></li>
+  </ul>
+</DocsLayout>

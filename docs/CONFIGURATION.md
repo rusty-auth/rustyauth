@@ -1,7 +1,215 @@
 # RustyAuth configuration
 
-RustyAuth reads configuration from environment variables and validates it before binding the HTTP listener.
-Missing or invalid required values stop startup.
+RustyAuth supports one versioned YAML contract for non-secret application policy and retains the original
+environment-only contract for backwards compatibility. Both paths are converted into the same internal
+configuration and pass through the same fail-closed validation before the HTTP listener binds. Missing,
+unknown or invalid values stop startup.
+
+The document configures RustyAuth; it does not create cloud resources. Compose, Railway templates, Terraform,
+Pulumi or another platform layer still provisions the container, private network, SableDB volume and backup
+bucket, then passes their endpoints to RustyAuth. Users, passkeys, sessions, operator grants and credentials
+remain runtime identity state rather than configuration-as-code resources.
+
+| Concern             | Owner               | Examples                                                                 |
+| ------------------- | ------------------- | ------------------------------------------------------------------------ |
+| RustyAuth policy    | `rustyauth.yaml`    | issuer, relying party, lifetimes, backup schedule, webhook desired state |
+| Deployment topology | platform IaC        | image, services, network, volume, bucket, replicas, health checks        |
+| Credential material | secret store        | master keys, bootstrap/RPC tokens, datastore credentials, backup keys    |
+| Identity state      | RustyAuth + SableDB | users, passkeys, sessions, grants, generated signing material            |
+
+The YAML is authoritative for fields it declares. It is not a seed file that the dashboard may silently
+overwrite. When a future resource needs both declarative and interactive creation, its API response carries a
+management source so clients can distinguish configuration-managed resources from dashboard-managed ones.
+
+## Recommended YAML contract
+
+Start from the checked-in example and validate it before deployment:
+
+```sh
+cp rustyauth.example.yaml rustyauth.yaml
+cargo run -- config validate rustyauth.yaml
+cargo run -- --config rustyauth.yaml
+```
+
+`rustyauth config example realm` and `rustyauth config example fleet` print the current examples without
+requiring a repository checkout. The complete production backup example is
+[`examples/config/realm-production.yaml`](../examples/config/realm-production.yaml), and
+[`schemas/rustyauth-config-v1alpha1.schema.json`](../schemas/rustyauth-config-v1alpha1.schema.json) provides
+editor completion and documentation.
+
+The configuration document always describes exactly one running process. A deployment with development,
+staging and production therefore keeps one document per environment rather than asking a production process to
+choose a branch from a multi-environment file:
+
+```text
+deploy/
+  development/rustyauth.yaml
+  staging/rustyauth.yaml
+  production/rustyauth.yaml
+```
+
+This keeps security-sensitive changes explicit in review. Shared generation or higher-level workspace tooling
+can be added later without changing the runtime schema.
+
+### Configuration source precedence
+
+RustyAuth selects one source in this order:
+
+1. `--config <path>`;
+2. multiline YAML in `RUSTYAUTH_CONFIG_YAML`;
+3. a path in `RUSTYAUTH_CONFIG_FILE`;
+4. an existing `/etc/rustyauth/config.yaml` container mount; or
+5. the legacy environment-only contract documented below.
+
+Configure only one of `RUSTYAUTH_CONFIG_YAML` and `RUSTYAUTH_CONFIG_FILE`. An explicit `--config` path wins
+over both because it is an operator action on that invocation. In YAML mode, Railway's platform-provided
+`PORT` overrides `spec.server.port`; it keeps the container bound to the port Railway routes. `SABLEDB_URL` or
+`SABLEDB_URL_FILE` may override `spec.datastore.endpoint` when the connection URL itself contains credentials
+or is supplied through a platform service reference. `RUST_LOG` remains process logging configuration rather
+than part of the RustyAuth schema.
+
+`apiVersion: rustyauth.dev/v1alpha1` is intentionally explicit. Unknown versions, kinds and fields are
+rejected rather than ignored. Durations use readable values such as `30s`, `5m`, `6h`, `7d` and `90d`. Runtime
+bounds remain identical to the environment-variable bounds below.
+
+### Containers and Compose
+
+The image automatically reads `/etc/rustyauth/config.yaml`, so no custom entrypoint is required:
+
+```yaml
+services:
+  auth:
+    image: ghcr.io/rusty-auth/rustyauth:v0.1.0
+    configs:
+      - source: rustyauth
+        target: /etc/rustyauth/config.yaml
+    environment:
+      AUTH_MASTER_KEY_HEX_FILE: /run/secrets/master-key
+      BOOTSTRAP_TOKEN_FILE: /run/secrets/bootstrap-token
+      AUTH_EVENT_RPC_TOKEN_FILE: /run/secrets/event-rpc-token
+      AUTH_IDENTITY_RPC_TOKEN_FILE: /run/secrets/identity-rpc-token
+    secrets:
+      - master-key
+      - bootstrap-token
+      - event-rpc-token
+      - identity-rpc-token
+
+configs:
+  rustyauth:
+    file: ./deploy/production/rustyauth.yaml
+```
+
+The supplied `compose.yaml` and `compose.fleet.yaml` already use this contract. `scripts/local-stack` derives
+an ignored local copy from the checked-in example so overriding `STANDALONE_DASHBOARD_PORT` or
+`FLEET_DASHBOARD_PORT` keeps the issuer and WebAuthn origin consistent. Set `STANDALONE_RP_ORIGIN` only when a
+separate local relying-party example must be the exact WebAuthn origin.
+
+The same image can validate a document in CI without starting SableDB or receiving secrets:
+
+```sh
+docker run --rm -i ghcr.io/rusty-auth/rustyauth:v0.1.0 \
+  config validate - < deploy/production/rustyauth.yaml
+```
+
+For Kubernetes, put the YAML in a `ConfigMap` mounted at `/etc/rustyauth/config.yaml` and expose credentials
+from a `Secret` through the fixed environment names or `_FILE` paths. For ECS, Nomad, Fly.io and similar OCI
+platforms, use the mount when available or set `RUSTYAUTH_CONFIG_YAML`; the application schema and validation
+behavior do not change with the scheduler.
+
+### Keeping environments consistent
+
+Commit every environment document and validate all of them in pull requests:
+
+```sh
+for config in deploy/*/rustyauth.yaml; do
+  cargo run --quiet -- config validate "$config"
+done
+```
+
+Defaults are intentionally encoded in RustyAuth and documented by the JSON Schema; teams need only repeat a
+field when they want its value visible in review or different from the default. Security-boundary fields such
+as environment, issuer, datastore, RP identity, origin, tenant and realm remain explicit. RustyAuth does not
+perform implicit cross-file inheritance because a surprising merge in production is worse than a few visible
+lines of duplication.
+
+### Declarative webhooks and ownership
+
+Realm documents may declare webhook desired state under `spec.webhooks`:
+
+```yaml
+webhooks:
+  - id: application-lifecycle
+    name: Application lifecycle
+    endpoint: https://api.example.com/hooks/rustyauth
+    enabled: true
+    eventTypes:
+      - identity.created
+      - profile.updated
+      - session.created
+```
+
+The `id` is the stable reconciliation key, not a display name. IDs must be unique, endpoints must use HTTPS,
+and each destination needs at least one syntactically valid event type. Fleet control planes reject the field
+because realm events originate in realm deployments.
+
+A destination declared here is configuration-managed, not merely seeded. The webhook API contract reports that
+management source, and the dashboard labels the destination **Managed by YAML**, renders its controls
+read-only and sends operators back to `spec.webhooks` for edits or removal. Dashboard-created destinations
+remain dashboard-managed. This avoids two writers silently fighting over the same resource after every
+redeploy. Credential rotation and delivery operations are separate from desired-state ownership.
+
+Webhook delivery is implemented on current main. Startup reconciles configuration-managed destinations before
+the worker begins sending. The served `WebhookService` manages dashboard destinations and operational actions;
+the durable delivery history records attempts, response status and terminal failures. Requests are signed with
+HMAC-SHA256 over `timestamp + "." + exact_body`, redirects are disabled, retryable failures use bounded
+exponential backoff, and retained source events may be replayed. RustyAuth remains a `0.1.0` pre-release, so
+pin the exact release or commit whose behavior you evaluated.
+
+### Railway and variable-only platforms
+
+Railway accepts multiline service variables, so set `RUSTYAUTH_CONFIG_YAML` to the same validated YAML
+document when a filesystem config mount is not available. Keep generated keys and credentials as separate,
+preferably sealed, Railway variables. The service's injected `PORT` overrides `spec.server.port`; every other
+non-secret setting remains visible in the YAML document. Railway service-reference syntax can be resolved in
+the multiline variable before RustyAuth parses it, allowing private service endpoints and bucket metadata to
+remain environment-specific.
+
+This does not replace `railway.json`: Railway's config-as-code file owns image build, health checks, replica
+count and restart policy, while `rustyauth.yaml` owns the RustyAuth process itself.
+
+See Railway's documentation for [multiline and sealed variables](https://docs.railway.com/variables) and
+[platform config as code](https://docs.railway.com/config-as-code).
+
+### Secret input contract
+
+Secrets never have fields in the YAML schema. Supply them through the existing environment name or through a
+file path in `<NAME>_FILE`, which works with Docker/Kubernetes secret mounts. Supplying both forms for one
+name is rejected. Secret files are read at startup and trailing newlines are removed.
+
+Realm processes require:
+
+- either `AUTH_MASTER_KEY_HEX` or `AUTH_MASTER_KEY_KMS_CIPHERTEXT_B64`, plus the matching optional
+  previous-key form;
+- `BOOTSTRAP_TOKEN`;
+- `AUTH_EVENT_RPC_TOKEN`; and
+- `AUTH_IDENTITY_RPC_TOKEN`.
+
+`SABLEDB_URL` is normally visible as the private endpoint in `spec.datastore.endpoint`. If the URL embeds
+credentials, inject the complete URL through `SABLEDB_URL`/`SABLEDB_URL_FILE`; it replaces the YAML endpoint
+without copying the credential into Git.
+
+Fleet control planes require only their master key and bootstrap token because they do not mount the realm
+event or identity services. When YAML enables backups, additionally supply `AUTH_BACKUP_ACCESS_KEY_ID`,
+`AUTH_BACKUP_SECRET_ACCESS_KEY`, and either `AUTH_BACKUP_ENCRYPTION_KEY_HEX` or
+`AUTH_BACKUP_ENCRYPTION_KEY_KMS_CIPHERTEXT_B64`, plus the matching optional previous-key form.
+
+`rustyauth config validate` deliberately substitutes non-credential validation material, so a pull request can
+validate structure and policy without receiving production secrets. Actual secret presence, uniqueness, length
+and key material are checked when the service starts.
+
+## Legacy environment-only contract
+
+All existing deployments remain supported. Every variable below also accepts a corresponding `_FILE` form.
 
 ## Required variables
 
@@ -13,7 +221,7 @@ Missing or invalid required values stop startup.
 | `WEBAUTHN_RP_ORIGIN`      | `https://app.example.com`           | Exact browser application origin; HTTPS in production                                                                                                                                                                                    |
 | `WEBAUTHN_RP_NAME`        | `Example Account`                   | Name shown by the authenticator                                                                                                                                                                                                          |
 | `SABLEDB_URL`             | `rediss://sabledb.example.com:6379` | `redis` or `rediss` Valkey-protocol URL. In production a `redis` URL must resolve to a `.railway.internal` host; a `rediss` URL is accepted from any host                                                                                |
-| `AUTH_MASTER_KEY_HEX`     | 64 hex characters                   | 32-byte AES key protecting persisted JWT private material. A key whose 32 bytes are all identical is rejected                                                                                                                            |
+| `AUTH_MASTER_KEY_HEX`     | 64 hex characters                   | Plaintext-input form of the 32-byte AES key protecting persisted JWT private material. Use either this or `AUTH_MASTER_KEY_KMS_CIPHERTEXT_B64`; a repeated-byte plaintext is rejected                                                    |
 | `BOOTSTRAP_TOKEN`         | high-entropy secret                 | Administrative initial-enrolment and HTTP event-polling credential; at least 32 characters in production                                                                                                                                 |
 | `AUTH_EVENT_RPC_TOKEN`    | high-entropy secret                 | Realm only: bearer credential for `rustyauth.events.v1`; at least 32 characters                                                                                                                                                          |
 | `AUTH_IDENTITY_RPC_TOKEN` | high-entropy secret                 | Realm only: bearer credential for `rustyauth.identity.v1`; at least 32 characters                                                                                                                                                        |
@@ -45,26 +253,31 @@ refusal to boot rather than a weaker deployment that reports healthy.
 
 ## Optional core variables
 
-| Variable                              | Default                          | Allowed range or meaning                                                                               |
-| ------------------------------------- | -------------------------------- | ------------------------------------------------------------------------------------------------------ |
-| `AUTH_TENANT_ID`                      | `vtr`                            | Tenant claim and event tag; one tenant per instance                                                    |
-| `AUTH_REALM_ID`                       | `AUTH_TENANT_ID`                 | Durable realm/deployment identifier exposed by the management API and bound into Fleet pairing grants  |
-| `AUTH_ACCESS_TOKEN_SECONDS`           | `300`                            | 60–900 seconds                                                                                         |
-| `AUTH_SESSION_IDLE_SECONDS`           | `1800`                           | 300–86,400 seconds                                                                                     |
-| `AUTH_SESSION_ABSOLUTE_SECONDS`       | `604800`                         | 3,600–2,592,000 seconds                                                                                |
-| `BIND_ADDRESS`                        | `0.0.0.0`                        | Listener IP address                                                                                    |
-| `PORT`                                | `8080`                           | Listener port                                                                                          |
-| `RUST_LOG`                            | `rustyauth=info,tower_http=info` | `tracing-subscriber` filter                                                                            |
-| `AUTH_MASTER_PREVIOUS_KEYS_HEX`       | empty                            | Comma-separated previous 32-byte master keys, each encoded as 64 hex characters                        |
-| `AUTH_SIGNING_KEY_ROTATION_SECONDS`   | `2592000`                        | Automatic signing-key lifetime; 3,600–31,536,000 seconds                                               |
-| `AUTH_SIGNING_KEY_PREPUBLISH_SECONDS` | `600`                            | Publish the next public key before activation; 300–86,400 seconds and shorter than the rotation period |
-| `AUTH_SIGNING_KEY_OVERLAP_SECONDS`    | token lifetime + 300             | Retain retired public keys; minimum is `AUTH_ACCESS_TOKEN_SECONDS + 300`, maximum 86,400               |
-| `AUTH_KEY_MAINTENANCE_SECONDS`        | `30`                             | Signing lifecycle check interval; 5–3,600 seconds                                                      |
+| Variable                                       | Default                          | Allowed range or meaning                                                                                |
+| ---------------------------------------------- | -------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| `AUTH_TENANT_ID`                               | `vtr`                            | Tenant claim and event tag; one tenant per instance                                                     |
+| `AUTH_REALM_ID`                                | `AUTH_TENANT_ID`                 | Durable realm/deployment identifier exposed by the management API and bound into Fleet pairing grants   |
+| `AUTH_ACCESS_TOKEN_SECONDS`                    | `300`                            | 60–900 seconds                                                                                          |
+| `AUTH_SESSION_IDLE_SECONDS`                    | `1800`                           | 300–86,400 seconds                                                                                      |
+| `AUTH_SESSION_ABSOLUTE_SECONDS`                | `604800`                         | 3,600–2,592,000 seconds                                                                                 |
+| `BIND_ADDRESS`                                 | `0.0.0.0`                        | Listener IP address                                                                                     |
+| `PORT`                                         | `8080`                           | Listener port                                                                                           |
+| `RUST_LOG`                                     | `rustyauth=info,tower_http=info` | `tracing-subscriber` filter                                                                             |
+| `AUTH_MASTER_PREVIOUS_KEYS_HEX`                | empty                            | Comma-separated previous 32-byte master keys, each encoded as 64 hex characters                         |
+| `AUTH_MASTER_KEY_KMS_CIPHERTEXT_B64`           | empty                            | AWS KMS ciphertext for the active raw 32-byte master key; mutually exclusive with `AUTH_MASTER_KEY_HEX` |
+| `AUTH_MASTER_PREVIOUS_KEYS_KMS_CIPHERTEXT_B64` | empty                            | Comma-separated AWS KMS ciphertexts for previous raw master keys                                        |
+| `AUTH_SIGNING_KEY_ROTATION_SECONDS`            | `2592000`                        | Automatic signing-key lifetime; 3,600–31,536,000 seconds                                                |
+| `AUTH_SIGNING_KEY_PREPUBLISH_SECONDS`          | `600`                            | Publish the next public key before activation; 300–86,400 seconds and shorter than the rotation period  |
+| `AUTH_SIGNING_KEY_OVERLAP_SECONDS`             | token lifetime + 300             | Retain retired public keys; minimum is `AUTH_ACCESS_TOKEN_SECONDS + 300`, maximum 86,400                |
+| `AUTH_KEY_MAINTENANCE_SECONDS`                 | `30`                             | Signing lifecycle check interval; 5–3,600 seconds                                                       |
 
-Absolute session expiry must be longer than the operational idle policy, but version `0.1.0` does not validate
-their relationship. Review both values together.
+Absolute session expiry must be longer than the operational idle policy. Startup rejects equality or an
+absolute lifetime shorter than the idle lifetime so an invalid policy cannot silently reach production.
 
 ## Backup variables
+
+This section defines configuration inputs. The complete data scope, binary envelope, S3 object contract,
+health model and restore runbook are documented in [Backups and disaster recovery](BACKUPS.md).
 
 Backup configuration is all-or-nothing. Supply all six required values or none:
 
@@ -75,22 +288,24 @@ Backup configuration is all-or-nothing. Supply all six required values or none:
 | `AUTH_BACKUP_BUCKET`             | Private destination bucket                                                                                                                                        |
 | `AUTH_BACKUP_ACCESS_KEY_ID`      | Bucket access identifier                                                                                                                                          |
 | `AUTH_BACKUP_SECRET_ACCESS_KEY`  | Bucket secret                                                                                                                                                     |
-| `AUTH_BACKUP_ENCRYPTION_KEY_HEX` | Independent 32-byte AES key encoded as 64 hex characters; a key whose 32 bytes are all identical is rejected                                                      |
+| `AUTH_BACKUP_ENCRYPTION_KEY_HEX` | Plaintext-input form of the independent 32-byte application backup key; use either this or `AUTH_BACKUP_ENCRYPTION_KEY_KMS_CIPHERTEXT_B64`                        |
 
 `AUTH_BACKUP_URL_STYLE` is `virtual` by default and may be set to `path` for providers that require path-style
 buckets.
 
 Optional backup controls:
 
-| Variable                           | Default         | Meaning                                                                                                                                             |
-| ---------------------------------- | --------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `AUTH_BACKUP_INTERVAL_SECONDS`     | `21600`         | Automatic backup interval; 300–604,800 seconds                                                                                                      |
-| `AUTH_BACKUP_RPO_SECONDS`          | backup interval | Maximum acceptable age of the last successful recovery point; cannot be shorter than the interval                                                   |
-| `AUTH_BACKUP_RETENTION_DAYS`       | `90`            | Minimum compliance-mode Object Lock duration required on every new object; 1–3,650 days                                                             |
-| `AUTH_BACKUP_ALERT_AFTER_FAILURES` | `2`             | Consecutive failures that put backup health into alerting state; 1–100                                                                              |
-| `AUTH_BACKUP_SSE`                  | `aws:kms`       | Required provider-side encryption reported for new objects: `aws:kms`, `AES256`, or `provider` for a compatible service that owns encryption policy |
-| `AUTH_BACKUP_SSE_KMS_KEY_ID`       | empty           | Exact customer-managed KMS key ARN expected on every new object; requires `AUTH_BACKUP_SSE=aws:kms`                                                 |
-| `AUTH_BACKUP_PREVIOUS_KEYS_HEX`    | empty           | Comma-separated previous 32-byte backup keys, each encoded as 64 hex characters                                                                     |
+| Variable                                        | Default         | Meaning                                                                                                                                             |
+| ----------------------------------------------- | --------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `AUTH_BACKUP_INTERVAL_SECONDS`                  | `21600`         | Automatic backup interval; 300–604,800 seconds                                                                                                      |
+| `AUTH_BACKUP_RPO_SECONDS`                       | backup interval | Maximum acceptable age of the last successful recovery point; cannot be shorter than the interval                                                   |
+| `AUTH_BACKUP_RETENTION_DAYS`                    | `90`            | Minimum compliance-mode Object Lock duration required on every new object; 1–3,650 days                                                             |
+| `AUTH_BACKUP_ALERT_AFTER_FAILURES`              | `2`             | Consecutive failures that put backup health into alerting state; 1–100                                                                              |
+| `AUTH_BACKUP_SSE`                               | `aws:kms`       | Required provider-side encryption reported for new objects: `aws:kms`, `AES256`, or `provider` for a compatible service that owns encryption policy |
+| `AUTH_BACKUP_SSE_KMS_KEY_ID`                    | empty           | Exact customer-managed KMS key ARN expected on every new object; requires `AUTH_BACKUP_SSE=aws:kms`                                                 |
+| `AUTH_BACKUP_PREVIOUS_KEYS_HEX`                 | empty           | Comma-separated previous 32-byte backup keys, each encoded as 64 hex characters                                                                     |
+| `AUTH_BACKUP_ENCRYPTION_KEY_KMS_CIPHERTEXT_B64` | empty           | AWS KMS ciphertext for the active raw 32-byte application backup key; mutually exclusive with the plaintext form                                    |
+| `AUTH_BACKUP_PREVIOUS_KEYS_KMS_CIPHERTEXT_B64`  | empty           | Comma-separated AWS KMS ciphertexts for previous raw backup keys                                                                                    |
 
 When backup configuration is present, RustyAuth creates a verified logical backup at process start and then at
 the configured interval. New v3 objects contain a compact Postcard binary snapshot, Zstandard compression and
@@ -103,6 +318,30 @@ The bucket must have Versioning and a default compliance-mode Object Lock rule b
 On AWS, use the checked-in `infra/aws/backup-bucket.yaml` stack, which also configures bucket-default SSE-KMS
 and blocks application deletion. The RustyAuth principal needs only `s3:ListBucket`, `s3:GetObject` and
 `s3:PutObject`; do not grant delete, retention changes or governance bypass.
+
+### AWS KMS envelope-key input
+
+Production can keep the master and portable backup data-encryption keys out of deployment variables. Generate
+each as 32 raw random bytes, encrypt it with a customer-managed symmetric AWS KMS key, then supply only the
+standard-base64 `CiphertextBlob`. RustyAuth calls `Decrypt` at startup and holds the plaintext only in its
+zeroizing in-process key ring. The ciphertext is bound to its purpose and tenant with mandatory encryption
+context, so a master-key ciphertext cannot be substituted for a backup key or moved to another tenant.
+
+```sh
+umask 077
+openssl rand 32 > master-key.raw
+aws kms encrypt \
+  --key-id alias/rustyauth-production \
+  --plaintext fileb://master-key.raw \
+  --encryption-context rustyauth-purpose=master,rustyauth-tenant=payments \
+  --query CiphertextBlob --output text
+```
+
+Use `rustyauth-purpose=backup` for the application backup key. `AWS_REGION` and the standard AWS workload
+credential chain select KMS; do not place long-lived AWS access keys in the image. Grant only `kms:Decrypt` on
+the selected key and constrain the IAM statement to both encryption-context pairs. Ciphertexts may also use
+their `_FILE` inputs. Never provide a plaintext and KMS form for the same active or previous ring; startup
+rejects the ambiguity. Retain encrypted previous keys until the rotation and recovery windows below close.
 
 Scheduler status survives process restarts in an excluded operational SableDB key. Run
 `rustyauth backup
@@ -181,8 +420,18 @@ the administrator's own hand. Run `operator find <email>` first: it prints every
 with `claimedAt` and `verified`, so an address claimed recently by an account nobody recognises is visible
 before anything is granted.
 
-The account must already exist — promotion does not create one. The cost of this path is deliberate: it
-requires shell access to the deployment rather than control of an inbox.
+Production registration is invitation-only. Create the initial identifier-bound invitation from the host,
+complete passkey registration, inspect the resulting account and then promote its UUID:
+
+```sh
+rustyauth invitation create email owner@example.com 30m
+rustyauth operator find owner@example.com
+rustyauth operator promote <user-id> owner
+```
+
+The invitation code is returned once and only its digest is stored. The account must exist before promotion;
+promotion does not create one. The cost of this path is deliberate: it requires privileged command-execution
+access to the deployment (the production image has no shell) rather than control of an inbox.
 
 Development deployments also expose a dashboard setup screen that creates the first local Owner with the
 bootstrap token. That path is disabled in production; do not distribute a production bootstrap token to a
@@ -298,6 +547,11 @@ These are compiled-in ceilings on the HTTP listener rather than environment vari
   `AUTH_MASTER_PREVIOUS_KEYS_HEX`, then restart. RustyAuth re-encrypts stored private signing material under
   the new key without changing the signing `kid`. Remove the old key only after `keys status` succeeds on
   every running instance.
+- With AWS KMS input, perform the same overlap using `AUTH_MASTER_KEY_KMS_CIPHERTEXT_B64` and
+  `AUTH_MASTER_PREVIOUS_KEYS_KMS_CIPHERTEXT_B64`. After a control-plane compromise, revoke the affected
+  workload identity, issue a new KMS-enveloped master key, restart to rewrap signing material, rotate every
+  Fleet connection credential, revoke active operator sessions, and retain the former ciphertext only in the
+  separately controlled recovery path until a clean-room restore succeeds.
 - To rotate `AUTH_BACKUP_ENCRYPTION_KEY_HEX`, put the new key in the active variable and retain the old key in
   `AUTH_BACKUP_PREVIOUS_KEYS_HEX` until every backup encrypted with it has expired or been replaced and a
   recovery drill has passed.

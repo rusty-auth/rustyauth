@@ -4,6 +4,7 @@ export type BoundaryIcon = "passkey" | "key" | "app" | "rustyauth" | "database" 
 export interface Solution {
   slug: string;
   sector: string;
+  seoTitle: string;
   shortTitle: string;
   cardBody: string;
   eyebrow: string;
@@ -22,6 +23,7 @@ export const solutions: Solution[] = [
   {
     slug: "saas",
     sector: "SaaS",
+    seoTitle: "Passkey Authentication for SaaS Products | RustyAuth",
     shortTitle: "Ship secure sign-in without becoming an identity company.",
     cardBody:
       "Add a compact passkey boundary to your product while keeping customer identity state in infrastructure you control.",
@@ -74,6 +76,7 @@ export const solutions: Solution[] = [
   {
     slug: "gambling-gaming",
     sector: "Gambling and gaming",
+    seoTitle: "Passkey Authentication for Gaming Platforms | RustyAuth",
     shortTitle: "Protect player and operator access at internet scale.",
     cardBody:
       "Use phishing-resistant authentication as one layer in an account-security programme built for high-value, heavily targeted platforms.",
@@ -125,6 +128,7 @@ export const solutions: Solution[] = [
   {
     slug: "banking-payments",
     sector: "Banking and payments",
+    seoTitle: "Self-Hosted Authentication for Banking | RustyAuth",
     shortTitle: "Keep sensitive access inside the institution’s control.",
     cardBody:
       "Protect customer and workforce sign-in with a boundary designed for private infrastructure, short-lived trust and immediate revocation.",
@@ -176,6 +180,7 @@ export const solutions: Solution[] = [
   {
     slug: "financial-services",
     sector: "Financial services",
+    seoTitle: "Passkey Authentication for Financial Software | RustyAuth",
     shortTitle: "Narrow identity trust across financial software.",
     cardBody:
       "Give fintech, trading, wealth and insurance products a portable authentication boundary without conflating identity with business authority.",
@@ -227,6 +232,7 @@ export const solutions: Solution[] = [
   {
     slug: "healthcare-products",
     sector: "Healthcare products",
+    seoTitle: "Self-Hosted Authentication for Healthcare Products | RustyAuth",
     shortTitle: "Authentication that can ship with the product.",
     cardBody:
       "Embed a local identity boundary into diagnostic platforms, clinical appliances and software deployed inside controlled healthcare networks.",
@@ -287,6 +293,7 @@ export const solutions: Solution[] = [
   {
     slug: "defence-secure-systems",
     sector: "Defence and secure systems",
+    seoTitle: "Offline Passkey Authentication for Secure Systems | RustyAuth",
     shortTitle: "Modern authentication inside a disconnected boundary.",
     cardBody:
       "Bring phishing-resistant access to secure engineering tools, deployable systems and isolated enclaves without a mandatory public-cloud dependency.",

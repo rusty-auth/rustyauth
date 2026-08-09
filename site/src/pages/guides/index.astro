@@ -1,0 +1,49 @@
+---
+import BaseLayout from "../../layouts/BaseLayout.astro";
+import { guides } from "../../data/guides";
+---
+
+<BaseLayout
+  title="RustyAuth Guides | Passkeys, Rust and Self-Hosted Authentication"
+  description="Practical guides to passkey authentication, self-hosted identity, Rust authentication architecture and durable auth event integrations."
+  structuredData={{
+    "@type": "CollectionPage",
+    name: "RustyAuth developer guides",
+    description: "Practical guides for building and operating passkey-first authentication with RustyAuth.",
+    url: "https://rustyauth.dev/guides",
+  }}
+>
+  <main class="guide-page">
+    <header class="guide-hero shell">
+      <p class="kicker"><span></span> Developer guides</p>
+      <h1>Build the authentication boundary with confidence.</h1>
+      <p>Plain-language explanations for product teams, implementation detail for engineers, and honest boundaries for anyone deciding whether RustyAuth fits.</p>
+      <time datetime="2026-08-09">Updated 9 August 2026</time>
+    </header>
+
+    <section class="guide-index shell" aria-labelledby="guide-index-title">
+      <div class="guide-index-heading">
+        <p class="kicker"><span></span> Choose a path</p>
+        <h2 id="guide-index-title">From first passkey to production integration.</h2>
+      </div>
+      <div class="guide-index-grid">
+        {guides.map((guide, index) => (
+          <a href={guide.href}>
+            <small>{String(index + 1).padStart(2, "0")} · {guide.eyebrow}</small>
+            <h3>{guide.label}</h3>
+            <p>{guide.description}</p>
+            <span>Read the guide →</span>
+          </a>
+        ))}
+      </div>
+    </section>
+
+    <section class="guide-cta shell">
+      <div>
+        <p class="kicker"><span></span> Product reference</p>
+        <h2>Need the exact contract?</h2>
+      </div>
+      <a class="button button-primary" href="/docs">Open documentation <span>→</span></a>
+    </section>
+  </main>
+</BaseLayout>

@@ -42,6 +42,10 @@ impl ApiError {
         }
     }
 
+    pub(super) fn unavailable(message: impl Into<String>) -> Self {
+        Self::new(StatusCode::SERVICE_UNAVAILABLE, message)
+    }
+
     pub(super) fn internal(error: impl std::fmt::Display) -> Self {
         tracing::error!(error = %error, "auth request failed");
         Self::new(

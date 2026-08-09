@@ -21,7 +21,7 @@ use super::{CEREMONY_SECONDS, error::ApiError, session::session_cookie};
 /// Both the client address and the value being attempted are charged. Limiting on
 /// address alone lets a botnet spread an attack across hosts; limiting on the
 /// attempted value alone lets one host walk through many accounts.
-pub(super) fn require_rate_limit(
+pub(super) async fn require_rate_limit(
     state: &AppState,
     peer: SocketAddr,
     headers: &HeaderMap,
@@ -30,9 +30,19 @@ pub(super) fn require_rate_limit(
 ) -> Result<(), ApiError> {
     let forwarded = joined_forwarded_for(headers);
     let address = client_address(peer.ip(), forwarded.as_deref(), state.trusted_proxy_hops);
-    let mut decisions = vec![state.rate_limiter.check(class, &format!("addr:{address}"))];
+    let mut decisions = vec![
+        state
+            .rate_limiter
+            .check(class, &format!("addr:{address}"))
+            .await,
+    ];
     if let Some(subject) = subject {
-        decisions.push(state.rate_limiter.check(class, &format!("subj:{subject}")));
+        decisions.push(
+            state
+                .rate_limiter
+                .check(class, &format!("subj:{subject}"))
+                .await,
+        );
     }
     match decisions.iter().find(|decision| !decision.allowed) {
         Some(refused) => Err(ApiError::too_many_requests(refused.retry_after_seconds)),
@@ -91,8 +101,12 @@ fn bootstrap_token_matches(expected: &str, supplied: Option<&str>) -> bool {
 pub(super) fn require_recent_passkey(session: &Session) -> Result<(), ApiError> {
     require_passkey_session(session)?;
     let current = now();
-    if session.created_at > current || current.saturating_sub(session.created_at) > CEREMONY_SECONDS
-    {
+    let Some(step_up_at) = session.step_up_at else {
+        return Err(ApiError::unauthorized(
+            "confirm with a recent passkey before changing account security",
+        ));
+    };
+    if step_up_at > current || current.saturating_sub(step_up_at) > CEREMONY_SECONDS {
         return Err(ApiError::unauthorized(
             "confirm with a recent passkey before changing account security",
         ));
@@ -192,6 +206,7 @@ mod tests {
             current_credential_id: None,
             session_version: 1,
             created_at,
+            step_up_at: (auth_method == "passkey").then_some(created_at),
             last_seen_at: current,
             absolute_expires_at: current + 3_600,
         };

@@ -47,10 +47,10 @@ requires the address to be **verified**, and the first Owner is created from the
 `rustyauth operator promote <user-id> owner`, because an unverified address is one any enrolled
 account can claim through the self-service API. Service credentials are generated once, indexed
 by SHA-256, independently revocable and exchangeable only for an allowed subset of their account's
-scopes. Webhook and metrics services remain contract foundations and are not mounted until their
-durable storage, policy and rejection-path tests land. The private event and identity RPC bearer
-tokens remain transitional credentials; they are not dashboard credentials and must never be
-embedded in browser code.
+scopes. Webhook and metrics services were gated until their durable storage, policy and
+rejection-path tests landed; current main mounts both services. Short-lived service-account JWTs
+now authorize exact method scopes, while the private event and identity RPC bearer tokens remain
+transitional credentials. None are dashboard credentials and none may be embedded in browser code.
 
 ## Security and operational properties
 
@@ -71,9 +71,10 @@ duplicating request types. Browser code stays idiomatic Solid/TypeScript while a
 stay in Rust. A later split into a separate dashboard service remains possible, but would require an
 explicit cross-origin session and CSRF design.
 
-The SolidJS dashboard, passkey operator authorization, organization persistence, service-account
-persistence and token exchange are implemented. Webhook delivery and metric rollups remain preview
-surfaces only; they become shipped when their Rust handlers, storage, tests and Railway checks land.
+The original SolidJS client described by this decision was superseded by Dioxus. Passkey operator
+authorization, organization persistence, service-account token exchange, signed webhook delivery
+and standalone metric rollups are implemented on current main. Cross-realm Fleet Analytics
+projection remains a separate staged program.
 
 ## Future fleet evolution
 

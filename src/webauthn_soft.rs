@@ -9,7 +9,7 @@ use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use ciborium::value::{Integer, Value as Cbor};
 use p256::{
     ecdsa::{Signature, SigningKey, signature::Signer},
-    elliptic_curve::rand_core::{OsRng, RngCore},
+    elliptic_curve::Generate as _,
 };
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
@@ -52,10 +52,9 @@ impl<'a> AssertionRequest<'a> {
 
 impl SoftAuthenticator {
     pub fn new() -> Self {
-        let mut credential_id = vec![0_u8; 32];
-        OsRng.fill_bytes(&mut credential_id);
+        let credential_id = rand::random::<[u8; 32]>().to_vec();
         Self {
-            key: SigningKey::random(&mut OsRng),
+            key: SigningKey::generate(),
             credential_id,
             next_counter: 1,
         }
@@ -165,7 +164,7 @@ impl SoftAuthenticator {
     }
 
     fn cose_public_key(&self) -> Vec<u8> {
-        let point = self.key.verifying_key().to_encoded_point(false);
+        let point = self.key.verifying_key().to_sec1_point(false);
         let x = point.x().expect("uncompressed point has an x coordinate");
         let y = point.y().expect("uncompressed point has a y coordinate");
         // COSE labels 3/-1/-2/-3 are negative integers. Encoding any of them as

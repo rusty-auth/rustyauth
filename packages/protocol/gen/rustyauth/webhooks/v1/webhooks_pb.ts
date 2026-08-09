@@ -10,7 +10,9 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file rustyauth/webhooks/v1/webhooks.proto.
  */
 export const file_rustyauth_webhooks_v1_webhooks: GenFile = /*@__PURE__*/
-  fileDesc("CiRydXN0eWF1dGgvd2ViaG9va3MvdjEvd2ViaG9va3MucHJvdG8SFXJ1c3R5YXV0aC53ZWJob29rcy52MSLSAQoHV2ViaG9vaxIKCgJpZBgBIAEoCRIMCgRuYW1lGAIgASgJEgsKA3VybBgDIAEoCRI0CgZzdGF0dXMYBCABKA4yJC5ydXN0eWF1dGgud2ViaG9va3MudjEuV2ViaG9va1N0YXR1cxITCgtldmVudF90eXBlcxgFIAMoCRITCgtzZWNyZXRfaGludBgGIAEoCRISCgpjcmVhdGVkX2F0GAcgASgJEhIKCnVwZGF0ZWRfYXQYCCABKAkSGAoQbGFzdF9kZWxpdmVyeV9hdBgJIAEoCSK0AgoPV2ViaG9va0RlbGl2ZXJ5EgoKAmlkGAEgASgJEhIKCndlYmhvb2tfaWQYAiABKAkSEAoIZXZlbnRfaWQYAyABKAkSEgoKZXZlbnRfdHlwZRgEIAEoCRI1CgZzdGF0dXMYBSABKA4yJS5ydXN0eWF1dGgud2ViaG9va3MudjEuRGVsaXZlcnlTdGF0dXMSFQoNYXR0ZW1wdF9jb3VudBgGIAEoDRIXCg9yZXNwb25zZV9zdGF0dXMYByABKA0SHAoUbGF0ZW5jeV9taWxsaXNlY29uZHMYCCABKAQSEgoKY3JlYXRlZF9hdBgJIAEoCRIXCg9uZXh0X2F0dGVtcHRfYXQYCiABKAkSFAoMY29tcGxldGVkX2F0GAsgASgJEhMKC2Vycm9yX2NsYXNzGAwgASgJInIKE0xpc3RXZWJob29rc1JlcXVlc3QSNAoGc3RhdHVzGAEgASgOMiQucnVzdHlhdXRoLndlYmhvb2tzLnYxLldlYmhvb2tTdGF0dXMSEQoJcGFnZV9zaXplGAIgASgNEhIKCnBhZ2VfdG9rZW4YAyABKAkiYQoUTGlzdFdlYmhvb2tzUmVzcG9uc2USMAoId2ViaG9va3MYASADKAsyHi5ydXN0eWF1dGgud2ViaG9va3MudjEuV2ViaG9vaxIXCg9uZXh0X3BhZ2VfdG9rZW4YAiABKAkiJwoRR2V0V2ViaG9va1JlcXVlc3QSEgoKd2ViaG9va19pZBgBIAEoCSJGChRDcmVhdGVXZWJob29rUmVxdWVzdBIMCgRuYW1lGAEgASgJEgsKA3VybBgCIAEoCRITCgtldmVudF90eXBlcxgDIAMoCSJgChVDcmVhdGVXZWJob29rUmVzcG9uc2USLwoHd2ViaG9vaxgBIAEoCzIeLnJ1c3R5YXV0aC53ZWJob29rcy52MS5XZWJob29rEhYKDnNpZ25pbmdfc2VjcmV0GAIgASgJIqABChRVcGRhdGVXZWJob29rUmVxdWVzdBISCgp3ZWJob29rX2lkGAEgASgJEgwKBG5hbWUYAiABKAkSCwoDdXJsGAMgASgJEjQKBnN0YXR1cxgEIAEoDjIkLnJ1c3R5YXV0aC53ZWJob29rcy52MS5XZWJob29rU3RhdHVzEhMKC2V2ZW50X3R5cGVzGAUgAygJEg4KBnJlYXNvbhgGIAEoCSJAChpSb3RhdGVTaWduaW5nU2VjcmV0UmVxdWVzdBISCgp3ZWJob29rX2lkGAEgASgJEg4KBnJlYXNvbhgCIAEoCSJmChtSb3RhdGVTaWduaW5nU2VjcmV0UmVzcG9uc2USLwoHd2ViaG9vaxgBIAEoCzIeLnJ1c3R5YXV0aC53ZWJob29rcy52MS5XZWJob29rEhYKDnNpZ25pbmdfc2VjcmV0GAIgASgJIigKElRlc3RXZWJob29rUmVxdWVzdBISCgp3ZWJob29rX2lkGAEgASgJIokBChVMaXN0RGVsaXZlcmllc1JlcXVlc3QSEgoKd2ViaG9va19pZBgBIAEoCRI1CgZzdGF0dXMYAiABKA4yJS5ydXN0eWF1dGgud2ViaG9va3MudjEuRGVsaXZlcnlTdGF0dXMSEQoJcGFnZV9zaXplGAMgASgNEhIKCnBhZ2VfdG9rZW4YBCABKAkibQoWTGlzdERlbGl2ZXJpZXNSZXNwb25zZRI6CgpkZWxpdmVyaWVzGAEgAygLMiYucnVzdHlhdXRoLndlYmhvb2tzLnYxLldlYmhvb2tEZWxpdmVyeRIXCg9uZXh0X3BhZ2VfdG9rZW4YAiABKAkiPAoVUmVwbGF5RGVsaXZlcnlSZXF1ZXN0EhMKC2RlbGl2ZXJ5X2lkGAEgASgJEg4KBnJlYXNvbhgCIAEoCSI6ChREZWxldGVXZWJob29rUmVxdWVzdBISCgp3ZWJob29rX2lkGAEgASgJEg4KBnJlYXNvbhgCIAEoCSIXChVEZWxldGVXZWJob29rUmVzcG9uc2UqgQEKDVdlYmhvb2tTdGF0dXMSHgoaV0VCSE9PS19TVEFUVVNfVU5TUEVDSUZJRUQQABIZChVXRUJIT09LX1NUQVRVU19BQ1RJVkUQARIZChVXRUJIT09LX1NUQVRVU19QQVVTRUQQAhIaChZXRUJIT09LX1NUQVRVU19GQUlMSU5HEAMqpwEKDkRlbGl2ZXJ5U3RhdHVzEh8KG0RFTElWRVJZX1NUQVRVU19VTlNQRUNJRklFRBAAEhsKF0RFTElWRVJZX1NUQVRVU19QRU5ESU5HEAESHQoZREVMSVZFUllfU1RBVFVTX1NVQ0NFRURFRBACEhwKGERFTElWRVJZX1NUQVRVU19SRVRSWUlORxADEhoKFkRFTElWRVJZX1NUQVRVU19GQUlMRUQQBDK+BwoOV2ViaG9va1NlcnZpY2USZwoMTGlzdFdlYmhvb2tzEioucnVzdHlhdXRoLndlYmhvb2tzLnYxLkxpc3RXZWJob29rc1JlcXVlc3QaKy5ydXN0eWF1dGgud2ViaG9va3MudjEuTGlzdFdlYmhvb2tzUmVzcG9uc2USVgoKR2V0V2ViaG9vaxIoLnJ1c3R5YXV0aC53ZWJob29rcy52MS5HZXRXZWJob29rUmVxdWVzdBoeLnJ1c3R5YXV0aC53ZWJob29rcy52MS5XZWJob29rEmoKDUNyZWF0ZVdlYmhvb2sSKy5ydXN0eWF1dGgud2ViaG9va3MudjEuQ3JlYXRlV2ViaG9va1JlcXVlc3QaLC5ydXN0eWF1dGgud2ViaG9va3MudjEuQ3JlYXRlV2ViaG9va1Jlc3BvbnNlElwKDVVwZGF0ZVdlYmhvb2sSKy5ydXN0eWF1dGgud2ViaG9va3MudjEuVXBkYXRlV2ViaG9va1JlcXVlc3QaHi5ydXN0eWF1dGgud2ViaG9va3MudjEuV2ViaG9vaxJ8ChNSb3RhdGVTaWduaW5nU2VjcmV0EjEucnVzdHlhdXRoLndlYmhvb2tzLnYxLlJvdGF0ZVNpZ25pbmdTZWNyZXRSZXF1ZXN0GjIucnVzdHlhdXRoLndlYmhvb2tzLnYxLlJvdGF0ZVNpZ25pbmdTZWNyZXRSZXNwb25zZRJgCgtUZXN0V2ViaG9vaxIpLnJ1c3R5YXV0aC53ZWJob29rcy52MS5UZXN0V2ViaG9va1JlcXVlc3QaJi5ydXN0eWF1dGgud2ViaG9va3MudjEuV2ViaG9va0RlbGl2ZXJ5Em0KDkxpc3REZWxpdmVyaWVzEiwucnVzdHlhdXRoLndlYmhvb2tzLnYxLkxpc3REZWxpdmVyaWVzUmVxdWVzdBotLnJ1c3R5YXV0aC53ZWJob29rcy52MS5MaXN0RGVsaXZlcmllc1Jlc3BvbnNlEmYKDlJlcGxheURlbGl2ZXJ5EiwucnVzdHlhdXRoLndlYmhvb2tzLnYxLlJlcGxheURlbGl2ZXJ5UmVxdWVzdBomLnJ1c3R5YXV0aC53ZWJob29rcy52MS5XZWJob29rRGVsaXZlcnkSagoNRGVsZXRlV2ViaG9vaxIrLnJ1c3R5YXV0aC53ZWJob29rcy52MS5EZWxldGVXZWJob29rUmVxdWVzdBosLnJ1c3R5YXV0aC53ZWJob29rcy52MS5EZWxldGVXZWJob29rUmVzcG9uc2ViBnByb3RvMw");
+  fileDesc(
+    "CiRydXN0eWF1dGgvd2ViaG9va3MvdjEvd2ViaG9va3MucHJvdG8SFXJ1c3R5YXV0aC53ZWJob29rcy52MSKdAgoHV2ViaG9vaxIKCgJpZBgBIAEoCRIMCgRuYW1lGAIgASgJEgsKA3VybBgDIAEoCRI0CgZzdGF0dXMYBCABKA4yJC5ydXN0eWF1dGgud2ViaG9va3MudjEuV2ViaG9va1N0YXR1cxITCgtldmVudF90eXBlcxgFIAMoCRITCgtzZWNyZXRfaGludBgGIAEoCRISCgpjcmVhdGVkX2F0GAcgASgJEhIKCnVwZGF0ZWRfYXQYCCABKAkSGAoQbGFzdF9kZWxpdmVyeV9hdBgJIAEoCRJJChFtYW5hZ2VtZW50X3NvdXJjZRgKIAEoDjIuLnJ1c3R5YXV0aC53ZWJob29rcy52MS5XZWJob29rTWFuYWdlbWVudFNvdXJjZSK0AgoPV2ViaG9va0RlbGl2ZXJ5EgoKAmlkGAEgASgJEhIKCndlYmhvb2tfaWQYAiABKAkSEAoIZXZlbnRfaWQYAyABKAkSEgoKZXZlbnRfdHlwZRgEIAEoCRI1CgZzdGF0dXMYBSABKA4yJS5ydXN0eWF1dGgud2ViaG9va3MudjEuRGVsaXZlcnlTdGF0dXMSFQoNYXR0ZW1wdF9jb3VudBgGIAEoDRIXCg9yZXNwb25zZV9zdGF0dXMYByABKA0SHAoUbGF0ZW5jeV9taWxsaXNlY29uZHMYCCABKAQSEgoKY3JlYXRlZF9hdBgJIAEoCRIXCg9uZXh0X2F0dGVtcHRfYXQYCiABKAkSFAoMY29tcGxldGVkX2F0GAsgASgJEhMKC2Vycm9yX2NsYXNzGAwgASgJInIKE0xpc3RXZWJob29rc1JlcXVlc3QSNAoGc3RhdHVzGAEgASgOMiQucnVzdHlhdXRoLndlYmhvb2tzLnYxLldlYmhvb2tTdGF0dXMSEQoJcGFnZV9zaXplGAIgASgNEhIKCnBhZ2VfdG9rZW4YAyABKAkiYQoUTGlzdFdlYmhvb2tzUmVzcG9uc2USMAoId2ViaG9va3MYASADKAsyHi5ydXN0eWF1dGgud2ViaG9va3MudjEuV2ViaG9vaxIXCg9uZXh0X3BhZ2VfdG9rZW4YAiABKAkiJwoRR2V0V2ViaG9va1JlcXVlc3QSEgoKd2ViaG9va19pZBgBIAEoCSJGChRDcmVhdGVXZWJob29rUmVxdWVzdBIMCgRuYW1lGAEgASgJEgsKA3VybBgCIAEoCRITCgtldmVudF90eXBlcxgDIAMoCSJgChVDcmVhdGVXZWJob29rUmVzcG9uc2USLwoHd2ViaG9vaxgBIAEoCzIeLnJ1c3R5YXV0aC53ZWJob29rcy52MS5XZWJob29rEhYKDnNpZ25pbmdfc2VjcmV0GAIgASgJIqABChRVcGRhdGVXZWJob29rUmVxdWVzdBISCgp3ZWJob29rX2lkGAEgASgJEgwKBG5hbWUYAiABKAkSCwoDdXJsGAMgASgJEjQKBnN0YXR1cxgEIAEoDjIkLnJ1c3R5YXV0aC53ZWJob29rcy52MS5XZWJob29rU3RhdHVzEhMKC2V2ZW50X3R5cGVzGAUgAygJEg4KBnJlYXNvbhgGIAEoCSJAChpSb3RhdGVTaWduaW5nU2VjcmV0UmVxdWVzdBISCgp3ZWJob29rX2lkGAEgASgJEg4KBnJlYXNvbhgCIAEoCSJmChtSb3RhdGVTaWduaW5nU2VjcmV0UmVzcG9uc2USLwoHd2ViaG9vaxgBIAEoCzIeLnJ1c3R5YXV0aC53ZWJob29rcy52MS5XZWJob29rEhYKDnNpZ25pbmdfc2VjcmV0GAIgASgJIigKElRlc3RXZWJob29rUmVxdWVzdBISCgp3ZWJob29rX2lkGAEgASgJIokBChVMaXN0RGVsaXZlcmllc1JlcXVlc3QSEgoKd2ViaG9va19pZBgBIAEoCRI1CgZzdGF0dXMYAiABKA4yJS5ydXN0eWF1dGgud2ViaG9va3MudjEuRGVsaXZlcnlTdGF0dXMSEQoJcGFnZV9zaXplGAMgASgNEhIKCnBhZ2VfdG9rZW4YBCABKAkibQoWTGlzdERlbGl2ZXJpZXNSZXNwb25zZRI6CgpkZWxpdmVyaWVzGAEgAygLMiYucnVzdHlhdXRoLndlYmhvb2tzLnYxLldlYmhvb2tEZWxpdmVyeRIXCg9uZXh0X3BhZ2VfdG9rZW4YAiABKAkiPAoVUmVwbGF5RGVsaXZlcnlSZXF1ZXN0EhMKC2RlbGl2ZXJ5X2lkGAEgASgJEg4KBnJlYXNvbhgCIAEoCSI6ChREZWxldGVXZWJob29rUmVxdWVzdBISCgp3ZWJob29rX2lkGAEgASgJEg4KBnJlYXNvbhgCIAEoCSIXChVEZWxldGVXZWJob29rUmVzcG9uc2UqgQEKDVdlYmhvb2tTdGF0dXMSHgoaV0VCSE9PS19TVEFUVVNfVU5TUEVDSUZJRUQQABIZChVXRUJIT09LX1NUQVRVU19BQ1RJVkUQARIZChVXRUJIT09LX1NUQVRVU19QQVVTRUQQAhIaChZXRUJIT09LX1NUQVRVU19GQUlMSU5HEAMqpwEKDkRlbGl2ZXJ5U3RhdHVzEh8KG0RFTElWRVJZX1NUQVRVU19VTlNQRUNJRklFRBAAEhsKF0RFTElWRVJZX1NUQVRVU19QRU5ESU5HEAESHQoZREVMSVZFUllfU1RBVFVTX1NVQ0NFRURFRBACEhwKGERFTElWRVJZX1NUQVRVU19SRVRSWUlORxADEhoKFkRFTElWRVJZX1NUQVRVU19GQUlMRUQQBCqaAQoXV2ViaG9va01hbmFnZW1lbnRTb3VyY2USKQolV0VCSE9PS19NQU5BR0VNRU5UX1NPVVJDRV9VTlNQRUNJRklFRBAAEicKI1dFQkhPT0tfTUFOQUdFTUVOVF9TT1VSQ0VfREFTSEJPQVJEEAESKwonV0VCSE9PS19NQU5BR0VNRU5UX1NPVVJDRV9DT05GSUdVUkFUSU9OEAIyvgcKDldlYmhvb2tTZXJ2aWNlEmcKDExpc3RXZWJob29rcxIqLnJ1c3R5YXV0aC53ZWJob29rcy52MS5MaXN0V2ViaG9va3NSZXF1ZXN0GisucnVzdHlhdXRoLndlYmhvb2tzLnYxLkxpc3RXZWJob29rc1Jlc3BvbnNlElYKCkdldFdlYmhvb2sSKC5ydXN0eWF1dGgud2ViaG9va3MudjEuR2V0V2ViaG9va1JlcXVlc3QaHi5ydXN0eWF1dGgud2ViaG9va3MudjEuV2ViaG9vaxJqCg1DcmVhdGVXZWJob29rEisucnVzdHlhdXRoLndlYmhvb2tzLnYxLkNyZWF0ZVdlYmhvb2tSZXF1ZXN0GiwucnVzdHlhdXRoLndlYmhvb2tzLnYxLkNyZWF0ZVdlYmhvb2tSZXNwb25zZRJcCg1VcGRhdGVXZWJob29rEisucnVzdHlhdXRoLndlYmhvb2tzLnYxLlVwZGF0ZVdlYmhvb2tSZXF1ZXN0Gh4ucnVzdHlhdXRoLndlYmhvb2tzLnYxLldlYmhvb2sSfAoTUm90YXRlU2lnbmluZ1NlY3JldBIxLnJ1c3R5YXV0aC53ZWJob29rcy52MS5Sb3RhdGVTaWduaW5nU2VjcmV0UmVxdWVzdBoyLnJ1c3R5YXV0aC53ZWJob29rcy52MS5Sb3RhdGVTaWduaW5nU2VjcmV0UmVzcG9uc2USYAoLVGVzdFdlYmhvb2sSKS5ydXN0eWF1dGgud2ViaG9va3MudjEuVGVzdFdlYmhvb2tSZXF1ZXN0GiYucnVzdHlhdXRoLndlYmhvb2tzLnYxLldlYmhvb2tEZWxpdmVyeRJtCg5MaXN0RGVsaXZlcmllcxIsLnJ1c3R5YXV0aC53ZWJob29rcy52MS5MaXN0RGVsaXZlcmllc1JlcXVlc3QaLS5ydXN0eWF1dGgud2ViaG9va3MudjEuTGlzdERlbGl2ZXJpZXNSZXNwb25zZRJmCg5SZXBsYXlEZWxpdmVyeRIsLnJ1c3R5YXV0aC53ZWJob29rcy52MS5SZXBsYXlEZWxpdmVyeVJlcXVlc3QaJi5ydXN0eWF1dGgud2ViaG9va3MudjEuV2ViaG9va0RlbGl2ZXJ5EmoKDURlbGV0ZVdlYmhvb2sSKy5ydXN0eWF1dGgud2ViaG9va3MudjEuRGVsZXRlV2ViaG9va1JlcXVlc3QaLC5ydXN0eWF1dGgud2ViaG9va3MudjEuRGVsZXRlV2ViaG9va1Jlc3BvbnNlYgZwcm90bzM",
+  );
 
 /**
  * @generated from message rustyauth.webhooks.v1.Webhook
@@ -60,6 +62,11 @@ export type Webhook = Message<"rustyauth.webhooks.v1.Webhook"> & {
    * @generated from field: string last_delivery_at = 9;
    */
   lastDeliveryAt: string;
+
+  /**
+   * @generated from field: rustyauth.webhooks.v1.WebhookManagementSource management_source = 10;
+   */
+  managementSource: WebhookManagementSource;
 };
 
 /**
@@ -263,6 +270,9 @@ export const CreateWebhookResponseSchema: GenMessage<CreateWebhookResponse> = /*
  */
 export type UpdateWebhookRequest = Message<"rustyauth.webhooks.v1.UpdateWebhookRequest"> & {
   /**
+   * Configuration-managed webhooks reject updates. Change spec.webhooks and
+   * redeploy so the declared source remains authoritative.
+   *
    * @generated from field: string webhook_id = 1;
    */
   webhookId: string;
@@ -442,6 +452,9 @@ export const ReplayDeliveryRequestSchema: GenMessage<ReplayDeliveryRequest> = /*
  */
 export type DeleteWebhookRequest = Message<"rustyauth.webhooks.v1.DeleteWebhookRequest"> & {
   /**
+   * Configuration-managed webhooks reject deletion. Remove the resource from
+   * spec.webhooks and redeploy instead.
+   *
    * @generated from field: string webhook_id = 1;
    */
   webhookId: string;
@@ -462,8 +475,7 @@ export const DeleteWebhookRequestSchema: GenMessage<DeleteWebhookRequest> = /*@_
 /**
  * @generated from message rustyauth.webhooks.v1.DeleteWebhookResponse
  */
-export type DeleteWebhookResponse = Message<"rustyauth.webhooks.v1.DeleteWebhookResponse"> & {
-};
+export type DeleteWebhookResponse = Message<"rustyauth.webhooks.v1.DeleteWebhookResponse"> & {};
 
 /**
  * Describes the message rustyauth.webhooks.v1.DeleteWebhookResponse.
@@ -540,6 +552,36 @@ export const DeliveryStatusSchema: GenEnum<DeliveryStatus> = /*@__PURE__*/
   enumDesc(file_rustyauth_webhooks_v1_webhooks, 1);
 
 /**
+ * Identifies the authority that owns a destination's desired state. Clients
+ * must render configuration-managed destinations read-only and direct the
+ * operator back to the deployment configuration for changes.
+ *
+ * @generated from enum rustyauth.webhooks.v1.WebhookManagementSource
+ */
+export enum WebhookManagementSource {
+  /**
+   * @generated from enum value: WEBHOOK_MANAGEMENT_SOURCE_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * @generated from enum value: WEBHOOK_MANAGEMENT_SOURCE_DASHBOARD = 1;
+   */
+  DASHBOARD = 1,
+
+  /**
+   * @generated from enum value: WEBHOOK_MANAGEMENT_SOURCE_CONFIGURATION = 2;
+   */
+  CONFIGURATION = 2,
+}
+
+/**
+ * Describes the enum rustyauth.webhooks.v1.WebhookManagementSource.
+ */
+export const WebhookManagementSourceSchema: GenEnum<WebhookManagementSource> = /*@__PURE__*/
+  enumDesc(file_rustyauth_webhooks_v1_webhooks, 2);
+
+/**
  * Manages signed event delivery and the operational history needed to
  * diagnose and replay failed deliveries.
  *
@@ -553,7 +595,7 @@ export const WebhookService: GenService<{
     methodKind: "unary";
     input: typeof ListWebhooksRequestSchema;
     output: typeof ListWebhooksResponseSchema;
-  },
+  };
   /**
    * @generated from rpc rustyauth.webhooks.v1.WebhookService.GetWebhook
    */
@@ -561,7 +603,7 @@ export const WebhookService: GenService<{
     methodKind: "unary";
     input: typeof GetWebhookRequestSchema;
     output: typeof WebhookSchema;
-  },
+  };
   /**
    * @generated from rpc rustyauth.webhooks.v1.WebhookService.CreateWebhook
    */
@@ -569,7 +611,7 @@ export const WebhookService: GenService<{
     methodKind: "unary";
     input: typeof CreateWebhookRequestSchema;
     output: typeof CreateWebhookResponseSchema;
-  },
+  };
   /**
    * @generated from rpc rustyauth.webhooks.v1.WebhookService.UpdateWebhook
    */
@@ -577,7 +619,7 @@ export const WebhookService: GenService<{
     methodKind: "unary";
     input: typeof UpdateWebhookRequestSchema;
     output: typeof WebhookSchema;
-  },
+  };
   /**
    * @generated from rpc rustyauth.webhooks.v1.WebhookService.RotateSigningSecret
    */
@@ -585,7 +627,7 @@ export const WebhookService: GenService<{
     methodKind: "unary";
     input: typeof RotateSigningSecretRequestSchema;
     output: typeof RotateSigningSecretResponseSchema;
-  },
+  };
   /**
    * @generated from rpc rustyauth.webhooks.v1.WebhookService.TestWebhook
    */
@@ -593,7 +635,7 @@ export const WebhookService: GenService<{
     methodKind: "unary";
     input: typeof TestWebhookRequestSchema;
     output: typeof WebhookDeliverySchema;
-  },
+  };
   /**
    * @generated from rpc rustyauth.webhooks.v1.WebhookService.ListDeliveries
    */
@@ -601,7 +643,7 @@ export const WebhookService: GenService<{
     methodKind: "unary";
     input: typeof ListDeliveriesRequestSchema;
     output: typeof ListDeliveriesResponseSchema;
-  },
+  };
   /**
    * @generated from rpc rustyauth.webhooks.v1.WebhookService.ReplayDelivery
    */
@@ -609,7 +651,7 @@ export const WebhookService: GenService<{
     methodKind: "unary";
     input: typeof ReplayDeliveryRequestSchema;
     output: typeof WebhookDeliverySchema;
-  },
+  };
   /**
    * @generated from rpc rustyauth.webhooks.v1.WebhookService.DeleteWebhook
    */
@@ -617,6 +659,6 @@ export const WebhookService: GenService<{
     methodKind: "unary";
     input: typeof DeleteWebhookRequestSchema;
     output: typeof DeleteWebhookResponseSchema;
-  },
+  };
 }> = /*@__PURE__*/
   serviceDesc(file_rustyauth_webhooks_v1_webhooks, 0);

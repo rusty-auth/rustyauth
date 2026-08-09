@@ -27,6 +27,7 @@ use super::{
     dto::{RegistrationOptionsInput, RegistrationVerifyInput},
     error::ApiError,
     guard::{require_bootstrap, require_origin, require_rate_limit},
+    record_telemetry_event,
     session::token_response,
     validate::{account_profile, lookup_identifier_ref},
 };
@@ -38,8 +39,23 @@ pub(super) async fn registration_options(
     Json(input): Json<RegistrationOptionsInput>,
 ) -> Result<Json<Value>, ApiError> {
     require_origin(&state, &headers)?;
-    require_bootstrap(&state, &headers)?;
     let identifier = registration_identifier(&input)?;
+    let invitation = match input.invitation_code.as_deref() {
+        Some(code) => Some(
+            state
+                .store
+                .validate_account_invitation(&identifier, code.trim())
+                .await
+                .map_err(|_| ApiError::unauthorized("enrolment is not authorized"))?,
+        ),
+        None if state.identity_verification_required => {
+            return Err(ApiError::unauthorized("enrolment is not authorized"));
+        }
+        None => {
+            require_bootstrap(&state, &headers)?;
+            None
+        }
+    };
     // Identifier-keyed here, unlike the sign-in paths. Exhausting an unregistered
     // identifier's budget denies nobody an existing account, and this endpoint is
     // already behind the enrolment token, so the bucket bounds ceremony farming
@@ -50,7 +66,8 @@ pub(super) async fn registration_options(
         &headers,
         RateLimitClass::IdentifierProbe,
         Some(&identifier.value),
-    )?;
+    )
+    .await?;
     let profile = account_profile(input.given_name, input.family_name, input.display_name)?;
     if state
         .store
@@ -62,6 +79,12 @@ pub(super) async fn registration_options(
         return Err(ApiError::conflict("identifier already has an account"));
     }
     let user_id = Uuid::new_v4();
+    record_telemetry_event(
+        state.store.clone(),
+        "registration.options.started",
+        None,
+        json!({ "flow": "passkey" }),
+    );
     let display_name = profile_display_name(&profile).unwrap_or_else(|| identifier.value.clone());
     let (options, ceremony_state) = state
         .webauthn
@@ -79,6 +102,8 @@ pub(super) async fn registration_options(
         profile,
         purpose: RegistrationPurpose::Initial,
         initiating_session_id: None,
+        invitation_id: invitation.as_ref().map(|(id, _)| *id),
+        invitation_digest: invitation.map(|(_, digest)| digest),
         label: None,
         expires_at: now().saturating_add(CEREMONY_SECONDS),
         state: ceremony_state,
@@ -88,6 +113,12 @@ pub(super) async fn registration_options(
         .save_registration(&ceremony)
         .await
         .map_err(ApiError::internal)?;
+    record_telemetry_event(
+        state.store.clone(),
+        "registration.ceremony.opened",
+        None,
+        json!({ "flow": "passkey" }),
+    );
     Ok(Json(
         json!({ "ceremonyId": ceremony.id, "options": options }),
     ))
@@ -99,14 +130,29 @@ pub(super) async fn registration_verify(
     headers: HeaderMap,
     Json(input): Json<RegistrationVerifyInput>,
 ) -> Result<Response, ApiError> {
+    let started = std::time::Instant::now();
     require_origin(&state, &headers)?;
-    require_bootstrap(&state, &headers)?;
-    require_rate_limit(&state, peer, &headers, RateLimitClass::Ceremony, None)?;
-    let ceremony = state
-        .store
-        .take_registration(input.ceremony_id)
-        .await
-        .map_err(|_| ApiError::unauthorized("registration ceremony is invalid or expired"))?;
+    require_rate_limit(&state, peer, &headers, RateLimitClass::Ceremony, None).await?;
+    record_telemetry_event(
+        state.store.clone(),
+        "registration.response.returned",
+        None,
+        json!({ "flow": "passkey" }),
+    );
+    let ceremony = match state.store.take_registration(input.ceremony_id).await {
+        Ok(ceremony) => ceremony,
+        Err(_) => {
+            record_telemetry_event(
+                state.store.clone(),
+                "registration.challenge.expired",
+                None,
+                json!({ "flow": "passkey" }),
+            );
+            return Err(ApiError::unauthorized(
+                "registration ceremony is invalid or expired",
+            ));
+        }
+    };
     if ceremony.purpose != RegistrationPurpose::Initial || ceremony.initiating_session_id.is_some()
     {
         return Err(ApiError::unauthorized(
@@ -121,6 +167,14 @@ pub(super) async fn registration_verify(
     let identifier = ceremony
         .account_identifier()
         .ok_or_else(|| ApiError::internal("registration identifier is missing"))?;
+    let invitation_claim = match (ceremony.invitation_id, ceremony.invitation_digest) {
+        (Some(invitation_id), Some(invitation_digest)) => Some((invitation_id, invitation_digest)),
+        (None, None) if !state.identity_verification_required => {
+            require_bootstrap(&state, &headers)?;
+            None
+        }
+        _ => return Err(ApiError::unauthorized("enrolment is not authorized")),
+    };
     let user = state
         .store
         .create_user_with_passkey(
@@ -129,6 +183,7 @@ pub(super) async fn registration_verify(
             ceremony.profile,
             passkey,
             !state.identity_verification_required,
+            invitation_claim,
         )
         .await
         .map_err(|error| match error.downcast_ref::<StorePolicyError>() {
@@ -149,6 +204,15 @@ pub(super) async fn registration_verify(
         )
         .await
         .map_err(ApiError::internal)?;
+    record_telemetry_event(
+        state.store.clone(),
+        "registration.completed",
+        Some(user.id),
+        json!({
+            "flow": "passkey",
+            "latencyMilliseconds": started.elapsed().as_millis().min(u128::from(u64::MAX)) as u64,
+        }),
+    );
     token_response(&state, &user, &session, &session_token, StatusCode::CREATED)
 }
 

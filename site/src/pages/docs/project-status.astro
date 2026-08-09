@@ -1,0 +1,54 @@
+---
+import DocsLayout from "../../layouts/DocsLayout.astro";
+
+const capabilities = [
+  ["Passkey registration and sign-in", "Implemented", "Server-side, single-use ceremonies and durable sessions"],
+  ["Accounts and credentials", "Implemented", "Stable UUID, email/phone identifiers, profile and multiple passkeys"],
+  ["JWT and signing keys", "Implemented", "ES256, JWKS, staged rotation and retired-key overlap"],
+  ["Dioxus web dashboard", "Implemented", "Supported 1.0 client and separately deployable gateway"],
+  ["Native clients", "Preview", "Shared desktop/mobile feature builds; no 1.0 packages or support"],
+  ["Fleet hierarchy and pairing", "Implemented", "Public-endpoint topology, scoped roles, audit and revocation"],
+  ["Fleet Analytics V1", "Implemented", "Trusted export, canonical/materialized serving, delegated Dioxus and signed recovery"],
+  ["Encrypted backup and restore", "Implemented", "Logical snapshot, verification and empty-target recovery"],
+  ["Configuration as code", "Implemented", "Versioned YAML, schema, CLI validation and Docker/Railway inputs"],
+  ["Signed webhook delivery", "Implemented on main", "IaC or dashboard ownership, durable retry, history and replay"],
+  ["Account recovery", "Implemented", "One-use recovery codes, passkey re-enrolment, session revocation and audit"],
+  ["Verification delivery", "Implemented", "One-time challenges through exact signed-webhook subscriptions"],
+  ["Email sign-in delivery", "Event only", "A delivery provider/consumer remains an integration responsibility"],
+  ["Independent security review", "Not completed", "Required before production 1.0"],
+];
+---
+
+<DocsLayout title="Status and roadmap" eyebrow="Honest product state" intro="What is usable now, what remains deliberately gated and how RustyAuth moves from one realm to Fleet.">
+  <div class="docs-status-strip" aria-label="Current state">
+    <div><small>Current release</small><strong>0.1.0</strong></div>
+    <div><small>Support level</small><strong>Evaluation</strong></div>
+    <div><small>Compatibility</small><strong>Pin a release or commit</strong></div>
+  </div>
+
+  <h2>Capability matrix</h2>
+  <div class="doc-table-wrap"><table><thead><tr><th>Capability</th><th>Status</th><th>Boundary</th></tr></thead><tbody>{capabilities.map(([capability, status, boundary]) => <tr><td>{capability}</td><td>{status}</td><td>{boundary}</td></tr>)}</tbody></table></div>
+
+  <h2>Product direction</h2>
+  <p>RustyAuth supports two deployment styles without weakening realm isolation:</p>
+  <ol>
+    <li><strong>Standalone:</strong> one project contains a Dioxus dashboard, one RustyAuth backend and one private SableDB for a single isolated realm.</li>
+    <li><strong>Fleet:</strong> a separate central dashboard, control-plane API and datastore manage organizations, projects and environments while each realm keeps its own three-service boundary.</li>
+  </ol>
+  <p>SolidJS is retired from the shipped product path. Dioxus is the supported web presentation architecture and the shared basis for post-1.0 native previews; the Rust control-plane services remain the authority.</p>
+
+  <h2>Before 1.0</h2>
+  <ul>
+    <li>Publish and verify signed images through clean install, upgrade and rollback.</li>
+    <li>Pass the supported web browser, OS and authenticator matrix.</li>
+    <li>Complete the Analytics production qualification matrix.</li>
+    <li>Run a real organization-policy Analytics canary and witnessed recovery drill.</li>
+    <li>Complete independent application, deployment, pinned-SableDB and Analytics assessments.</li>
+  </ul>
+  <p>Desktop, iOS and Android distribution is separately gated post-1.0 work and does not block the server, container and web GA.</p>
+
+  <h2>How to read status</h2>
+  <p><strong>Implemented</strong> means code and automated coverage exist in this repository. It does not by itself mean production-qualified. <strong>Event only</strong> means RustyAuth records the request but an external delivery integration remains responsible for transport. <strong>Direction</strong> is not a product claim.</p>
+  <p>For the post-Fleet sequence, see the guided <a href="/docs/fleet-analytics">Fleet Analytics roadmap</a> and its <a href="/docs/fleet-analytics-v1">V1 semantic contract</a>.</p>
+  <p>The <a href="https://github.com/rusty-auth/rustyauth/blob/main/docs/ROADMAP.md">normative roadmap</a>, <a href="https://github.com/rusty-auth/rustyauth/blob/main/CHANGELOG.md">changelog</a> and <a href="https://github.com/rusty-auth/rustyauth/blob/main/docs/FLEET_CONTROL_PLANE.md">Fleet architecture</a> preserve the detailed program.</p>
+</DocsLayout>

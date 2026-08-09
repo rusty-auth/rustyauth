@@ -4,7 +4,8 @@ FROM rust:1.94.1-slim-bookworm@sha256:cf9dd0ec73e75f827fe59123fff9dc65af1a1c8363
 
 RUN apt-get update \
   && apt-get install -y --no-install-recommends clang libssl-dev pkg-config \
-  && rm -rf /var/lib/apt/lists/*
+  && rm -rf /var/lib/apt/lists/* \
+  && cargo install cargo-auditable --version 0.7.5 --locked
 WORKDIR /src
 COPY Cargo.toml Cargo.lock build.rs ./
 COPY proto ./proto
@@ -16,22 +17,30 @@ RUN mkdir src \
     && touch src/lib.rs \
     && cargo build --locked --release \
     && rm -rf src
+COPY rustyauth.example.yaml rustyauth.fleet.example.yaml ./
 COPY src ./src
 # The stub-built artifacts are newer than the sources just copied; touch so cargo
 # rebuilds the workspace crate against the cached dependencies.
 RUN find src -type f -exec touch {} + \
-    && cargo build --locked --release \
+    && cargo auditable build --locked --release \
     && cp /src/target/release/rustyauth /usr/local/bin/rustyauth
+RUN install -d /runtime-root/etc/rustyauth /runtime-root/etc/ssl/certs \
+    && install -d -m 1777 /runtime-root/tmp \
+    && ldd /usr/local/bin/rustyauth \
+       | awk '$2 == "=>" && $3 ~ /^\// { print $3 } $1 ~ /^\// { print $1 }' \
+       | sort -u > /tmp/runtime-libraries \
+    && while IFS= read -r library; do \
+         cp --parents --dereference "$library" /runtime-root; \
+       done < /tmp/runtime-libraries \
+    && cp /etc/ssl/certs/ca-certificates.crt /runtime-root/etc/ssl/certs/ \
+    && cp /etc/nsswitch.conf /runtime-root/etc/
 
-FROM debian:bookworm-slim@sha256:abd67ffcfa541b485a3dff59865ab629aa048a6c613e639d36e7456b0b229241
+FROM scratch
 LABEL org.opencontainers.image.title="RustyAuth" \
       org.opencontainers.image.description="Built in Rust. Built on SableDB. Built for passkeys." \
       org.opencontainers.image.source="https://github.com/rusty-auth/rustyauth" \
       org.opencontainers.image.licenses="Apache-2.0"
-RUN apt-get update \
-  && apt-get install -y --no-install-recommends ca-certificates \
-  && rm -rf /var/lib/apt/lists/* \
-  && useradd --system --uid 10001 --home /nonexistent --shell /usr/sbin/nologin passkey-auth
+COPY --from=build /runtime-root/ /
 COPY --from=build /usr/local/bin/rustyauth /usr/local/bin/rustyauth
 COPY LICENSE NOTICE THIRD_PARTY_NOTICES.md THIRD_PARTY_LICENSES.html /usr/share/doc/rustyauth/
 USER 10001:10001

@@ -1,0 +1,95 @@
+---
+import DocsLayout from "../../layouts/DocsLayout.astro";
+
+const deliveryPaths = [
+  ["Live rollups", "Realm-initiated authenticated gRPC", "Normal delivery of complete, closed five-minute snapshots with exact revision acknowledgements"],
+  ["Archive repair", "Signed manifest + Zstandard Parquet", "Audited replay, backfill and portability from an explicitly approved project or central bucket"],
+];
+
+const rollout = [
+  ["M9", "Complete", "V1 semantics, Protobuf, Parquet schema and compatibility fixtures"],
+  ["M10", "Complete", "Local projection, durable SableDB outbox and authenticated outbound export"],
+  ["M11", "Complete", "Trusted ingestion coordination and canonical GreptimeDB storage"],
+  ["M12", "Complete", "Role-authorized Analytics RPC and Dioxus drill-down"],
+  ["M13", "Complete", "Hourly/daily materialization, archive import and residency modes"],
+  ["M14", "In progress", "Independent assessment and organization-policy canary"],
+  ["M15", "Later", "Separately reviewed anomaly detection, alerts and approved exports"],
+];
+---
+
+<DocsLayout title="Fleet Analytics" eyebrow="Federated operations" intro="Roll up bounded operational telemetry across clouds without centralizing realm identity data or making authentication depend on Fleet.">
+  <div class="docs-status-strip" aria-label="Fleet Analytics delivery status">
+    <div><small>Semantic contract</small><strong>M9 complete</strong></div>
+    <div><small>Realm telemetry</small><strong>M10 complete</strong></div>
+    <div><small>Qualification</small><strong>M14 in progress</strong></div>
+  </div>
+
+  <div class="doc-callout success">
+    <strong>Fleet Analytics V1 is implemented in source</strong>
+  <p>Paired realms project five-minute snapshots locally, retain 24 hours in a durable SableDB outbox and export complete revisions over the authenticated gRPC connector. Fleet persists canonical and materialized GreptimeDB facts, serves delegated hierarchy queries with explicit coverage, and supports signed Parquet recovery. The full production qualification matrix, independent assessment and a real organization-policy canary remain before production support.</p>
+  </div>
+
+  <h2>What the program delivers</h2>
+  <p>An authorized Fleet operator can drill through realm, environment, project, organization and authorized fleet scope. Every result carries metric-family coverage, so zero activity is never confused with a realm that is stale, disabled or unsupported.</p>
+  <p>The V1 contract carries operational aggregates: authentication outcomes and latency, registration progress, session and token issuance, service-account activity, webhook delivery, platform health, backup age, signing-key age and connector lag. No supported path copies user records, credentials, sessions, tokens or raw identity events into Fleet.</p>
+
+  <h2>Cross-cloud data path</h2>
+  <div class="doc-architecture">
+    <div><small>Managed realm</small><strong>Project locally</strong><span>Closed buckets · SableDB outbox · optional archive</span></div>
+    <b>→</b>
+    <div class="accent"><small>Fleet trust boundary</small><strong>Authenticate and stamp</strong><span>Realm identity · hierarchy · assignment epoch · quotas</span></div>
+    <b>→</b>
+    <div class="dark"><small>Central analytics</small><strong>Store and derive</strong><span>Canonical realm facts · scope rollups · bounded RPC</span></div>
+  </div>
+  <ol>
+    <li>The realm projects local ordered events and request telemetry into complete five-minute UTC snapshots.</li>
+    <li>It atomically stores each snapshot, source watermark and retry record in its own SableDB.</li>
+    <li>The realm initiates an authenticated connection and retries full snapshots until Fleet acknowledges the exact bucket revision.</li>
+    <li>The Fleet gateway resolves the connection in its registry and stamps the trusted environment, project, organization and assignment epoch.</li>
+    <li>An internal adapter writes one canonical row per realm bucket. Higher scopes are always derived from those canonical realm facts.</li>
+    <li>A role-authorized Analytics RPC returns bounded series, breakdowns and coverage to Dioxus; the client never sends SQL.</li>
+  </ol>
+
+  <h2>gRPC first, Parquet for recovery</h2>
+  <div class="doc-table-wrap"><table><thead><tr><th>Path</th><th>Boundary</th><th>Purpose</th></tr></thead><tbody>{deliveryPaths.map(([path, boundary, purpose]) => <tr><td>{path}</td><td>{boundary}</td><td>{purpose}</td></tr>)}</tbody></table></div>
+  <p>Fleet does not continuously introspect arbitrary customer buckets. The cold path is manifest-driven: an operator first approves a bucket binding, then the importer verifies the realm signature, object digest, size, row count, schema, time range and sequence range before accepting immutable metric-bucket rows. Bucket credentials and presigned URLs never appear in a telemetry payload.</p>
+  <p>That separation keeps object storage useful for disconnection recovery, migration and residency without turning every dashboard query into a cross-cloud object scan. Live product reads use the central analytical store.</p>
+
+  <h2>Hierarchy and deterministic rollup</h2>
+  <div class="identity-lifecycle">
+    <div><small>Canonical fact</small><strong>Realm bucket</strong><span>Stable realm · assignment epoch · exact revision</span></div>
+    <b>→</b>
+    <div><small>Deployment scopes</small><strong>Environment + project</strong><span>Checked sums · merged histograms · coverage</span></div>
+    <b>→</b>
+    <div><small>Ownership scopes</small><strong>Organization + fleet</strong><span>Authorized children only · same source facts</span></div>
+  </div>
+  <p>Counts are summed, rates are calculated from summed numerators and denominators, and percentile latency is calculated after merging compatible cumulative histograms. Fleet never averages child rates or cascades rounded organization totals into a fleet total. Corrections replace the accepted realm revision and recompute the affected scopes.</p>
+  <p>A realm cannot claim that it belongs to a different environment or organization. Re-parenting creates a new assignment epoch; historical facts retain the attribution under which they were accepted.</p>
+
+  <h2>GreptimeDB is an internal adapter</h2>
+  <p>GreptimeDB is the private central analytical adapter because this workload is time-series heavy and benefits from a Rust implementation. The pinned adapter has passed schema, correction, TTL, isolation/purge, medium-performance and recovery gates. GreptimeDB SQL, tables and credentials are not public product contracts.</p>
+  <p>Fleet SableDB remains authoritative for organizations, projects, environments, role bindings, realm connections, accepted revisions, ingestion cursors and archive coordination. Losing analytics storage may make charts stale or partial; it must never alter passkey sign-in, token issuance or realm recovery.</p>
+
+  <h2>Coverage and failure isolation</h2>
+  <pre><code>{`expected_realms = reporting_realms + stale_realms
+total_realms    = expected_realms + disabled_realms + unsupported_realms
+partial         = reporting_realms < expected_realms`}</code></pre>
+  <p>Coverage is metric-family-specific and accompanies every scope result. A realm may report authentication metrics while not supporting webhook metrics. The UI must show the last complete common window and contributing children rather than silently filling missing data with zero.</p>
+  <ul>
+    <li>A Fleet or GreptimeDB outage never blocks realm authentication.</li>
+    <li>A disconnected realm retains bounded local snapshots and retries after reconnecting.</li>
+    <li>Duplicate delivery and ambiguous acknowledgement converge through full-snapshot revisions.</li>
+    <li>Disabling telemetry leaves the Fleet management plane and every realm fully functional.</li>
+  </ul>
+
+  <h2>Delivery roadmap</h2>
+  <div class="doc-table-wrap"><table><thead><tr><th>Milestone</th><th>Status</th><th>Exit focus</th></tr></thead><tbody>{rollout.map(([milestone, status, focus]) => <tr><td>{milestone}</td><td>{status}</td><td>{focus}</td></tr>)}</tbody></table></div>
+  <p>M14 is the first point at which Fleet Analytics may be described as production-qualified. M15 insights, cross-customer benchmarks and unrestricted raw-event search are not part of V1; benchmarking would require a separate accepted privacy decision.</p>
+
+  <h2>Continue to the contracts</h2>
+  <ul>
+    <li><a href="/docs/fleet-analytics-v1">Fleet Analytics V1 semantics</a> for buckets, metrics, histograms, privacy, coverage and archives.</li>
+    <li><a href="https://github.com/rusty-auth/rustyauth/blob/main/docs/FLEET_ANALYTICS.md">Complete delivery program</a> for qualification targets, workstreams, rollback and definition of done.</li>
+    <li><a href="https://github.com/rusty-auth/rustyauth/blob/main/docs/decisions/0004-federated-fleet-analytics.md">ADR 0004</a> for the controlling architecture decision.</li>
+  </ul>
+</DocsLayout>

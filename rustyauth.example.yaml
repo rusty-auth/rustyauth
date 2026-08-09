@@ -1,0 +1,60 @@
+# yaml-language-server: $schema=./schemas/rustyauth-config-v1alpha1.schema.json
+# Non-secret RustyAuth application configuration. Copy this file, commit the
+# result with your deployment code, and inject credentials separately.
+apiVersion: rustyauth.dev/v1alpha1
+kind: Realm
+
+metadata:
+  tenantId: example
+  realmId: example-development
+
+spec:
+  environment: development
+
+  server:
+    bind: 0.0.0.0
+    port: 8080
+    publicIssuer: http://localhost:8081
+    trustedProxyHops: 0
+
+  datastore:
+    endpoint: redis://sabledb:6379
+
+  relyingParty:
+    id: localhost
+    origin: http://localhost:8081
+    name: Example Account
+
+  tokens:
+    audience: example-api
+    accessTtl: 5m
+
+  sessions:
+    idleTimeout: 30m
+    absoluteTimeout: 7d
+
+  events:
+    retention: 90d
+
+  signingKeys:
+    rotateEvery: 30d
+    prepublishFor: 10m
+    overlapFor: 10m
+    maintenanceInterval: 30s
+
+  operators:
+    bootstrapEmails:
+      - admin@example.test
+
+  # Webhook destinations may be managed as desired state. They require HTTPS,
+  # stable IDs and at least one event type. See the production example.
+  # webhooks:
+  #   - id: application-lifecycle
+  #     name: Application lifecycle
+  #     endpoint: https://api.example.test/hooks/rustyauth
+  #     eventTypes: [identity.created, session.created]
+
+  # Omit this block to disable backups. Enabling it additionally requires the
+  # backup credentials and encryption key documented in docs/CONFIGURATION.md.
+  backups:
+    enabled: false

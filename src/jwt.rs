@@ -5,6 +5,7 @@ mod key_material;
 mod keyset;
 mod rotation;
 mod runtime;
+mod validation;
 
 pub use self::issuance::{IssuedServiceAccountToken, IssuedToken};
 pub(crate) use self::keyset::KEYSET_KEY;

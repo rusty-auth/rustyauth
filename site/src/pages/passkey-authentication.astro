@@ -1,0 +1,105 @@
+---
+import GuideLayout from "../layouts/GuideLayout.astro";
+---
+
+<GuideLayout
+  title="Passkey Authentication for Developers | RustyAuth"
+  description="A practical guide to passkey authentication: WebAuthn registration, sign-in, server responsibilities, sessions and self-hosted deployment with RustyAuth."
+  eyebrow="Developer guide · WebAuthn"
+  heading="Passkey authentication for developers"
+  intro="Passkeys replace reusable passwords with public-key credentials bound to a real website or application. Here is what the browser handles, what your authentication server must still own, and how to add the flow without building the whole identity stack."
+  currentPath="/passkey-authentication"
+>
+  <p class="guide-lede">
+    Passkey authentication is a phishing-resistant sign-in method built on WebAuthn. A device creates a unique
+    public/private key pair for your relying party. Your server stores the public credential; the private key stays
+    with the user’s authenticator and is unlocked with the device’s normal gesture, PIN or biometrics.
+  </p>
+
+  <div class="guide-callout">
+    <strong>The useful mental model</strong>
+    <p>A passkey is not a password placed in a different vault. It is a scoped cryptographic credential that proves possession without sending a reusable secret to your server.</p>
+  </div>
+
+  <h2 id="how-passkeys-work">How passkey authentication works</h2>
+  <p>
+    WebAuthn coordinates the browser, the authenticator and your server. The browser enforces the relying-party
+    origin. The authenticator creates or uses a private key. The server issues short-lived challenges, verifies the
+    signed response and decides which application identity the credential belongs to.
+  </p>
+
+  <h3>Registration</h3>
+  <ol>
+    <li>Your application starts registration for an authenticated or explicitly invited user.</li>
+    <li>The server creates a random, single-use challenge and returns WebAuthn creation options.</li>
+    <li>The browser asks an authenticator to create a credential scoped to the relying-party ID.</li>
+    <li>The server verifies the origin, challenge, attestation data and user binding before storing the public credential.</li>
+  </ol>
+
+  <h3>Sign-in</h3>
+  <ol>
+    <li>The server creates another short-lived challenge and returns request options.</li>
+    <li>The authenticator signs the challenge for the correct relying party after local user verification.</li>
+    <li>The server checks the signature, origin, challenge, counter policy and credential state.</li>
+    <li>A successful assertion becomes a revocable application session or a narrowly scoped downstream token.</li>
+  </ol>
+
+  <h2 id="server-responsibilities">What a passkey server still has to do</h2>
+  <p>
+    Browser APIs cover only the client ceremony. A production authentication service still needs durable identity
+    records, challenge expiry, single-use enforcement, credential lifecycle management, secure sessions, signing
+    keys, audit events, backups and operational recovery. These details are where a small demo becomes a security
+    boundary.
+  </p>
+  <ul>
+    <li><strong>Bind every challenge:</strong> to the intended user, relying party, operation and short expiry window.</li>
+    <li><strong>Verify the real origin:</strong> do not accept a client-supplied origin or relying-party identifier.</li>
+    <li><strong>Store public material safely:</strong> credentials are not passwords, but identity records and sessions remain sensitive.</li>
+    <li><strong>Design recovery explicitly:</strong> lost-device recovery can weaken an otherwise phishing-resistant flow.</li>
+    <li><strong>Keep authorization separate:</strong> authentication proves an identity; your application still owns roles, entitlements and resources.</li>
+  </ul>
+
+  <h2 id="comparison">Passkeys compared with common sign-in methods</h2>
+  <div class="guide-table-wrap" tabindex="0" role="region" aria-label="Authentication method comparison">
+    <table>
+      <thead><tr><th>Method</th><th>Reusable secret</th><th>Origin bound</th><th>Server workload</th></tr></thead>
+      <tbody>
+        <tr><td>Password</td><td>Yes</td><td>No</td><td>Hashing, resets, breach defence and often MFA</td></tr>
+        <tr><td>Email magic link</td><td>No app password</td><td>Usually no</td><td>Delivery, token expiry and mailbox dependency</td></tr>
+        <tr><td>Passkey / WebAuthn</td><td>No</td><td>Yes</td><td>Ceremony verification, credentials, sessions and recovery</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h2 id="rustyauth">How RustyAuth packages the boundary</h2>
+  <p>
+    RustyAuth is an open-source, passkey-first authentication service written in Rust. It handles registration and
+    authentication ceremonies, multiple credentials per user, HttpOnly revocable sessions, short-lived ES256 access
+    tokens, public JWKS, signing-key rotation, ordered events and verified backups. Identity state lives in a private,
+    volume-backed SableDB instance.
+  </p>
+  <p>
+    You can run one isolated realm in your own cloud, deploy it into customer-controlled infrastructure, or operate it
+    inside a disconnected environment. Your application remains responsible for authorization and business policy.
+    See the <a href="/docs/architecture">architecture boundary</a> and the
+    <a href="/docs/security">security model</a> before adopting it.
+  </p>
+
+  <h2 id="quickstart">Try passkey authentication locally</h2>
+  <pre><code>git clone https://github.com/rusty-auth/rustyauth.git
+cd rustyauth
+scripts/local-stack standalone up</code></pre>
+  <p>
+    The launcher generates private development secrets and starts the Dioxus dashboard, Rust backend and private
+    SableDB service. Continue with the <a href="/docs/getting-started">complete quickstart</a> and
+    <a href="/docs/integration">relying-party integration guide</a>.
+  </p>
+
+  <h2 id="readiness">A note on production readiness</h2>
+  <p>
+    RustyAuth 0.1.0 is a pre-release. Published-image qualification, the supported web browser and authenticator
+    matrix, full Analytics production qualification, an organization Analytics canary and independent
+    assessments remain before 1.0. Native applications are separately gated post-1.0 previews. The
+    <a href="/docs/project-status">status and roadmap</a> separates implemented behaviour from product direction.
+  </p>
+</GuideLayout>

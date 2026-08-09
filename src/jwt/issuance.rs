@@ -291,6 +291,7 @@ mod tests {
             profile: crate::store::AccountProfile::default(),
             identifiers: Vec::new(),
             session_version: 7,
+            recovery_codes: Vec::new(),
             created_at: 900,
             passkeys: Vec::new(),
         }
@@ -304,6 +305,7 @@ mod tests {
             current_credential_id: None,
             session_version: 7,
             created_at: 1_234,
+            step_up_at: Some(1_234),
             last_seen_at: 1_500,
             absolute_expires_at: 90_000,
         }

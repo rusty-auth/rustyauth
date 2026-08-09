@@ -1,0 +1,431 @@
+---
+import BaseLayout from "../layouts/BaseLayout.astro";
+
+const railwayTemplate = "https://railway.com/new/template/rustyauth?utm_medium=integration&utm_source=button&utm_campaign=rustyauth";
+
+const heroSlides = [
+  {
+    label: "Deploy anywhere",
+    headline: "One identity realm anywhere. One Fleet everywhere.",
+    body: "Deploy a compact passkey and OIDC identity realm into any cloud, customer VPC or on-premises environment. Manage configuration, upgrades, health, recovery and security posture from one open-source Fleet—without moving identity data or signing keys out of the realm.",
+  },
+  {
+    label: "Local by design",
+    headline: "Central coordination. Local authority.",
+    body: "Govern the estate from one place while every realm keeps its users, passkeys, sessions, signing keys and recovery data inside its own trust boundary.",
+  },
+  {
+    label: "Resilient",
+    headline: "Keep authentication local—even when Fleet is offline.",
+    body: "Fleet stays outside the authentication request path. Realms continue signing in users, issuing sessions and serving verification keys through a control-plane or WAN outage.",
+  },
+  {
+    label: "Open source",
+    headline: "Deploy freely. Operate as one fleet.",
+    body: "Run the Apache-2.0 licensed identity boundary wherever the product and customer need it, without adding a per-user hosted identity dependency.",
+  },
+];
+
+const outcomes = [
+  ["Portfolio visibility", "See organizations, products, environments and realms through one operating model."],
+  ["Local isolation", "Every realm keeps its own users, passkeys, sessions, signing keys, backups and SableDB."],
+  ["Scoped control", "Give platform, support and audit teams access only where their role and environment require it."],
+  ["Cloud freedom", "Place realms by customer, region or provider while Fleet remains one independent management plane."],
+];
+
+const managedRealms = [
+  ["Railway · EU West", "Payments API", "Production", "Healthy"],
+  ["AWS · London", "Customer portal", "Production", "Healthy"],
+  ["GCP · Frankfurt", "Operations suite", "Staging", "Review"],
+  ["Customer cloud", "Installed product", "Production", "Isolated"],
+];
+
+const managementCapabilities = [
+  ["01", "Model the estate", "Map organizations to products, environments and immutable realm registrations."],
+  ["02", "Pair safely", "Connect through a short-lived code and a revocable, environment-scoped management credential."],
+  ["03", "Operate by role", "Resolve inherited access on the server and record sensitive actions in a central audit trail."],
+  ["04", "Keep a local exit", "Each realm retains local administration and continues authenticating if Fleet is unavailable."],
+];
+
+const analyticsMetrics = [
+  ["Authentication success", "98.7%", "Across reporting realms"],
+  ["P95 authentication", "128 ms", "Merged compatible histograms"],
+  ["Reporting coverage", "12 / 14", "Two realms marked stale"],
+  ["Oldest verified backup", "4h 12m", "Across the selected scope"],
+];
+---
+
+<BaseLayout
+  title="RustyAuth Fleet — Multi-Cloud Authentication Management"
+  description="Manage isolated RustyAuth authentication realms across clouds, projects and customer environments from one control plane—with scoped access, audit and privacy-preserving analytics."
+  structuredData={[
+    {
+      "@type": "WebPage",
+      "@id": "https://rustyauth.dev/fleet/#page",
+      name: "RustyAuth Fleet",
+      description: "A multi-cloud control plane for managing isolated RustyAuth authentication realms.",
+      url: "https://rustyauth.dev/fleet/",
+      isPartOf: { "@id": "https://rustyauth.dev/#website" },
+    },
+    {
+      "@type": "BreadcrumbList",
+      itemListElement: [
+        { "@type": "ListItem", position: 1, name: "RustyAuth", item: "https://rustyauth.dev/" },
+        { "@type": "ListItem", position: 2, name: "Fleet", item: "https://rustyauth.dev/fleet/" },
+      ],
+    },
+  ]}
+>
+  <main class="fleet-page">
+    <section class="fleet-hero shell">
+      <div class="fleet-hero-copy hero-copy" data-hero-carousel aria-roledescription="carousel" aria-label="RustyAuth Fleet product highlights">
+        <p class="kicker"><span></span> RustyAuth Fleet · Flagship control plane</p>
+        <h1>Fleet-native<br /><em>identity infrastructure.</em></h1>
+        <div class="hero-slides fleet-hero-slides" data-carousel-slides aria-live="off" aria-atomic="true">
+          {
+            heroSlides.map(({ headline, body }, index) => (
+              <div
+                class:list={["hero-slide", { "is-active": index === 0 }]}
+                data-carousel-slide
+                aria-hidden={index === 0 ? "false" : "true"}
+                aria-roledescription="slide"
+                aria-label={`${index + 1} of ${heroSlides.length}`}
+              >
+                <p class="hero-value-headline">{headline}</p>
+                <p class="hero-intro">{body}</p>
+              </div>
+            ))
+          }
+        </div>
+        <div class="hero-carousel-controls fleet-hero-carousel-controls">
+          <div class="hero-rotator-tabs" role="group" aria-label="Choose a Fleet product highlight">
+            {
+              heroSlides.map(({ label }, index) => (
+                <button
+                  class:list={["hero-rotator-tab", { "is-active": index === 0 }]}
+                  type="button"
+                  data-carousel-tab
+                  data-slide-index={index}
+                  aria-pressed={index === 0 ? "true" : "false"}
+                  aria-label={`Show ${label} highlight`}
+                >
+                  <span>0{index + 1}</span>
+                  <strong>{label}</strong>
+                </button>
+              ))
+            }
+          </div>
+          <button class="hero-rotator-toggle" type="button" data-carousel-toggle aria-label="Pause rotating headlines">
+            <span data-carousel-toggle-icon aria-hidden="true">Ⅱ</span>
+            <span class="sr-only" data-carousel-toggle-label>Pause rotating headlines</span>
+          </button>
+        </div>
+        <div class="hero-actions">
+          <a class="button button-primary" href="/docs/fleet">Explore Fleet <span>→</span></a>
+          <a class="button button-secondary" href={railwayTemplate}>Deploy a realm on Railway <span>↗</span></a>
+        </div>
+        <div class="fleet-release-line" aria-label="Fleet product status">
+          <span><i></i> Hierarchy and pairing implemented</span>
+          <span>Analytics V1 contract shipped</span>
+          <span>0.1.0 pre-release</span>
+        </div>
+      </div>
+
+      <div class="fleet-hero-topology" role="img" aria-label="One Fleet management plane connected to isolated RustyAuth realms across four cloud environments">
+        <div class="fleet-topology-hub">
+          <span>Central management plane</span>
+          <strong>RustyAuth Fleet</strong>
+          <small>Dashboard · Control plane · Private SableDB</small>
+        </div>
+        <div class="fleet-topology-spine" aria-hidden="true"><i></i><i></i><i></i><i></i></div>
+        <div class="fleet-topology-realms">
+          {managedRealms.map(([cloud, project, environment, status], index) => (
+            <div>
+              <span>0{index + 1} · {cloud}</span>
+              <strong>{project}</strong>
+              <small>{environment} · {status}</small>
+              <b>RustyAuth <i>Private SableDB</i></b>
+            </div>
+          ))}
+        </div>
+        <p>Fleet connects to narrow management APIs—not realm databases.</p>
+      </div>
+    </section>
+
+    <section class="fleet-promise">
+      <div class="shell fleet-promise-grid">
+        <div>
+          <p class="kicker light"><span></span> The operating model</p>
+          <h2>Central coordination.<br />Local authority.</h2>
+        </div>
+        <p>
+          Traditional central identity platforms often turn every product and customer into one large failure domain.
+          Fleet coordinates independent realms instead. If the control plane is unavailable, sign-in, sessions, token
+          verification, backups and local administration continue inside each realm.
+        </p>
+      </div>
+    </section>
+
+    <section class="fleet-outcomes shell">
+      <div class="fleet-section-heading">
+        <p class="kicker"><span></span> Why Fleet</p>
+        <h2>Manage the estate<br />without flattening it.</h2>
+        <p>A consistent operating layer for leadership, platform teams and the architects protecting each deployment boundary.</p>
+      </div>
+      <div class="fleet-outcome-grid">
+        {outcomes.map(([title, body], index) => (
+          <article><span>0{index + 1}</span><h3>{title}</h3><p>{body}</p></article>
+        ))}
+      </div>
+    </section>
+
+    <section class="fleet-map-section">
+      <div class="shell">
+        <div class="fleet-section-heading fleet-section-heading-wide">
+          <p class="kicker"><span></span> Multi-cloud topology</p>
+          <h2>Place authentication where the product—and the customer—needs it.</h2>
+          <p>
+            A realm can live in a different Railway project, public cloud, private network or customer account. Fleet
+            keeps the operating model consistent without receiving that realm’s database credentials.
+          </p>
+        </div>
+
+        <div class="fleet-map" aria-label="Multi-cloud RustyAuth Fleet topology">
+          <div class="fleet-map-plane">
+            <div><small>Web + native experience</small><strong>Fleet dashboard</strong><span>Portfolio · access · audit · health</span></div>
+            <b aria-hidden="true">→</b>
+            <div class="accent"><small>Central authority</small><strong>Fleet control plane</strong><span>Hierarchy · pairing · policy</span></div>
+            <b aria-hidden="true">→</b>
+            <div class="dark"><small>Private state</small><strong>Fleet SableDB</strong><span>Metadata · roles · central audit</span></div>
+          </div>
+          <div class="fleet-map-connector"><span>Revocable management connections</span></div>
+          <div class="fleet-map-clouds">
+            {managedRealms.map(([cloud, project, environment, status], index) => (
+              <article>
+                <div><span>Realm 0{index + 1}</span><strong>{status}</strong></div>
+                <p>{cloud}</p>
+                <h3>{project}</h3>
+                <small>{environment}</small>
+                <div class="fleet-map-runtime"><b>Rust backend</b><i>→</i><b>Private SableDB</b></div>
+              </article>
+            ))}
+          </div>
+        </div>
+
+        <div class="fleet-isolation-note">
+          <strong>The boundary that makes Fleet different</strong>
+          <p>Customer identities, passkeys, sessions, tokens, signing material and recovery data stay in the realm. Fleet never receives a realm SableDB URL; it stores the organizational map and the minimum encrypted connection state required to manage it.</p>
+          <a href="/docs/fleet">Read the control-plane architecture →</a>
+        </div>
+      </div>
+    </section>
+
+    <section class="fleet-management shell">
+      <div class="fleet-section-heading">
+        <p class="kicker"><span></span> Day-to-day management</p>
+        <h2>From portfolio<br />to one realm.</h2>
+        <p>Start with an organization, move through projects and environments, then act on a specific isolated realm.</p>
+      </div>
+      <div class="fleet-hierarchy" aria-label="Fleet hierarchy from organization to realm">
+        <div><span>01</span><small>Ownership</small><strong>Organization</strong><p>Team and policy root</p></div>
+        <b aria-hidden="true">→</b>
+        <div><span>02</span><small>Product</small><strong>Project</strong><p>Application or service</p></div>
+        <b aria-hidden="true">→</b>
+        <div><span>03</span><small>Deployment</small><strong>Environment</strong><p>Development to production</p></div>
+        <b aria-hidden="true">→</b>
+        <div class="accent"><span>04</span><small>Trust boundary</small><strong>Realm</strong><p>One isolated auth runtime</p></div>
+      </div>
+      <div class="fleet-management-list">
+        {managementCapabilities.map(([number, title, body]) => (
+          <article><span>{number}</span><h3>{title}</h3><p>{body}</p></article>
+        ))}
+      </div>
+    </section>
+
+    <section class="fleet-analytics-section" id="analytics">
+      <div class="shell fleet-analytics-inner">
+        <div class="fleet-analytics-copy">
+          <p class="kicker light"><span></span> Fleet Analytics</p>
+          <h2>See the signal.<br />Keep identity private.</h2>
+          <p>
+            Fleet Analytics is designed to roll up operational facts—sign-in outcomes, latency, registration progress,
+            backup age, key age and service health—without copying users, credentials, sessions or raw identity events
+            into the control plane.
+          </p>
+          <ul>
+            <li>Drill from authorized fleet scope to organization, project, environment and realm.</li>
+            <li>Show reporting coverage so missing data is never presented as zero activity.</li>
+            <li>Keep analytics failure completely outside the authentication request path.</li>
+          </ul>
+          <div class="fleet-analytics-status">
+            <strong>Delivery status</strong>
+            <p>Fleet Analytics V1 now includes reliable realm export, canonical and materialized GreptimeDB serving, delegated hierarchy queries, explicit coverage states and signed Parquet recovery. The full production qualification matrix, independent assessment and a real organization-policy canary remain before production support.</p>
+          </div>
+          <a class="text-link" href="/docs/fleet-analytics">Explore the analytics architecture <span>→</span></a>
+        </div>
+
+        <div class="fleet-analytics-preview" aria-label="Illustrative future Fleet Analytics dashboard using sample data">
+          <div class="fleet-preview-bar"><span>Illustrative Fleet view</span><small>Sample data · staged delivery</small></div>
+          <div class="fleet-preview-scope">
+            <div><small>Scope</small><strong>Acme portfolio / All projects</strong></div>
+            <span>Last 24 hours</span>
+          </div>
+          <div class="fleet-preview-metrics">
+            {analyticsMetrics.map(([label, value, note]) => (
+              <div><small>{label}</small><strong>{value}</strong><span>{note}</span></div>
+            ))}
+          </div>
+          <div class="fleet-preview-chart">
+            <div><strong>Authentication volume</strong><span>Coverage-aware rollup</span></div>
+            <div class="fleet-chart-bars" aria-hidden="true">
+              {[34, 48, 42, 64, 57, 76, 61, 82, 74, 88, 69, 79].map((height) => <i style={`--bar:${height}%`}></i>)}
+            </div>
+          </div>
+          <div class="fleet-preview-realms">
+            <div><span>Realm</span><span>Health</span><span>Coverage</span></div>
+            <div><strong>payments-prod</strong><i class="healthy">Healthy</i><span>100%</span></div>
+            <div><strong>portal-prod</strong><i class="healthy">Healthy</i><span>100%</span></div>
+            <div><strong>operations-staging</strong><i class="stale">Stale</i><span>72%</span></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="fleet-deploy shell" id="deployment">
+      <div class="fleet-section-heading fleet-section-heading-wide">
+        <p class="kicker"><span></span> Start small · scale deliberately</p>
+        <h2>One click for a realm.<br />One command for Fleet.</h2>
+        <p>Evaluate the trust boundary first, then introduce central management when the estate needs it.</p>
+      </div>
+      <div class="fleet-deploy-grid">
+        <article class="fleet-deploy-primary">
+          <span>Fastest hosted evaluation</span>
+          <h3>Deploy on Railway</h3>
+          <p>The published template creates a self-contained RustyAuth evaluation realm with a public service and private, persistent SableDB connected over Railway’s private network.</p>
+          <a class="button button-primary" href={railwayTemplate}>Deploy an isolated realm <span>↗</span></a>
+          <small>Pre-release · use synthetic accounts for evaluation</small>
+        </article>
+        <article>
+          <span>Local Fleet evaluation</span>
+          <h3>Launch the control plane</h3>
+          <pre><code>scripts/local-stack fleet up</code></pre>
+          <p>Starts the Dioxus Fleet dashboard, Rust control-plane service and private Fleet SableDB as a separate management project.</p>
+          <a href="/docs/getting-started">Open the quickstart →</a>
+        </article>
+        <article>
+          <span>Production topology</span>
+          <h3>Separate every authority</h3>
+          <p>Deploy Fleet independently, place each realm where it belongs, and pair them through scoped management endpoints. Back up Fleet and every realm separately.</p>
+          <a href="/docs/deployment">Review deployment patterns →</a>
+        </article>
+      </div>
+      <p class="fleet-template-note">
+        The published one-click Railway template currently deploys a standalone evaluation realm, not the complete
+        Fleet management project. The three-service Fleet Railway topology is documented and remains release-gated.
+      </p>
+    </section>
+
+    <section class="fleet-final shell">
+      <p class="kicker centered"><span></span> Build the operating layer</p>
+      <h2>Keep every realm independent.<br />Run them like one fleet.</h2>
+      <p>Start with the implemented hierarchy and pairing flow, then follow Fleet Analytics as the runtime data plane moves through qualification.</p>
+      <div class="hero-actions centered-actions">
+        <a class="button button-primary" href="/docs/fleet">Explore Fleet documentation <span>→</span></a>
+        <a class="button button-secondary" href="/docs/project-status">Review project status <span>→</span></a>
+      </div>
+    </section>
+  </main>
+</BaseLayout>
+
+<script>
+  const carousel = document.querySelector<HTMLElement>("[data-hero-carousel]");
+
+  if (carousel) {
+    const slides = Array.from(carousel.querySelectorAll<HTMLElement>("[data-carousel-slide]"));
+    const tabs = Array.from(carousel.querySelectorAll<HTMLButtonElement>("[data-carousel-tab]"));
+    const slidesRegion = carousel.querySelector<HTMLElement>("[data-carousel-slides]");
+    const toggle = carousel.querySelector<HTMLButtonElement>("[data-carousel-toggle]");
+    const toggleIcon = carousel.querySelector<HTMLElement>("[data-carousel-toggle-icon]");
+    const toggleLabel = carousel.querySelector<HTMLElement>("[data-carousel-toggle-label]");
+    const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const rotationDelay = 6500;
+    let activeIndex = 0;
+    let rotationTimer: number | undefined;
+    let userPaused = reducedMotion;
+    let interactionPaused = false;
+
+    const isPaused = () => userPaused || interactionPaused || document.hidden;
+
+    const updateToggle = () => {
+      if (!toggle || !toggleIcon || !toggleLabel) return;
+      const label = userPaused ? "Resume rotating headlines" : "Pause rotating headlines";
+      toggle.setAttribute("aria-label", label);
+      toggle.setAttribute("aria-pressed", String(userPaused));
+      toggleIcon.textContent = userPaused ? "▶" : "Ⅱ";
+      toggleLabel.textContent = label;
+    };
+
+    const scheduleRotation = () => {
+      window.clearTimeout(rotationTimer);
+      carousel.classList.toggle("is-paused", isPaused());
+      slidesRegion?.setAttribute("aria-live", userPaused ? "polite" : "off");
+      updateToggle();
+
+      if (!isPaused()) {
+        rotationTimer = window.setTimeout(() => {
+          activateSlide((activeIndex + 1) % slides.length);
+        }, rotationDelay);
+      }
+    };
+
+    const activateSlide = (nextIndex: number) => {
+      activeIndex = nextIndex;
+      slides.forEach((slide, index) => {
+        const active = index === activeIndex;
+        slide.classList.toggle("is-active", active);
+        slide.setAttribute("aria-hidden", String(!active));
+      });
+      tabs.forEach((tab, index) => {
+        const active = index === activeIndex;
+        tab.classList.toggle("is-active", active);
+        tab.setAttribute("aria-pressed", String(active));
+      });
+      scheduleRotation();
+    };
+
+    tabs.forEach((tab) => {
+      tab.addEventListener("click", () => {
+        const nextIndex = Number(tab.dataset.slideIndex);
+        if (Number.isInteger(nextIndex)) activateSlide(nextIndex);
+      });
+    });
+
+    toggle?.addEventListener("click", () => {
+      userPaused = !userPaused;
+      scheduleRotation();
+    });
+
+    carousel.addEventListener("pointerenter", () => {
+      interactionPaused = true;
+      scheduleRotation();
+    });
+    carousel.addEventListener("pointerleave", () => {
+      interactionPaused = false;
+      scheduleRotation();
+    });
+    carousel.addEventListener("focusin", () => {
+      interactionPaused = true;
+      scheduleRotation();
+    });
+    carousel.addEventListener("focusout", () => {
+      window.requestAnimationFrame(() => {
+        interactionPaused = carousel.contains(document.activeElement);
+        scheduleRotation();
+      });
+    });
+    document.addEventListener("visibilitychange", scheduleRotation);
+
+    if (reducedMotion) carousel.dataset.reducedMotion = "true";
+    scheduleRotation();
+  }
+</script>

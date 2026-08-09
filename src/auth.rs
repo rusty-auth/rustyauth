@@ -13,9 +13,11 @@ mod dto;
 mod error;
 mod events;
 mod guard;
+mod recovery;
 mod registration;
 mod session;
 mod validate;
+mod verification;
 
 use axum::{
     Router,
@@ -34,13 +36,33 @@ use self::{
     },
     discovery::{discovery, jwks},
     events::{email_link, events},
+    recovery::{recovery_options, recovery_verify, rotate_recovery_codes},
     registration::{registration_options, registration_verify},
-    session::{sign_out, token},
+    session::{
+        device_token, revoke_all_sessions, sign_out, step_up_options, step_up_verify, token,
+    },
+    verification::{complete_identifier_verification, request_identifier_verification},
 };
 
 pub(crate) use self::session::session_cookie_name;
 
 const CEREMONY_SECONDS: u64 = 300;
+
+fn record_telemetry_event(
+    store: crate::store::Store,
+    event_type: &'static str,
+    subject: Option<uuid::Uuid>,
+    data: serde_json::Value,
+) {
+    tokio::spawn(async move {
+        if let Err(error) = store
+            .append_event_with_data(event_type, subject, data)
+            .await
+        {
+            tracing::warn!(error = %error, event_type, "record telemetry event");
+        }
+    });
+}
 
 pub fn routes() -> Router<AppState> {
     Router::new()
@@ -63,7 +85,22 @@ pub fn routes() -> Router<AppState> {
             post(authentication_verify),
         )
         .route("/v1/token", post(token))
+        .route("/v1/device-tokens", post(device_token))
         .route("/v1/sign-out", post(sign_out))
+        .route("/v1/sessions/revoke-all", post(revoke_all_sessions))
+        .route("/v1/passkeys/step-up/options", post(step_up_options))
+        .route("/v1/passkeys/step-up/verify", post(step_up_verify))
+        .route("/v1/passkeys/recovery/options", post(recovery_options))
+        .route("/v1/passkeys/recovery/verify", post(recovery_verify))
+        .route("/v1/account/recovery-codes", post(rotate_recovery_codes))
+        .route(
+            "/v1/account/identifiers/verification/request",
+            post(request_identifier_verification),
+        )
+        .route(
+            "/v1/account/identifiers/verification/verify",
+            post(complete_identifier_verification),
+        )
         .route("/v1/email-links", post(email_link))
         .route("/v1/account", get(account))
         .route("/v1/account/profile", post(update_profile))

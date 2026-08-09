@@ -1,12 +1,43 @@
 ---
 import DocsLayout from "../../layouts/DocsLayout.astro";
 ---
-<DocsLayout title="Architecture" eyebrow="Trust boundaries" intro="A deliberately small public service in front of one private, durable persistence engine.">
-  <div class="doc-architecture"><div><small>Public</small><strong>Application</strong><span>WebAuthn + cookie</span></div><b>→</b><div class="accent"><small>Authentication</small><strong>RustyAuth</strong><span>Rust + Axum</span></div><b>→</b><div class="dark"><small>Private</small><strong>SableDB + bucket</strong><span>Durable state + encrypted recovery</span></div></div>
-  <h2>Why Rust</h2><p>Rust gives the public authentication boundary memory safety without a garbage collector, predictable resource use, and a single deployable binary. Axum keeps the HTTP surface explicit and composable.</p>
-  <h2>Why SableDB</h2><p>SableDB is a Rust-native, Valkey-compatible persistence engine. RustyAuth uses atomic pipelines for multi-key identity operations and requires a private, volume-backed deployment. It is the only online durable store. See the <a href="/docs/identity-data">identity data model</a> for the complete aggregate, index and lifecycle contract.</p>
-  <h2>Key lifecycle</h2><p>RustyAuth prepublishes each replacement signing key, activates it after the JWKS cache window, and retains the retired public key until every old access token has expired. The private key is encrypted in SableDB and can be transparently rewrapped during master-key rotation.</p>
-  <h2>Recovery boundary</h2><p>A consistent mutation gate produces sorted logical snapshots with a tenant-bound manifest. RustyAuth compresses and authenticates each snapshot with AES-256-GCM, verifies it after upload, and only restores into an empty target. Interrupted recovery blocks normal startup instead of serving partial identity state.</p>
-  <h2>Typed service contracts</h2><p>Versioned Protobuf services provide trusted identity reads, exact search, controlled mutations and durable event streaming over Connect, gRPC-Web and gRPC. Browser WebAuthn remains HTTP-oriented, and the RPC projection excludes stored credential material.</p>
-  <h2>Responsibility split</h2><ul><li>RustyAuth proves identity and manages credentials, ceremonies, sessions, signing keys and authentication claims.</li><li>Your application owns authorization, roles, entitlements and resource ownership.</li><li>SableDB and backup storage are never exposed as public authentication interfaces.</li></ul>
+
+<DocsLayout title="Architecture" eyebrow="Trust boundaries" intro="Independent presentation, policy and persistence services with explicit boundaries for one realm and for Fleet.">
+  <div class="doc-architecture">
+    <div><small>Public edge</small><strong>Dioxus dashboard</strong><span>Untrusted presentation client</span></div>
+    <b>→</b>
+    <div class="accent"><small>Authority</small><strong>RustyAuth backend</strong><span>Authentication · authorization · RPC</span></div>
+    <b>→</b>
+    <div class="dark"><small>Private network</small><strong>SableDB</strong><span>Durable isolated state</span></div>
+  </div>
+
+  <h2>One realm, three services</h2>
+  <p>The Dioxus dashboard serves the operator and account experiences. It holds no authority of its own. The Rust backend validates every session, origin, role and mutation, then performs atomic identity operations against a private, volume-backed SableDB. Each service can be released and scaled independently.</p>
+
+  <h2>Fleet is a separate management plane</h2>
+  <p>The central Fleet project repeats the same separation: Dioxus Fleet dashboard, Fleet control-plane API and its own private SableDB. That datastore owns organizations, projects, environments, realm registrations, scoped roles, central audit and aggregated health. It is not a shared authentication database.</p>
+  <p>Every managed realm keeps its own backend, keys, users, credentials, sessions, SableDB and recovery boundary—even when it runs in another cloud. Fleet reaches a narrow realm management API using scoped credentials. It never accepts a tenant database connection string.</p>
+
+  <h2>Protocol boundary</h2>
+  <p>Browser WebAuthn ceremonies use HTTP/JSON. Dashboard administration uses binary Protobuf over Connect or gRPC-Web so browser sessions can remain secure HttpOnly cookies. Trusted Rust services use native gRPC over HTTP/2; service-to-service deployments should add TLS, mTLS or workload identity. Protobuf supplies a typed, efficient contract—not authentication or encryption by itself.</p>
+
+  <h2>Analytics is an optional derived plane</h2>
+  <p><a href="/docs/fleet-analytics">Fleet Analytics</a> projects bounded five-minute snapshots inside each realm, sends full revisions over a realm-initiated authenticated channel and stamps organization, project and environment only at the trusted Fleet gateway. Canonical realm buckets feed environment, project, organization and fleet results; higher-level rates and percentiles are never averaged from child summaries.</p>
+  <p>The preferred GreptimeDB store is private behind the Fleet API. S3-compatible Parquet is an approved archive and repair path, not a dashboard query path. Analytics outages change freshness and coverage only—they never enter the authentication dependency chain.</p>
+
+  <h2>Durable state and recovery</h2>
+  <p>SableDB is the online source of truth. Logical snapshots are sorted, tenant-bound, compressed and authenticated with AES-256-GCM before upload to private S3-compatible storage. Restore only accepts an empty target and invalidates sessions by default. Realm and Fleet backups remain separate because their failure and ownership boundaries are separate. The <a href="/docs/recovery">backup and disaster-recovery guide</a> documents the complete state boundary, binary envelope and provider contract.</p>
+
+  <h2>Signing-key lifecycle</h2>
+  <p>RustyAuth prepublishes each replacement ES256 public key, activates it after the configured JWKS cache window and retains the retired public key until every old access token has expired. Private signing material is encrypted in SableDB and can be rewrapped during master-key rotation.</p>
+
+  <h2>Responsibility split</h2>
+  <ul>
+    <li>The Dioxus client renders state and initiates commands; it is never the authorization boundary.</li>
+    <li>The realm backend proves identity and owns credentials, ceremonies, sessions, signing keys and authentication claims.</li>
+    <li>The Fleet backend owns central hierarchy, operator policy, realm connections and fleet-wide projections.</li>
+    <li>Your application owns business authorization, permissions, entitlements and resources.</li>
+    <li>Private SableDB services and backup buckets are never browser or integration APIs.</li>
+  </ul>
+  <p>Read the <a href="https://github.com/rusty-auth/rustyauth/blob/main/docs/ARCHITECTURE.md">complete architecture reference</a> for state keys, flows and failure semantics.</p>
 </DocsLayout>

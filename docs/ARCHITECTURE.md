@@ -80,7 +80,8 @@ application resource.
 RustyAuth exports a consistent logical snapshot under a mutation gate, compresses it and protects it with a
 versioned AES-256-GCM envelope. The envelope header, derived encryption-key ID and payload are authenticated
 together. S3 uploads use a transport checksum and succeed only after read-after-write decryption and manifest
-verification.
+verification. The complete state boundary, envelope layout, storage contract and restore procedure are in
+[Backups and disaster recovery](BACKUPS.md).
 
 ## Stored state
 
@@ -171,8 +172,8 @@ Every authenticated request checks:
 
 Any failed check deletes the session record before rejecting the request, so a session invalidated once stays
 invalidated. Successful validation advances `last_seen_at`. Sign-out deletes the current session. The data
-model supports invalidating sessions by advancing a user's session version, but a public revoke-all operation
-is not implemented.
+model supports invalidating sessions by advancing a user's session version; the public revoke-all operation
+uses that mechanism and requires a recent passkey-backed session.
 
 ### Passkey revocation ends the sessions that passkey created
 
@@ -192,11 +193,12 @@ behaviour when a user retires one of several authenticators. Sessions with no or
 
 ## Credential-management policy
 
-An authenticated account can list passkeys. Adding a passkey requires a recent passkey session and the
-resulting ceremony is bound to that exact session. Renaming requires a passkey session; removing requires one
-created within the last five minutes and cannot remove the final passkey. The implementation does not yet
-provide a separate step-up ceremony; the recency check is based on session creation time. Agent handoff
-sessions do not satisfy any identity-mutation requirement.
+An authenticated account can list passkeys. Adding a passkey requires a recently user-verified passkey session
+and the resulting ceremony is bound to that exact session. Renaming requires a passkey session; removing
+requires a passkey sign-in or dedicated step-up completed within the last five minutes and cannot remove the
+final passkey. The step-up ceremony is bound to the exact account and initiating session, is single-use and
+updates the durable session only after the authenticator verifies the user. Agent handoff sessions do not
+satisfy any identity-mutation requirement.
 
 ## Account identity model
 
@@ -249,6 +251,9 @@ to be rewrapped without changing its `kid`.
 
 ## Backup and restore model
 
+This section is the architectural summary. [Backups and disaster recovery](BACKUPS.md) is the normative,
+field-level operator and developer reference.
+
 The backup manifest covers sorted durable records, record-family counts, a canonical content digest and the
 ordered-event sequence. Validation rejects duplicate or unsupported keys, tenant mismatch, orphaned user
 indexes and credentials, malformed expiry policy, missing signing state and event gaps. Ceremony,
@@ -268,17 +273,26 @@ email-link tokens.
 
 `GET /v1/events?after=N` returns at most 500 subsequent records. It is authenticated by the bootstrap token.
 `rustyauth.events.v1.AuthEventService/Subscribe` provides cursor-based replay and follow over Connect,
-gRPC-Web and gRPC using the separately scoped event RPC token. Consumers own durable acknowledgement by
-committing their sequence after processing. Retention and webhook delivery are not implemented.
+gRPC-Web and gRPC using either the separately scoped legacy event RPC token or a short-lived service-account
+JWT carrying `events.read`. Consumers own durable acknowledgement by committing their sequence only after
+their own transaction commits. Bounded retention refuses to prune beyond a lagging webhook or analytics
+projector cursor.
+
+The webhook worker reads the same ordered log. Each destination owns a cursor and durable delivery history;
+successful or terminal deliveries advance the cursor, while retryable transport, `408`, `425`, `429` and `5xx`
+responses use bounded exponential backoff. Requests carry a delivery ID, event type, timestamp and HMAC-SHA256
+signature over the timestamp and exact body. Redirects are disabled. Replay is possible while the source event
+remains retained.
 
 ## Operator and service RPC
 
 `rustyauth.identity.v1.IdentityService` is the trusted control-plane boundary. It exposes exact identity
 search, complete safe account reads, profile replacement, email/phone lifecycle operations, and passkey
-rename/revoke operations. It accepts the transitional identity bearer or an appropriately privileged passkey
-operator session. Passkey responses are projected through a metadata-only type before protobuf encoding;
-stored WebAuthn credentials, public keys and counters never cross the boundary. New credential material still
-requires a WebAuthn registration ceremony.
+rename/revoke operations. It accepts the transitional identity bearer, a short-lived service-account JWT with
+the exact `identity.read` or `identity.write` scope, or an appropriately privileged passkey operator session.
+Passkey responses are projected through a metadata-only type before protobuf encoding; stored WebAuthn
+credentials, public keys and counters never cross the boundary. New credential material still requires a
+WebAuthn registration ceremony.
 
 Attaching an identifier and asserting the account controls it are separated. `AddIdentifier` rejects a
 `verified: true` request outright and always stores the identifier unverified; only
@@ -295,12 +309,12 @@ operators.
 ### Method authorization is an exhaustive table
 
 Every RPC method's policy is named individually in `METHOD_POLICIES`. Resolution strips a known service prefix
-and looks the method up by exact name; a method with no entry is denied. This replaced a scheme that derived
-the capability from suffix matches with an `else` branch, where an unrecognized method inherited whatever the
-fallback happened to be and a newly generated proto method became reachable the moment it existed. A unit test
-reads the checked-in `.proto` sources and asserts that every method of a served service has an entry, that no
-entry is dead, and that the declared-but-unimplemented `rustyauth.metrics.v1` and `rustyauth.webhooks.v1`
-services still resolve to no policy — so widening the surface cannot happen silently.
+and looks the method up by exact name; a method with no entry is denied. Service-account authorization
+performs a second exact method-to-scope lookup: event streaming requires `events.read`, safe identity reads
+require `identity.read`, supported identity mutations require `identity.write`, aggregate metrics require
+`metrics.read`, and webhook operations require `webhooks.manage`. `SetIdentifierVerification` remains
+operator-only. A unit test reads every served `.proto` source and asserts that each method has one live
+policy, so widening the surface cannot happen silently.
 
 Streaming resolves against the same table but accepts only bearer policies. The operator check is async and
 the streaming hook is not, so a method that needs an operator session must remain unary rather than quietly
@@ -314,8 +328,9 @@ an administer-capability operator action, so on an empty deployment the two requ
 operator can exist until an address is verified, and no address can be verified until an operator exists.
 
 `rustyauth operator promote <user-id> <role>` breaks the cycle from the host. It writes the operator record
-for a named account and nothing else. The cost is deliberate — creating the first Owner requires shell access
-to the deployment rather than control of an inbox, which is a materially harder thing for an attacker to
+for a named account and nothing else. The cost is deliberate — creating the first Owner requires privileged
+container-command access to the deployment (the production image has no shell) rather than control of an
+inbox, which is a materially harder thing for an attacker to
 obtain than an unclaimed email address.
 
 It takes a user id rather than an address because the address is not a safe way to name an account here. Any
@@ -370,6 +385,35 @@ hierarchy, audit and pairing journeys. The local realm operations screens retain
 their RPC parity gate is complete. The migration and transport decision is recorded in
 [ADR 0003](decisions/0003-unified-dioxus-fleet-control-plane.md).
 
+## Fleet Analytics boundary
+
+Fleet Analytics is an optional derived plane, not part of the authentication path. Each managed realm will
+project bounded, closed five-minute snapshots into its own SableDB outbox and retry complete revisions over a
+realm-initiated authenticated channel. The central gateway resolves the authenticated realm in Fleet SableDB
+and stamps environment, project, organization and assignment epoch; a realm-supplied hierarchy assertion is
+never trusted.
+
+Accepted realm buckets are canonical analytical facts. Environment, project, organization and authorized fleet
+results derive directly from those facts using checked sums, ratio-of-sums and merged cumulative histograms.
+They are not cascades of rounded child aggregates. Fleet SableDB remains authoritative for hierarchy,
+authorization, connections, ingestion cursors and accepted revisions. The preferred GreptimeDB store is
+private behind an internal adapter and is authoritative only for accepted analytical facts and derived
+rollups.
+
+The normal delivery path is authenticated gRPC. Signed, Zstandard Parquet in an explicitly approved
+S3-compatible bucket is a cold repair, backfill and portability path; product queries do not introspect every
+foreign bucket. Neither path permits raw identity events, subject identifiers, database credentials or
+caller-defined labels. An analytics outage changes freshness and coverage only and must never block realm
+sign-in, session validation, token issuance or recovery.
+
+The [Fleet Analytics delivery program](FLEET_ANALYTICS.md), [V1 semantic contract](FLEET_ANALYTICS_V1.md) and
+[developer guide](https://rustyauth.dev/docs/fleet-analytics) define the complete architecture, rollout and
+compatibility boundary. M9 contracts and the M10 local projection, standalone MetricsService, durable outbox,
+authenticated realm export and Fleet acceptance ledger are complete. The private GreptimeDB adapter,
+database-namespaced hourly/daily materialization, signed Parquet recovery and hierarchical AnalyticsService
+are implemented; their production claim remains gated by the qualification, independent-review and canary
+evidence listed in the Analytics runbook.
+
 ## Concurrency and scaling
 
 Multi-key user and credential writes use atomic SableDB pipelines. A process-local async mutex serializes
@@ -398,6 +442,9 @@ Internal errors are logged server-side and returned to callers as a generic fail
 
 ## Known architectural gaps
 
-See [SECURITY.md](../SECURITY.md) and the README status matrix. The largest gaps are account recovery policy
-for lost authenticators, verified email/SMS delivery, revoke-all, cross-instance writer qualification, event
-retention/webhook delivery and independent review.
+See [SECURITY.md](../SECURITY.md), the README status matrix and the
+[1.0.0 release-readiness record](RELEASE_READINESS.md). RustyAuth fences its supported one-writer topology
+with a renewable datastore lease; active/active mutation remains outside the 1.0 contract. The largest
+remaining production gates are infrastructure egress enforcement, real supported-web browser/authenticator
+and published-image drills, production Analytics qualification/canary evidence and independent review. Native
+clients remain unsupported previews outside the `1.0.0` contract and are separately gated for a later release.

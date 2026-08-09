@@ -1,0 +1,335 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://rustyauth.dev/schemas/config/v1alpha1.json",
+  "title": "RustyAuth configuration",
+  "description": "Non-secret runtime configuration for one RustyAuth realm or Fleet control plane.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["apiVersion", "kind", "metadata", "spec"],
+  "properties": {
+    "apiVersion": {
+      "const": "rustyauth.dev/v1alpha1",
+      "description": "Version of the RustyAuth configuration contract."
+    },
+    "kind": {
+      "enum": ["Realm", "FleetControlPlane"],
+      "description": "The runtime role of this process."
+    },
+    "metadata": { "$ref": "#/$defs/metadata" },
+    "spec": { "$ref": "#/$defs/spec" }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "kind": { "const": "Realm" } } },
+      "then": {
+        "properties": {
+          "metadata": { "required": ["tenantId", "realmId"] },
+          "spec": {
+            "properties": {
+              "tokens": { "required": ["audience"] },
+              "analytics": false
+            }
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "metadata": { "not": { "required": ["realmId"] } },
+          "spec": {
+            "properties": {
+              "webhooks": { "maxItems": 0 }
+            }
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "safeId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64,
+      "pattern": "^[A-Za-z0-9_-]+$"
+    },
+    "duration": {
+      "type": "string",
+      "minLength": 2,
+      "examples": ["30s", "5m", "6h", "30d"],
+      "description": "A human-readable duration made from units such as s, m, h or d."
+    },
+    "origin": {
+      "type": "string",
+      "format": "uri",
+      "pattern": "^https?://[^/?#]+/?$"
+    },
+    "metadata": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["tenantId"],
+      "properties": {
+        "tenantId": { "$ref": "#/$defs/safeId" },
+        "realmId": { "$ref": "#/$defs/safeId" }
+      }
+    },
+    "spec": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["environment", "server", "datastore", "relyingParty", "tokens"],
+      "properties": {
+        "environment": {
+          "enum": ["development", "production"],
+          "description": "Security mode. Production enables HTTPS and other fail-closed requirements."
+        },
+        "server": { "$ref": "#/$defs/server" },
+        "datastore": { "$ref": "#/$defs/datastore" },
+        "relyingParty": { "$ref": "#/$defs/relyingParty" },
+        "tokens": { "$ref": "#/$defs/tokens" },
+        "sessions": { "$ref": "#/$defs/sessions" },
+        "events": { "$ref": "#/$defs/events" },
+        "signingKeys": { "$ref": "#/$defs/signingKeys" },
+        "operators": { "$ref": "#/$defs/operators" },
+        "backups": { "$ref": "#/$defs/backups" },
+        "analytics": { "$ref": "#/$defs/analytics" },
+        "webhooks": {
+          "type": "array",
+          "maxItems": 50,
+          "description": "Realm webhook destinations managed authoritatively by this configuration document.",
+          "items": { "$ref": "#/$defs/webhook" }
+        }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "environment": { "const": "production" } } },
+          "then": {
+            "properties": {
+              "server": { "required": ["publicIssuer", "trustedProxyHops"] }
+            }
+          }
+        }
+      ]
+    },
+    "server": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["publicIssuer"],
+      "properties": {
+        "bind": {
+          "type": "string",
+          "default": "0.0.0.0",
+          "description": "Listener IP address."
+        },
+        "port": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65535,
+          "default": 8080,
+          "description": "Listener port. Railway's injected PORT overrides this value."
+        },
+        "publicIssuer": {
+          "$ref": "#/$defs/origin",
+          "description": "Public RustyAuth issuer origin."
+        },
+        "trustedProxyHops": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 8,
+          "description": "Reverse proxies between clients and RustyAuth. Required in production."
+        }
+      }
+    },
+    "datastore": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["endpoint"],
+      "properties": {
+        "endpoint": {
+          "type": "string",
+          "pattern": "^rediss?://",
+          "description": "Private SableDB Valkey-protocol endpoint."
+        }
+      }
+    },
+    "relyingParty": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "origin", "name"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "description": "WebAuthn RP ID. RustyAuth requires it to exactly match the origin host."
+        },
+        "origin": { "$ref": "#/$defs/origin" },
+        "name": { "type": "string", "minLength": 1 }
+      }
+    },
+    "tokens": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "audience": { "type": "string", "minLength": 1 },
+        "accessTtl": { "$ref": "#/$defs/duration", "default": "5m" }
+      }
+    },
+    "sessions": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "idleTimeout": { "$ref": "#/$defs/duration", "default": "30m" },
+        "absoluteTimeout": { "$ref": "#/$defs/duration", "default": "7d" }
+      }
+    },
+    "events": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "retention": { "$ref": "#/$defs/duration", "default": "90d" }
+      }
+    },
+    "signingKeys": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "rotateEvery": { "$ref": "#/$defs/duration", "default": "30d" },
+        "prepublishFor": { "$ref": "#/$defs/duration", "default": "10m" },
+        "overlapFor": { "$ref": "#/$defs/duration" },
+        "maintenanceInterval": { "$ref": "#/$defs/duration", "default": "30s" }
+      }
+    },
+    "operators": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "bootstrapEmails": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "type": "string", "format": "email" }
+        }
+      }
+    },
+    "analytics": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["enabled"],
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "endpoint": {
+          "$ref": "#/$defs/origin",
+          "description": "Private GreptimeDB HTTP origin. Credentials are injected separately."
+        },
+        "database": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[A-Za-z0-9_]+$",
+          "default": "rustyauth"
+        }
+      }
+    },
+    "webhook": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "name", "endpoint", "eventTypes"],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/safeId",
+          "description": "Stable identity used to reconcile this destination across deployments. IDs must be unique within the document."
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100
+        },
+        "endpoint": {
+          "type": "string",
+          "format": "uri",
+          "pattern": "^https://",
+          "description": "HTTPS delivery URL. Credentials and fragments are rejected."
+        },
+        "enabled": {
+          "type": "boolean",
+          "default": true
+        },
+        "eventTypes": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 50,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^(?:[a-z0-9]|[a-z0-9][a-z0-9._-]*[a-z0-9])$"
+          }
+        }
+      }
+    },
+    "backups": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["enabled"],
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "destination": { "$ref": "#/$defs/backupDestination" },
+        "schedule": { "$ref": "#/$defs/backupSchedule" },
+        "retention": {
+          "$ref": "#/$defs/duration",
+          "description": "Compliance retention as a whole number of days, for example 90d."
+        },
+        "alertAfterFailures": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100,
+          "default": 2
+        }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "enabled": { "const": true } } },
+          "then": { "required": ["destination"] },
+          "else": {
+            "not": {
+              "anyOf": [
+                { "required": ["destination"] },
+                { "required": ["schedule"] },
+                { "required": ["retention"] },
+                { "required": ["alertAfterFailures"] }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "backupDestination": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["endpoint", "region", "bucket"],
+      "properties": {
+        "endpoint": { "type": "string", "format": "uri", "pattern": "^https?://" },
+        "region": { "type": "string", "minLength": 1 },
+        "bucket": { "type": "string", "minLength": 1 },
+        "urlStyle": { "enum": ["virtual", "path"], "default": "virtual" },
+        "serverSideEncryption": { "$ref": "#/$defs/serverSideEncryption" }
+      }
+    },
+    "serverSideEncryption": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["mode"],
+      "properties": {
+        "mode": { "enum": ["provider", "aes256", "aws-kms"] },
+        "kmsKeyId": { "type": "string", "minLength": 1 }
+      },
+      "if": { "required": ["kmsKeyId"] },
+      "then": { "properties": { "mode": { "const": "aws-kms" } } }
+    },
+    "backupSchedule": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "interval": { "$ref": "#/$defs/duration", "default": "6h" },
+        "recoveryPointObjective": { "$ref": "#/$defs/duration" }
+      }
+    }
+  }
+}

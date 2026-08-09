@@ -67,7 +67,7 @@ const exposures = [
   <div class="doc-table-wrap compact"><table><thead><tr><th>Field</th><th>Type</th><th>Rule</th></tr></thead><tbody>{identifierFields.map(([field, type, rule]) => <tr><td><code>{field}</code></td><td>{type}</td><td>{rule}</td></tr>)}</tbody></table></div>
   <h3>Canonical values</h3>
   <ul><li>Email is trimmed, ASCII-lowercased and validated as the supported dot-atom form. Quoted local parts and internationalized addresses are not supported in 0.1.</li><li>Phone input starts with <code>+</code>; common visual separators are removed and the stored E.164 form contains 8–15 digits.</li><li>Lookup is exact after canonicalization. Making an identifier primary never makes it verified.</li></ul>
-  <p>Production browser flows create unverified identifiers and emit a verification-requested event. Delivery and challenge consumption are not implemented yet. The trusted private identity RPC can explicitly set or clear verification state.</p>
+  <p>Production browser flows create unverified identifiers. One-time verification challenges are delivered only to exact signed-webhook subscriptions, expire, are rate limited and are consumed atomically; codes are not retained in delivery metadata. The trusted private identity RPC can explicitly set or clear verification state.</p>
 
   <h2>Profile names</h2>
   <p>The profile contains only optional <code>givenName</code> (100 characters), <code>familyName</code> (100) and <code>displayName</code> (200). Updates replace the complete profile; blank values clear fields. RustyAuth trims values and rejects control, zero-width and directional-formatting characters, while preserving ordinary Unicode and case.</p>
@@ -94,6 +94,7 @@ const exposures = [
   <div class="doc-callout warning"><strong>Application data belongs with the application</strong><p>Persist additional person or customer fields in your own data model keyed by the RustyAuth UUID. Do not overload names, passkey labels or events as an arbitrary metadata store.</p></div>
 
   <h2>Integration rules</h2>
-  <ol><li>Use the UUID as the downstream foreign identity key.</li><li>Treat contact identifiers as mutable and verification as independent from primary selection.</li><li>Never authorize by email, phone or display name.</li><li>Keep the identity RPC credential in a trusted service, never browser code.</li><li>Validate JWT signature, issuer, audience, expiry, tenant and required authentication claims.</li><li>Plan verified email/SMS delivery and account recovery before production adoption.</li></ol>
+  <ol><li>Use the UUID as the downstream foreign identity key.</li><li>Treat contact identifiers as mutable and verification as independent from primary selection.</li><li>Never authorize by email, phone or display name.</li><li>Keep the identity RPC credential in a trusted service, never browser code.</li><li>Validate JWT signature, issuer, audience, expiry, tenant and required authentication claims.</li><li>Configure and test the signed verification webhook plus recovery-code custody before production adoption.</li></ol>
   <p>For exact request contracts, continue to the <a href="/docs/api">HTTP and RPC API</a>. For key families, backup behavior and trust boundaries, see <a href="/docs/architecture">Architecture</a>.</p>
+  <p>The <a href="https://github.com/rusty-auth/rustyauth/blob/main/docs/IDENTITY_DATA_MODEL.md">normative identity data reference</a> stays beside the persistence implementation and must change with any stored field or index.</p>
 </DocsLayout>

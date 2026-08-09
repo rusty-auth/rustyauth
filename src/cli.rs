@@ -2,13 +2,16 @@
 //! doctor, backup, keys, operator and local-agent subcommands.
 
 use std::{
+    fs,
     io::{Read, Write},
     net::TcpStream,
+    path::PathBuf,
     time::Duration,
 };
 
 use anyhow::{Context, Result};
 use redis::AsyncCommands;
+use secrecy::{ExposeSecret, SecretString};
 use serde_json::json;
 use uuid::Uuid;
 
@@ -17,6 +20,7 @@ use crate::{
     config::{Config, DeploymentRole, Environment},
     jwt::{JwtIssuer, validate_snapshot_keyset},
     store::{IdentifierKind, IdentifierValue, OperatorRoleRecord, Store},
+    telemetry::pair_outbound_realm,
 };
 
 #[derive(Debug, Eq, PartialEq)]
@@ -30,6 +34,12 @@ pub enum ProcessMode {
     Help,
     Serve,
     Healthcheck,
+    ConfigExample {
+        kind: String,
+    },
+    ConfigValidate {
+        path: Option<String>,
+    },
     LocalAgent(LocalAgentRequest),
     BackupCreate,
     BackupList,
@@ -54,11 +64,79 @@ pub enum ProcessMode {
         email: String,
     },
     OperatorList,
+    InvitationCreate {
+        identifier_type: String,
+        identifier_value: String,
+        lifetime_seconds: u64,
+    },
+    InvitationList,
+    InvitationRevoke {
+        invitation_id: String,
+    },
     FleetPairingCode {
         control_plane_origin: String,
         operator_user_id: String,
+        allow_remote_support: bool,
+    },
+    FleetPairOutbound {
+        control_plane_origin: String,
+        attempt_id: String,
+        allow_remote_support: bool,
     },
     Doctor,
+}
+
+impl ProcessMode {
+    pub fn requires_writer_lease(&self) -> bool {
+        matches!(
+            self,
+            Self::LocalAgent(_)
+                | Self::BackupCreate
+                | Self::BackupRestore { .. }
+                | Self::KeysRotate
+                | Self::OperatorPromote { .. }
+                | Self::OperatorDemote { .. }
+                | Self::InvitationCreate { .. }
+                | Self::InvitationRevoke { .. }
+                | Self::FleetPairingCode { .. }
+                | Self::FleetPairOutbound { .. }
+        )
+    }
+}
+
+/// Removes the global `--config <path>` option before subcommand parsing.
+/// Both `--config path` and `--config=path` are accepted in any position so
+/// operators do not have to remember whether the option precedes a command.
+pub fn extract_config_path(arguments: &mut Vec<String>) -> Result<Option<PathBuf>> {
+    let mut config_path = None;
+    let mut index = 0;
+    while index < arguments.len() {
+        let (matched, value, consumed) = if arguments[index] == "--config" {
+            let value = arguments
+                .get(index + 1)
+                .filter(|value| !value.trim().is_empty() && !value.starts_with('-'))
+                .cloned()
+                .context("--config requires a filesystem path")?;
+            (true, value, 2)
+        } else if let Some(value) = arguments[index].strip_prefix("--config=") {
+            if value.trim().is_empty() {
+                anyhow::bail!("--config requires a filesystem path");
+            }
+            (true, value.to_owned(), 1)
+        } else {
+            (false, String::new(), 0)
+        };
+        if !matched {
+            index += 1;
+            continue;
+        }
+        if config_path.is_some() {
+            anyhow::bail!("--config may be supplied only once");
+        }
+        config_path = Some(PathBuf::from(value));
+        arguments.drain(index..index + consumed);
+    }
+    Ok(config_path)
 }
 
 pub fn parse_process_arguments(arguments: Vec<String>) -> Result<ProcessMode> {
@@ -68,6 +146,25 @@ pub fn parse_process_arguments(arguments: Vec<String>) -> Result<ProcessMode> {
             return Ok(ProcessMode::Help);
         }
         [value] if value == "--healthcheck" => return Ok(ProcessMode::Healthcheck),
+        [group, command] if group == "config" && command == "example" => {
+            return Ok(ProcessMode::ConfigExample {
+                kind: "realm".to_owned(),
+            });
+        }
+        [group, command, kind] if group == "config" && command == "example" => {
+            if !matches!(kind.as_str(), "realm" | "fleet") {
+                anyhow::bail!("config example kind must be realm or fleet");
+            }
+            return Ok(ProcessMode::ConfigExample { kind: kind.clone() });
+        }
+        [group, command] if group == "config" && command == "validate" => {
+            return Ok(ProcessMode::ConfigValidate { path: None });
+        }
+        [group, command, path] if group == "config" && command == "validate" => {
+            return Ok(ProcessMode::ConfigValidate {
+                path: Some(path.clone()),
+            });
+        }
         [group, command] if group == "backup" && command == "create" => {
             return Ok(ProcessMode::BackupCreate);
         }
@@ -121,12 +218,72 @@ pub fn parse_process_arguments(arguments: Vec<String>) -> Result<ProcessMode> {
         [group, command] if group == "operator" && command == "list" => {
             return Ok(ProcessMode::OperatorList);
         }
+        [group, command, identifier_type, identifier_value]
+            if group == "invitation" && command == "create" =>
+        {
+            return Ok(ProcessMode::InvitationCreate {
+                identifier_type: identifier_type.clone(),
+                identifier_value: identifier_value.clone(),
+                lifetime_seconds: 86_400,
+            });
+        }
+        [group, command, identifier_type, identifier_value, lifetime]
+            if group == "invitation" && command == "create" =>
+        {
+            return Ok(ProcessMode::InvitationCreate {
+                identifier_type: identifier_type.clone(),
+                identifier_value: identifier_value.clone(),
+                lifetime_seconds: humantime::parse_duration(lifetime)
+                    .context("invitation lifetime must be a duration such as 24h")?
+                    .as_secs(),
+            });
+        }
+        [group, command] if group == "invitation" && command == "list" => {
+            return Ok(ProcessMode::InvitationList);
+        }
+        [group, command, invitation_id] if group == "invitation" && command == "revoke" => {
+            return Ok(ProcessMode::InvitationRevoke {
+                invitation_id: invitation_id.clone(),
+            });
+        }
         [group, command, control_plane_origin, operator_user_id]
             if group == "fleet" && command == "pairing-code" =>
         {
             return Ok(ProcessMode::FleetPairingCode {
                 control_plane_origin: control_plane_origin.clone(),
                 operator_user_id: operator_user_id.clone(),
+                allow_remote_support: false,
+            });
+        }
+        [group, command, control_plane_origin, operator_user_id, flag]
+            if group == "fleet"
+                && command == "pairing-code"
+                && flag == "--allow-remote-support" =>
+        {
+            return Ok(ProcessMode::FleetPairingCode {
+                control_plane_origin: control_plane_origin.clone(),
+                operator_user_id: operator_user_id.clone(),
+                allow_remote_support: true,
+            });
+        }
+        [group, command, control_plane_origin, attempt_id]
+            if group == "fleet" && command == "pair-outbound" =>
+        {
+            return Ok(ProcessMode::FleetPairOutbound {
+                control_plane_origin: control_plane_origin.clone(),
+                attempt_id: attempt_id.clone(),
+                allow_remote_support: false,
+            });
+        }
+        [group, command, control_plane_origin, attempt_id, flag]
+            if group == "fleet"
+                && command == "pair-outbound"
+                && flag == "--allow-remote-support" =>
+        {
+            return Ok(ProcessMode::FleetPairOutbound {
+                control_plane_origin: control_plane_origin.clone(),
+                attempt_id: attempt_id.clone(),
+                allow_remote_support: true,
             });
         }
         [command] if command == "doctor" => return Ok(ProcessMode::Doctor),
@@ -157,6 +314,9 @@ pub const CLI_HELP: &str = "RustyAuth authentication and recovery service
 
 Usage:
   rustyauth
+  rustyauth [--config <path>]
+  rustyauth config example [realm|fleet]
+  rustyauth config validate [<path>|-]
   rustyauth doctor
   rustyauth backup create
   rustyauth backup list
@@ -169,14 +329,22 @@ Usage:
   rustyauth operator find <email>
   rustyauth operator promote <user-id> <owner|administrator|support|auditor>
   rustyauth operator demote <user-id>
-  rustyauth fleet pairing-code <control-plane-origin> <operator-user-id>
+  rustyauth invitation create <email|phone> <value> [lifetime]
+  rustyauth invitation list
+  rustyauth invitation revoke <invitation-id>
+  rustyauth fleet pairing-code <control-plane-origin> <operator-user-id> [--allow-remote-support]
+  rustyauth fleet pair-outbound <control-plane-origin> <attempt-id> [--allow-remote-support]
 
-Running without a command starts the HTTP service. Restore requires an empty SableDB namespace and
+Configuration is selected from --config, RUSTYAUTH_CONFIG_YAML, RUSTYAUTH_CONFIG_FILE, an existing
+/etc/rustyauth/config.yaml, or the legacy environment-only contract, in that order. A lone `-` makes
+config validation read YAML from standard input. Running without a command starts the HTTP service.
+Restore requires an empty SableDB namespace and
 invalidates existing sessions unless --preserve-sessions is explicitly supplied.
 
 In development, the dashboard setup flow can create the first local Owner with the bootstrap token.
-Production keeps that route closed: operator promotion is the supported first-Owner path and requires
-shell access to the deployment.
+Production keeps that route closed. Create the first identifier-bound invitation from the host, complete
+passkey enrolment with it, then use operator promotion for the resulting user id; both actions require shell
+access to the deployment.
 
 Promotion takes a user id, not an address. Any enrolled account can attach an unclaimed address to
 itself, so resolving an address here would promote whoever claimed it first. Run `operator find
@@ -300,17 +468,110 @@ pub async fn run(
             println!("{}", serde_json::to_string_pretty(&operators)?);
             Ok(())
         }
+        ProcessMode::InvitationCreate {
+            identifier_type,
+            identifier_value,
+            lifetime_seconds,
+        } => {
+            if config.deployment_role != DeploymentRole::Realm {
+                anyhow::bail!("account invitations belong to realm deployments");
+            }
+            let kind = match identifier_type.trim().to_ascii_lowercase().as_str() {
+                "email" => IdentifierKind::Email,
+                "phone" => IdentifierKind::Phone,
+                _ => anyhow::bail!("identifier type must be email or phone"),
+            };
+            let identifier = IdentifierValue::canonical(kind, &identifier_value)
+                .context("invitation identifier is invalid")?;
+            let (record, code) = store
+                .create_account_invitation(identifier, Uuid::nil(), lifetime_seconds)
+                .await
+                .context("create account invitation")?;
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&json!({
+                    "invitationId": record.id,
+                    "identifier": record.identifier,
+                    "invitationCode": code,
+                    "expiresAt": record.expires_at,
+                }))?
+            );
+            Ok(())
+        }
+        ProcessMode::InvitationList => {
+            let invitations = store
+                .account_invitations()
+                .await?
+                .into_iter()
+                .map(|record| {
+                    json!({
+                        "invitationId": record.id,
+                        "identifier": record.identifier,
+                        "createdBy": record.created_by,
+                        "createdAt": record.created_at,
+                        "expiresAt": record.expires_at,
+                        "consumedAt": record.consumed_at,
+                        "revokedAt": record.revoked_at,
+                    })
+                })
+                .collect::<Vec<_>>();
+            println!("{}", serde_json::to_string_pretty(&invitations)?);
+            Ok(())
+        }
+        ProcessMode::InvitationRevoke { invitation_id } => {
+            let id =
+                Uuid::parse_str(invitation_id.trim()).context("invitation id must be a UUID")?;
+            let record = store
+                .revoke_account_invitation(id)
+                .await
+                .context("revoke account invitation")?;
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&json!({
+                    "invitationId": record.id,
+                    "revokedAt": record.revoked_at,
+                }))?
+            );
+            Ok(())
+        }
         ProcessMode::FleetPairingCode {
             control_plane_origin,
             operator_user_id,
+            allow_remote_support,
         } => {
-            create_fleet_pairing_code(&config, &store, &control_plane_origin, &operator_user_id)
-                .await
+            create_fleet_pairing_code(
+                &config,
+                &store,
+                &control_plane_origin,
+                &operator_user_id,
+                allow_remote_support,
+            )
+            .await
+        }
+        ProcessMode::FleetPairOutbound {
+            control_plane_origin,
+            attempt_id,
+            allow_remote_support,
+        } => {
+            complete_outbound_fleet_pairing(
+                &config,
+                &store,
+                &control_plane_origin,
+                &attempt_id,
+                allow_remote_support,
+            )
+            .await
         }
         ProcessMode::Doctor => doctor(&config, redis, &store).await,
         ProcessMode::Serve => unreachable!("serve is dispatched by the process entry point"),
         ProcessMode::Help => unreachable!("help exits before configuration"),
         ProcessMode::Healthcheck => unreachable!("healthcheck exits before configuration"),
+        ProcessMode::ConfigExample { .. } => {
+            unreachable!("config example exits before runtime initialization")
+        }
+        ProcessMode::ConfigValidate { .. } => {
+            unreachable!("config validation exits before runtime initialization")
+        }
     }
 }
 
@@ -319,6 +580,7 @@ async fn create_fleet_pairing_code(
     store: &Store,
     control_plane_origin: &str,
     operator_user_id: &str,
+    allow_remote_support: bool,
 ) -> Result<()> {
     if config.deployment_role != DeploymentRole::Realm {
         anyhow::bail!(
@@ -348,14 +610,15 @@ async fn create_fleet_pairing_code(
                 )
         })
         .context("an active owner or administrator must authorize realm pairing")?;
+    let mut scopes = vec!["realm.read".into(), "telemetry.export".into()];
+    if allow_remote_support {
+        scopes.push("realm.support".into());
+    }
     let (record, code) = store
         .create_realm_pairing(
             config.realm_id.clone(),
             origin.to_string().trim_end_matches('/').to_owned(),
-            vec![
-                "realm.summary.read".into(),
-                "realm.connection.revoke".into(),
-            ],
+            scopes,
             operator.user_id,
         )
         .await?;
@@ -370,6 +633,83 @@ async fn create_fleet_pairing_code(
         }))?
     );
     Ok(())
+}
+
+async fn complete_outbound_fleet_pairing(
+    config: &Config,
+    store: &Store,
+    control_plane_origin: &str,
+    attempt_id: &str,
+    allow_remote_support: bool,
+) -> Result<()> {
+    if config.deployment_role != DeploymentRole::Realm {
+        anyhow::bail!("outbound pairing is initiated by a realm deployment");
+    }
+    let attempt_id = Uuid::parse_str(attempt_id).context("attempt-id must be a UUID")?;
+    let pairing_code = outbound_pairing_secret()?;
+    let mut scopes = vec!["realm.read".into(), "telemetry.export".into()];
+    if allow_remote_support {
+        scopes.push("realm.support".into());
+    }
+    let grant = pair_outbound_realm(
+        store,
+        control_plane_origin,
+        attempt_id,
+        pairing_code.expose_secret(),
+        &config.realm_id,
+        config.issuer.as_str(),
+        &config.rp_id,
+        scopes,
+    )
+    .await?;
+    println!(
+        "{}",
+        serde_json::to_string_pretty(&json!({
+            "connectionId": grant.connection_id,
+            "realmId": grant.realm_id,
+            "controlPlaneOrigin": grant.control_plane_origin,
+            "assignmentEpoch": grant.assignment_epoch,
+            "grantedScopes": grant.granted_scopes,
+            "state": "paired; start the realm service to connect",
+        }))?
+    );
+    Ok(())
+}
+
+fn outbound_pairing_secret() -> Result<SecretString> {
+    let direct = std::env::var_os("RUSTYAUTH_FLEET_PAIRING_CODE");
+    let file = std::env::var_os("RUSTYAUTH_FLEET_PAIRING_CODE_FILE");
+    if direct.is_some() && file.is_some() {
+        anyhow::bail!(
+            "configure either RUSTYAUTH_FLEET_PAIRING_CODE or RUSTYAUTH_FLEET_PAIRING_CODE_FILE, not both"
+        );
+    }
+    let value = if let Some(path) = file {
+        let path = PathBuf::from(path);
+        let metadata = fs::metadata(&path)
+            .with_context(|| format!("inspect outbound pairing secret file {}", path.display()))?;
+        if metadata.len() > 1_024 {
+            anyhow::bail!("outbound pairing secret file exceeds 1024 bytes");
+        }
+        fs::read_to_string(&path)
+            .with_context(|| format!("read outbound pairing secret file {}", path.display()))?
+    } else if let Some(value) = direct {
+        value
+            .into_string()
+            .map_err(|_| anyhow::anyhow!("RUSTYAUTH_FLEET_PAIRING_CODE is not Unicode"))?
+    } else {
+        anyhow::bail!(
+            "RUSTYAUTH_FLEET_PAIRING_CODE or RUSTYAUTH_FLEET_PAIRING_CODE_FILE is required"
+        );
+    };
+    let value = value.trim();
+    if !value.starts_with("rpair_")
+        || !(32..=128).contains(&value.len())
+        || value.chars().any(char::is_whitespace)
+    {
+        anyhow::bail!("outbound Fleet pairing code is invalid");
+    }
+    Ok(SecretString::from(value.to_owned()))
 }
 
 /// Composes the JWT issuer from configuration and the stored keyset.
@@ -599,8 +939,8 @@ fn validated_local_redirect(rp_origin: &url::Url, requested: Option<url::Url>) -
     Ok(requested.to_string())
 }
 
-pub fn container_healthcheck() -> Result<()> {
-    let port = std::env::var("PORT").unwrap_or_else(|_| "8080".into());
+pub fn container_healthcheck(port: Option<u16>) -> Result<()> {
+    let port = port.unwrap_or(8080);
     let mut stream = TcpStream::connect(format!("127.0.0.1:{port}"))
         .context("connect to local health endpoint")?;
     stream.set_read_timeout(Some(Duration::from_secs(2)))?;
@@ -658,6 +998,21 @@ mod tests {
         );
         assert_eq!(
             parse_process_arguments(vec![
+                "invitation".into(),
+                "create".into(),
+                "email".into(),
+                "Owner@Example.com".into(),
+                "2h".into(),
+            ])
+            .unwrap(),
+            ProcessMode::InvitationCreate {
+                identifier_type: "email".into(),
+                identifier_value: "Owner@Example.com".into(),
+                lifetime_seconds: 7_200,
+            }
+        );
+        assert_eq!(
+            parse_process_arguments(vec![
                 "fleet".into(),
                 "pairing-code".into(),
                 "https://fleet.example.com".into(),
@@ -667,8 +1022,57 @@ mod tests {
             ProcessMode::FleetPairingCode {
                 control_plane_origin: "https://fleet.example.com".into(),
                 operator_user_id: "5c9f24a2-9c62-4ff7-a2af-2adcf904cdf8".into(),
+                allow_remote_support: false,
             }
         );
+        assert_eq!(
+            parse_process_arguments(vec![
+                "fleet".into(),
+                "pairing-code".into(),
+                "https://fleet.example.com".into(),
+                "5c9f24a2-9c62-4ff7-a2af-2adcf904cdf8".into(),
+                "--allow-remote-support".into(),
+            ])
+            .unwrap(),
+            ProcessMode::FleetPairingCode {
+                control_plane_origin: "https://fleet.example.com".into(),
+                operator_user_id: "5c9f24a2-9c62-4ff7-a2af-2adcf904cdf8".into(),
+                allow_remote_support: true,
+            }
+        );
+    }
+
+    #[test]
+    fn configuration_cli_is_discoverable_and_global_path_is_position_independent() {
+        assert_eq!(
+            parse_process_arguments(vec!["config".into(), "example".into(), "fleet".into()])
+                .unwrap(),
+            ProcessMode::ConfigExample {
+                kind: "fleet".into()
+            }
+        );
+        assert_eq!(
+            parse_process_arguments(vec![
+                "config".into(),
+                "validate".into(),
+                "rustyauth.yaml".into()
+            ])
+            .unwrap(),
+            ProcessMode::ConfigValidate {
+                path: Some("rustyauth.yaml".into())
+            }
+        );
+
+        let mut arguments = vec![
+            "backup".into(),
+            "status".into(),
+            "--config=deploy/production.yaml".into(),
+        ];
+        assert_eq!(
+            extract_config_path(&mut arguments).unwrap(),
+            Some(PathBuf::from("deploy/production.yaml"))
+        );
+        assert_eq!(arguments, vec!["backup", "status"]);
     }
 
     #[test]

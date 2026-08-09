@@ -1,19 +1,63 @@
 ---
 import DocsLayout from "../../layouts/DocsLayout.astro";
 const endpoints = [
-  ["GET", "/healthz", "Public", "Process liveness"], ["GET", "/readyz", "Public", "SableDB-backed readiness"],
-  ["GET", "/.well-known/jwks.json", "Public", "ES256 verification keys"], ["POST", "/v1/passkeys/registration/options", "Origin + bootstrap", "Start registration"],
-  ["POST", "/v1/passkeys/registration/verify", "Origin + bootstrap", "Finish registration"], ["POST", "/v1/passkeys/authentication/options", "Origin", "Start sign-in"],
-  ["POST", "/v1/passkeys/authentication/verify", "Origin", "Finish sign-in"], ["GET", "/v1/account", "Session", "Read profile and identifiers"],
-  ["POST", "/v1/account/profile", "Passkey session", "Update basic profile"], ["POST", "/v1/account/identifiers", "Recent passkey", "Add an email or phone"],
-  ["GET", "/v1/credentials", "Session", "List account passkeys"], ["POST", "/v1/sign-out", "Origin", "Revoke current session"],
+  ["GET", "/healthz", "Public", "Process liveness"],
+  ["GET", "/readyz", "Public", "Private datastore readiness"],
+  ["GET", "/.well-known/jwks.json", "Public", "ES256 verification keys"],
+  ["POST", "/v1/passkeys/registration/options", "Origin + bootstrap", "Start first registration"],
+  ["POST", "/v1/passkeys/registration/verify", "Origin + bootstrap", "Finish first registration"],
+  ["POST", "/v1/passkeys/authentication/options", "Origin", "Start sign-in"],
+  ["POST", "/v1/passkeys/authentication/verify", "Origin", "Finish sign-in"],
+  ["POST", "/v1/token", "Session + origin", "Mint short-lived JWT"],
+  ["GET", "/v1/account", "Session + origin", "Read identity profile"],
+  ["GET", "/v1/credentials", "Session + origin", "List passkey metadata"],
+  ["POST", "/v1/sign-out", "Origin", "Revoke current session"],
 ];
 ---
-<DocsLayout title="HTTP and RPC API" eyebrow="Version 0.1" intro="Browser-facing JSON plus a private, versioned service boundary.">
-  <div class="doc-callout"><strong>Protocol status</strong><p>Browser WebAuthn ceremonies use HTTP/JSON. The dashboard uses passkey-session ConnectRPC for identity, organization and service-account management. Trusted consumers can use Connect, gRPC-Web or gRPC for durable event streaming and credential exchange.</p></div>
-  <h2>Endpoints</h2><div class="endpoint-table">{endpoints.map(([method, path, access, purpose]) => <div class="endpoint-row"><b class={method === "POST" ? "post" : ""}>{method}</b><code>{path}</code><span>{access}</span><p>{purpose}</p></div>)}</div>
-  <h2>Account identity</h2><p>Passkeys, canonical email or E.164 phone identifiers, and optional given, family and display names attach to a stable account UUID. Existing email-only request bodies remain valid. The <a href="/docs/identity-data">identity data model</a> documents every stored field and the data deliberately excluded from each response.</p>
-  <h2>Discovery and operations</h2><p>The JWKS endpoint publishes active, staged and overlapping retired verification keys. Runtime capability metadata reports whether scheduled backups are configured, the last successful backup time and current backup health. Backup and key-rotation commands are operator CLI surfaces, not public HTTP endpoints.</p>
-  <h2>Error behaviour</h2><p>Security-sensitive failures are explicit. Invalid origins, missing ceremonies, expired sessions, unknown credentials and an unavailable durable store do not degrade into successful empty responses.</p>
-  <h2>Typed RPC boundary</h2><p><code>rustyauth.identity.v1.IdentityService</code> supports safe user reads, exact search, profile and email/phone updates, and passkey rename/revoke operations. <code>rustyauth.organization.v1.OrganizationService</code> and <code>rustyauth.service_accounts.v1.ServiceAccountService</code> require a passkey operator session for administrative work. <code>rustyauth.events.v1.AuthEventService</code> provides resumable server streaming. Passkey credential material and raw stored secrets never appear in list responses.</p>
+
+<DocsLayout title="HTTP and RPC API" eyebrow="Version 0.1" intro="Browser-facing JSON, binary dashboard RPC and private native gRPC—each with a deliberately different trust model.">
+  <div class="docs-status-strip" aria-label="Protocol surfaces">
+    <div><small>WebAuthn</small><strong>HTTP + JSON</strong></div>
+    <div><small>Web dashboard</small><strong>Connect + Protobuf</strong></div>
+    <div><small>Trusted services</small><strong>gRPC + Protobuf</strong></div>
+  </div>
+
+  <h2>Browser HTTP</h2>
+  <p>Passkey ceremonies remain HTTP-oriented because browsers own the WebAuthn APIs. Exact-origin checks, server-side single-use ceremonies and secure HttpOnly session cookies protect this boundary. JSON access tokens are short-lived and belong in memory—not local storage.</p>
+  <div class="endpoint-table">
+    {endpoints.map(([method, path, access, purpose]) => (
+      <div class="endpoint-row"><b class={method === "POST" ? "post" : ""}>{method}</b><code>{path}</code><span>{access}</span><p>{purpose}</p></div>
+    ))}
+  </div>
+
+  <h2>Dashboard RPC</h2>
+  <p>The Dioxus web dashboard calls Connect-compatible Protobuf services and carries its secure session cookie automatically. The server still enforces origin, CSRF, operator scope and tenant hierarchy on every request. Browser compatibility is the reason to use Connect or gRPC-Web at this edge rather than unrestricted native gRPC.</p>
+
+  <h2>Trusted service RPC</h2>
+  <p><code>rustyauth.identity.v1.IdentityService</code> provides safe reads, exact search and controlled profile, identifier and passkey mutations. Short-lived service-account JWTs enforce <code>identity.read</code> or <code>identity.write</code> by exact method; identifier verification remains operator-only. Native clients use gRPC/HTTP2 with TLS and narrowly scoped credentials; deployments should prefer mTLS or workload identity at the network boundary.</p>
+
+  <h3>Standalone metrics</h3>
+  <p><code>rustyauth.metrics.v1.MetricsService</code> serves bounded per-realm overview, series, authentication-funnel and failure-breakdown calls to authenticated operators. Responses exclude user, contact, IP, credential and webhook URL dimensions.</p>
+
+  <h3>Fleet Analytics interchange</h3>
+  <p><code>rustyauth.analytics.v1</code> defines validated metric-bucket batches, exact acknowledgements, coverage and signed archive manifests. Realms export complete revisions over the authenticated <code>RealmConnectorService</code> after local projection and durable queuing. The dedicated Analytics service serves bounded fleet, organization, project, environment and realm queries from private canonical and materialized GreptimeDB data; Dioxus never sends SQL. See <a href="/docs/fleet-analytics-v1">Fleet Analytics V1</a> for the compatibility contract and <a href="/docs/fleet-analytics">Fleet Analytics</a> for the remaining production gates.</p>
+
+  <h2>Events and discovery</h2>
+  <p><code>rustyauth.events.v1.AuthEventService</code> supports replay-then-follow server streaming for service accounts with <code>events.read</code>. Public discovery exposes the issuer, supported browser capabilities and active/staged verification keys. Backup health, operator state and private credentials are deliberately excluded from unauthenticated discovery. See the <a href="/authentication-events">authentication events guide</a> for a working profile-sync flow.</p>
+
+  <h2>Webhook contract and IaC ownership</h2>
+  <p><code>rustyauth.webhooks.v1.WebhookService</code> serves destination management, one-time signing-secret creation and rotation, tests, delivery history and replay to operators or service accounts with <code>webhooks.manage</code>. A Webhook's <code>managementSource</code> distinguishes dashboard-managed resources from configuration-managed resources declared under <code>spec.webhooks</code>. Clients must render configuration-managed destination fields read-only and direct edits or deletion back to YAML.</p>
+  <p>Durable delivery is implemented on current main: exact bodies are signed with HMAC-SHA256, retryable failures use bounded backoff, redirects are disabled and retained source events can be replayed. RustyAuth remains a pre-release, so pin the exact release or commit you evaluate.</p>
+
+  <h2>Error behavior</h2>
+  <p>Invalid origins, consumed ceremonies, expired sessions, unknown credentials and unavailable durable state fail explicitly. Clients must not interpret an empty success response as degraded security state.</p>
+
+  <h2>Normative contracts</h2>
+  <ul>
+    <li><a href="https://github.com/rusty-auth/rustyauth/blob/main/docs/API.md">Complete HTTP and RPC reference</a></li>
+    <li><a href="https://github.com/rusty-auth/rustyauth/blob/main/docs/openapi.yaml">OpenAPI document</a></li>
+    <li><a href="https://github.com/rusty-auth/rustyauth/tree/main/proto">Versioned Protobuf packages</a></li>
+    <li><a href="https://github.com/rusty-auth/rustyauth/blob/main/docs/FLEET_ANALYTICS_V1.md">Fleet Analytics V1 semantic contract</a></li>
+    <li><a href="https://github.com/rusty-auth/rustyauth/tree/main/examples">Runnable relying-party examples</a></li>
+  </ul>
 </DocsLayout>

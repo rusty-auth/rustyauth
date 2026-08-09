@@ -6,6 +6,8 @@
 
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
+use subtle::ConstantTimeEq;
 use uuid::Uuid;
 
 use super::{Store, StorePolicyError, now};
@@ -137,6 +139,8 @@ pub struct FleetConnectionAttemptRecord {
     pub environment_id: Uuid,
     pub mode: FleetConnectionModeRecord,
     pub management_endpoint: String,
+    #[serde(default)]
+    pub pairing_code_digest: Option<String>,
     pub created_by: Uuid,
     pub created_at: u64,
     pub expires_at: u64,
@@ -150,14 +154,24 @@ pub struct FleetConnectionRecord {
     pub project_id: Uuid,
     pub environment_id: Uuid,
     pub realm_id: String,
+    #[serde(default = "initial_assignment_epoch")]
+    pub assignment_epoch: u64,
     pub display_name: String,
     pub mode: FleetConnectionModeRecord,
     pub management_endpoint: String,
     pub credential: EncryptedFleetCredential,
     pub credential_hint: String,
+    #[serde(default)]
+    pub staged_credential: Option<EncryptedFleetCredential>,
+    #[serde(default)]
+    pub staged_credential_hint: Option<String>,
+    #[serde(default)]
+    pub credential_rotation_request_id: Option<Uuid>,
     pub deployment_version: String,
     pub protocol_version: String,
     pub capabilities: Vec<(String, u32)>,
+    #[serde(default)]
+    pub granted_scopes: Vec<String>,
     pub issuer: String,
     pub rp_id: String,
     pub state: FleetConnectionStateRecord,
@@ -165,6 +179,14 @@ pub struct FleetConnectionRecord {
     pub created_at: u64,
     pub updated_at: u64,
     pub revoked_at: Option<u64>,
+}
+
+const fn initial_assignment_epoch() -> u64 {
+    1
+}
+
+fn pairing_code_digest(value: &str) -> String {
+    hex::encode(Sha256::digest(value.as_bytes()))
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -849,6 +871,72 @@ impl Store {
         self.get_json(&connection_key(id)).await
     }
 
+    /// Records the outcome of a live management read without changing the
+    /// connection's identity, credential or hierarchy assignment. A revoked
+    /// connection is immutable and cannot be revived by a late response.
+    pub async fn observe_fleet_connection(
+        &self,
+        id: Uuid,
+        state: FleetConnectionStateRecord,
+    ) -> Result<FleetConnectionRecord> {
+        let _snapshot = self.snapshot_gate.read().await;
+        let _guard = self.mutation.lock().await;
+        let mut record = self
+            .fleet_connection(id)
+            .await?
+            .ok_or(StorePolicyError::FleetResourceMissing)?;
+        if record.state == FleetConnectionStateRecord::Revoked || record.revoked_at.is_some() {
+            return Ok(record);
+        }
+        let timestamp = now();
+        record.state = state;
+        record.updated_at = timestamp;
+        if state == FleetConnectionStateRecord::Healthy {
+            record.last_seen_at = Some(timestamp);
+        }
+        let mut connection = self.redis.clone();
+        redis::cmd("SET")
+            .arg(connection_key(id))
+            .arg(serde_json::to_string(&record)?)
+            .query_async::<()>(&mut connection)
+            .await?;
+        Ok(record)
+    }
+
+    /// Atomically reserves the next historical assignment namespace for a
+    /// stable realm. Gaps after a failed remote exchange are intentional; an
+    /// epoch is never reused and never derived from an untrusted realm payload.
+    pub async fn reserve_fleet_assignment_epoch(&self, realm_id: &str) -> Result<u64> {
+        let _snapshot = self.snapshot_gate.read().await;
+        let current = self
+            .fleet_connections(None, None, None, true)
+            .await?
+            .into_iter()
+            .filter(|record| record.realm_id == realm_id)
+            .map(|record| record.assignment_epoch)
+            .max()
+            .unwrap_or(0);
+        let digest = hex::encode(Sha256::digest(realm_id.as_bytes()));
+        let key = format!("fleet:assignment-epoch:{digest}");
+        let mut database = self.redis.clone();
+        let _: Option<String> = redis::cmd("SET")
+            .arg(&key)
+            .arg(current)
+            .arg("NX")
+            .query_async(&mut database)
+            .await
+            .context("initialize Fleet assignment epoch")?;
+        let next: u64 = redis::cmd("INCR")
+            .arg(&key)
+            .query_async(&mut database)
+            .await
+            .context("reserve Fleet assignment epoch")?;
+        if next == 0 {
+            return Err(anyhow::anyhow!("realm assignment epoch is exhausted"));
+        }
+        Ok(next)
+    }
+
     pub async fn fleet_connection_attempt(
         &self,
         id: Uuid,
@@ -864,6 +952,7 @@ impl Store {
         environment_id: Uuid,
         mode: FleetConnectionModeRecord,
         management_endpoint: String,
+        pairing_code: Option<&str>,
         request_id: Uuid,
         operator_id: Uuid,
         reason: String,
@@ -898,6 +987,7 @@ impl Store {
             environment_id,
             mode,
             management_endpoint,
+            pairing_code_digest: pairing_code.map(pairing_code_digest),
             created_by: operator_id,
             created_at: timestamp,
             expires_at: timestamp.saturating_add(FLEET_CONNECTION_ATTEMPT_SECONDS),
@@ -944,6 +1034,31 @@ impl Store {
         Ok(record)
     }
 
+    /// Resolves an outbound attempt without exposing whether the attempt ID or
+    /// high-entropy code was wrong. The code is compared as a fixed-size digest
+    /// and never persisted in plaintext.
+    pub async fn authenticated_outbound_connection_attempt(
+        &self,
+        id: Uuid,
+        pairing_code: &str,
+    ) -> Result<Option<FleetConnectionAttemptRecord>> {
+        let Some(attempt) = self.fleet_connection_attempt(id).await? else {
+            return Ok(None);
+        };
+        let supplied = pairing_code_digest(pairing_code);
+        let matches = attempt
+            .pairing_code_digest
+            .as_ref()
+            .filter(|expected| expected.len() == supplied.len())
+            .is_some_and(|expected| bool::from(expected.as_bytes().ct_eq(supplied.as_bytes())));
+        Ok(
+            (attempt.mode == FleetConnectionModeRecord::OutboundConnector
+                && attempt.expires_at > now()
+                && matches)
+                .then_some(attempt),
+        )
+    }
+
     pub async fn complete_fleet_connection(
         &self,
         attempt_id: Uuid,
@@ -987,6 +1102,17 @@ impl Store {
         {
             return Err(StorePolicyError::FleetConnectionConflict.into());
         }
+        let last_assignment_epoch = self
+            .fleet_connections(None, None, None, true)
+            .await?
+            .into_iter()
+            .filter(|existing| existing.realm_id == record.realm_id)
+            .map(|existing| existing.assignment_epoch)
+            .max()
+            .unwrap_or(0);
+        if record.assignment_epoch == 0 || record.assignment_epoch <= last_assignment_epoch {
+            return Err(StorePolicyError::FleetConnectionConflict.into());
+        }
         let timestamp = now();
         record.created_at = timestamp;
         record.updated_at = timestamp;
@@ -1001,14 +1127,49 @@ impl Store {
             environment_id: Some(record.environment_id),
             reason: &reason,
         };
-        self.persist_fleet_mutation_with_delete(
-            &connection_key(record.id),
-            &record,
-            &connection_attempt_key(attempt_id),
-            audit,
-        )
-        .await?;
+        if record.mode == FleetConnectionModeRecord::OutboundConnector {
+            // Retain the digest-only attempt until its original TTL expires so
+            // a realm can retry safely when the one-time credential response
+            // is lost. The completion idempotency record resolves to the exact
+            // encrypted credential already stored on the connection.
+            self.persist_fleet_mutation(&connection_key(record.id), &record, None, audit)
+                .await?;
+        } else {
+            self.persist_fleet_mutation_with_delete(
+                &connection_key(record.id),
+                &record,
+                &connection_attempt_key(attempt_id),
+                audit,
+            )
+            .await?;
+        }
         Ok(record)
+    }
+
+    pub async fn fleet_connection_for_completion_request(
+        &self,
+        request_id: Uuid,
+    ) -> Result<Option<FleetConnectionRecord>> {
+        let Some(id) = self
+            .fleet_idempotent_resource("connection.complete", request_id)
+            .await?
+        else {
+            return Ok(None);
+        };
+        self.fleet_connection(id).await
+    }
+
+    pub async fn fleet_connection_for_credential_rotation_request(
+        &self,
+        request_id: Uuid,
+    ) -> Result<Option<FleetConnectionRecord>> {
+        let Some(id) = self
+            .fleet_idempotent_resource("connection.rotate_credential", request_id)
+            .await?
+        else {
+            return Ok(None);
+        };
+        self.fleet_connection(id).await
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -1065,6 +1226,100 @@ impl Store {
             },
         )
         .await?;
+        Ok(record)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub async fn rotate_fleet_connection_credential(
+        &self,
+        organization_id: Uuid,
+        project_id: Uuid,
+        environment_id: Uuid,
+        id: Uuid,
+        request_id: Uuid,
+        operator_id: Uuid,
+        reason: String,
+    ) -> Result<FleetConnectionRecord> {
+        let _snapshot = self.snapshot_gate.read().await;
+        let _guard = self.mutation.lock().await;
+        if let Some(resource_id) = self
+            .fleet_idempotent_resource("connection.rotate_credential", request_id)
+            .await?
+        {
+            return self
+                .fleet_connection(resource_id)
+                .await?
+                .ok_or_else(|| StorePolicyError::FleetResourceMissing.into());
+        }
+        let mut record = self
+            .fleet_connection(id)
+            .await?
+            .filter(|record| {
+                record.organization_id == organization_id
+                    && record.project_id == project_id
+                    && record.environment_id == environment_id
+                    && record.state != FleetConnectionStateRecord::Revoked
+            })
+            .ok_or(StorePolicyError::FleetResourceMissing)?;
+        if record.credential_rotation_request_id != Some(request_id) {
+            return Err(StorePolicyError::FleetConnectionConflict.into());
+        }
+        record.credential = record
+            .staged_credential
+            .take()
+            .ok_or(StorePolicyError::FleetConnectionConflict)?;
+        record.credential_hint = record
+            .staged_credential_hint
+            .take()
+            .ok_or(StorePolicyError::FleetConnectionConflict)?;
+        record.credential_rotation_request_id = None;
+        record.updated_at = now();
+        let audit = MutationAudit {
+            request_id,
+            operator_id,
+            action: "connection.rotate_credential",
+            resource_kind: "connection",
+            resource_id: id,
+            organization_id: Some(organization_id),
+            project_id: Some(project_id),
+            environment_id: Some(environment_id),
+            reason: &reason,
+        };
+        self.persist_fleet_mutation(&connection_key(id), &record, None, audit)
+            .await?;
+        Ok(record)
+    }
+
+    pub async fn stage_fleet_connection_credential(
+        &self,
+        id: Uuid,
+        credential: EncryptedFleetCredential,
+        credential_hint: String,
+        request_id: Uuid,
+    ) -> Result<FleetConnectionRecord> {
+        let _snapshot = self.snapshot_gate.read().await;
+        let _guard = self.mutation.lock().await;
+        let mut record = self
+            .fleet_connection(id)
+            .await?
+            .filter(|record| record.state != FleetConnectionStateRecord::Revoked)
+            .ok_or(StorePolicyError::FleetResourceMissing)?;
+        match record.credential_rotation_request_id {
+            Some(existing) if existing == request_id => return Ok(record),
+            Some(_) => return Err(StorePolicyError::FleetConnectionConflict.into()),
+            None => {}
+        }
+        record.staged_credential = Some(credential);
+        record.staged_credential_hint = Some(credential_hint);
+        record.credential_rotation_request_id = Some(request_id);
+        record.updated_at = now();
+        let mut database = self.redis.clone();
+        redis::cmd("SET")
+            .arg(connection_key(id))
+            .arg(serde_json::to_string(&record)?)
+            .query_async::<()>(&mut database)
+            .await
+            .context("stage Fleet connection credential")?;
         Ok(record)
     }
 
@@ -1314,6 +1569,68 @@ impl Store {
         }
         records.sort_unstable_by_key(|record: &FleetAuditRecord| (record.occurred_at, record.id));
         Ok(records)
+    }
+
+    pub async fn record_fleet_remote_mutation(
+        &self,
+        connection_id: Uuid,
+        request_id: Uuid,
+        operator_id: Uuid,
+        action: String,
+        reason: String,
+    ) -> Result<FleetAuditRecord> {
+        let _snapshot = self.snapshot_gate.read().await;
+        let _guard = self.mutation.lock().await;
+        if self
+            .fleet_idempotent_resource(&action, request_id)
+            .await?
+            .is_some()
+        {
+            return self
+                .fleet_audit_records()
+                .await?
+                .into_iter()
+                .find(|record| record.request_id == request_id && record.action == action)
+                .ok_or_else(|| StorePolicyError::FleetResourceMissing.into());
+        }
+        let connection = self
+            .fleet_connection(connection_id)
+            .await?
+            .filter(|record| {
+                record.state != FleetConnectionStateRecord::Revoked && record.revoked_at.is_none()
+            })
+            .ok_or(StorePolicyError::FleetResourceMissing)?;
+        let audit = FleetAuditRecord {
+            id: Uuid::new_v4(),
+            request_id,
+            operator_id,
+            action: action.clone(),
+            resource_kind: "environment".into(),
+            resource_id: connection.environment_id,
+            organization_id: Some(connection.organization_id),
+            project_id: Some(connection.project_id),
+            environment_id: Some(connection.environment_id),
+            reason,
+            occurred_at: now(),
+        };
+        let idempotency = FleetIdempotencyRecord {
+            action,
+            resource_id: connection.environment_id,
+        };
+        let mut pipeline = redis::pipe();
+        pipeline
+            .atomic()
+            .set(audit_key(audit.id), serde_json::to_string(&audit)?)
+            .set(
+                idempotency_key(request_id),
+                serde_json::to_string(&idempotency)?,
+            );
+        let mut database = self.redis.clone();
+        pipeline
+            .query_async::<()>(&mut database)
+            .await
+            .context("persist Fleet remote mutation audit")?;
+        Ok(audit)
     }
 
     async fn fleet_idempotent_resource(

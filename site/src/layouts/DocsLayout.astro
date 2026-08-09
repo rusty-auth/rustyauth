@@ -1,26 +1,239 @@
 ---
+import { docsItems, docsNavigation } from "../data/docs";
 import BaseLayout from "./BaseLayout.astro";
 
-interface Props { title: string; eyebrow: string; intro: string; }
+interface Props {
+  title: string;
+  eyebrow: string;
+  intro: string;
+}
+
 const { title, eyebrow, intro } = Astro.props;
 const current = Astro.url.pathname.replace(/\/$/, "") || "/";
-const links = [
-  ["Overview", "/docs"], ["Getting started", "/docs/getting-started"], ["Architecture", "/docs/architecture"],
-  ["Identity data", "/docs/identity-data"], ["HTTP API", "/docs/api"],
-  ["Configuration", "/docs/configuration"], ["Recovery", "/docs/recovery"], ["Deployment", "/docs/deployment"],
-];
+const currentIndex = docsItems.findIndex((item) => item.href === current);
+const currentItem = currentIndex >= 0 ? docsItems[currentIndex] : undefined;
+const previous = currentIndex > 0 ? docsItems[currentIndex - 1] : undefined;
+const next = currentIndex >= 0 && currentIndex < docsItems.length - 1
+  ? docsItems[currentIndex + 1]
+  : undefined;
+const sourceName = current === "/docs" ? "index" : current.split("/").at(-1);
+const editUrl = `https://github.com/rusty-auth/rustyauth/edit/main/site/src/pages/docs/${sourceName}.astro`;
+const searchIndex = docsItems.map(({ label, href, description, keywords, group }) => ({
+  label,
+  href,
+  description,
+  keywords,
+  group,
+}));
+const breadcrumbStructuredData = current === "/docs" ? [] : [{
+  "@type": "BreadcrumbList",
+  itemListElement: [
+    {
+      "@type": "ListItem",
+      position: 1,
+      name: "RustyAuth documentation",
+      item: new URL("/docs/", Astro.site).href,
+    },
+    {
+      "@type": "ListItem",
+      position: 2,
+      name: title,
+      item: new URL(`${current}/`, Astro.site).href,
+    },
+  ],
+}];
 ---
 
-<BaseLayout title={`${title} · RustyAuth`} description={intro}>
+<BaseLayout
+  title={currentItem?.seoTitle ?? `${title} · RustyAuth docs`}
+  description={intro}
+  structuredData={breadcrumbStructuredData}
+>
+  <div class="docs-mobile-bar shell">
+    <details class="docs-mobile-nav">
+      <summary>Browse documentation</summary>
+      <nav aria-label="Mobile documentation">
+        {docsNavigation.map((group) => (
+          <section>
+            <strong>{group.label}</strong>
+            {group.items.map((item) => (
+              <a class={current === item.href ? "active" : ""} href={item.href}>{item.label}</a>
+            ))}
+          </section>
+        ))}
+      </nav>
+    </details>
+    <button class="docs-search-trigger compact" type="button" data-docs-search-open>
+      <span>Search</span><kbd>⌘ K</kbd>
+    </button>
+  </div>
+
   <main class="shell docs-frame">
     <aside class="docs-sidebar">
-      <p>Documentation</p>
-      <nav aria-label="Documentation">{links.map(([label, href]) => <a class={current === href ? "active" : ""} href={href}>{label}</a>)}</nav>
-      <div class="docs-version"><span>Version</span><strong>0.1.0</strong><small>Pre-release</small></div>
+      <a class="docs-sidebar-home" href="/docs"><span>RustyAuth</span><strong>Developer docs</strong></a>
+      <button class="docs-search-trigger" type="button" data-docs-search-open>
+        <span>Search documentation</span><kbd>⌘ K</kbd>
+      </button>
+      <nav aria-label="Documentation">
+        {docsNavigation.map((group) => (
+          <section>
+            <p>{group.label}</p>
+            {group.items.map((item) => (
+              <a class={current === item.href ? "active" : ""} href={item.href}>{item.label}</a>
+            ))}
+          </section>
+        ))}
+      </nav>
+      <div class="docs-version">
+        <span>Documentation</span><strong>0.1.0</strong><small>Pre-release · updated continuously</small>
+      </div>
     </aside>
+
     <article class="docs-content">
-      <header class="doc-header"><p>{eyebrow}</p><h1>{title}</h1><span>{intro}</span></header>
-      <slot />
+      <header class="doc-header">
+        <p><a href="/docs">Docs</a><span>/</span>{currentItem?.group ?? eyebrow}</p>
+        <h1>{title}</h1>
+        <span>{intro}</span>
+      </header>
+      <div class="docs-body">
+        <slot />
+      </div>
+      <footer class="docs-page-footer">
+        <div class="docs-page-nav">
+          {previous
+            ? <a href={previous.href}><small>Previous</small><strong>← {previous.label}</strong></a>
+            : <span />}
+          {next && <a class="next" href={next.href}><small>Next</small><strong>{next.label} →</strong></a>}
+        </div>
+        <p>
+          Found a problem? <a href={editUrl}>Edit this page on GitHub</a> or
+          <a href="https://github.com/rusty-auth/rustyauth/issues/new/choose">open an issue</a>.
+        </p>
+      </footer>
     </article>
+
+    <aside class="docs-toc" data-docs-toc>
+      <p>On this page</p>
+      <nav aria-label="On this page"></nav>
+      <a href="https://github.com/rusty-auth/rustyauth/blob/main/docs/README.md">Repository reference ↗</a>
+    </aside>
   </main>
+
+  <dialog class="docs-search" data-docs-search data-index={JSON.stringify(searchIndex)}>
+    <form method="dialog" class="docs-search-panel">
+      <label for="docs-search-input">Search RustyAuth docs</label>
+      <div class="docs-search-input-wrap">
+        <span aria-hidden="true">⌕</span>
+        <input id="docs-search-input" type="search" autocomplete="off" placeholder="Passkeys, Fleet, backups…" />
+        <button value="close" aria-label="Close search">Esc</button>
+      </div>
+      <div class="docs-search-results" data-docs-search-results aria-live="polite"></div>
+    </form>
+  </dialog>
+
+  <script>
+    interface SearchEntry {
+      label: string;
+      href: string;
+      description: string;
+      keywords: string[];
+      group: string;
+    }
+
+    const dialog = document.querySelector<HTMLDialogElement>("[data-docs-search]");
+    const searchInput = dialog?.querySelector<HTMLInputElement>("input[type='search']");
+    const results = dialog?.querySelector<HTMLElement>("[data-docs-search-results]");
+    const index: SearchEntry[] = dialog?.dataset.index ? JSON.parse(dialog.dataset.index) : [];
+
+    const renderResults = (query = "") => {
+      if (!results) return;
+      const terms = query.toLowerCase().trim().split(/\s+/).filter(Boolean);
+      const matches = index.filter((entry) => {
+        const haystack = [entry.label, entry.description, entry.group, ...entry.keywords].join(" ").toLowerCase();
+        return terms.every((term) => haystack.includes(term));
+      }).slice(0, 8);
+      results.replaceChildren();
+      if (!matches.length) {
+        const empty = document.createElement("p");
+        empty.className = "docs-search-empty";
+        empty.textContent = "No matching documentation. Try a broader term.";
+        results.append(empty);
+        return;
+      }
+      for (const entry of matches) {
+        const link = document.createElement("a");
+        link.href = entry.href;
+        const meta = document.createElement("small");
+        meta.textContent = entry.group;
+        const heading = document.createElement("strong");
+        heading.textContent = entry.label;
+        const description = document.createElement("span");
+        description.textContent = entry.description;
+        link.append(meta, heading, description);
+        results.append(link);
+      }
+    };
+
+    const openSearch = () => {
+      if (!dialog) return;
+      renderResults(searchInput?.value);
+      dialog.showModal();
+      requestAnimationFrame(() => searchInput?.focus());
+    };
+
+    document.querySelectorAll<HTMLElement>("[data-docs-search-open]").forEach((trigger) => {
+      trigger.addEventListener("click", openSearch);
+    });
+    searchInput?.addEventListener("input", () => renderResults(searchInput.value));
+    dialog?.addEventListener("click", (event) => {
+      if (event.target === dialog) dialog.close();
+    });
+    document.addEventListener("keydown", (event) => {
+      const target = event.target as HTMLElement;
+      const isTyping = target.matches("input, textarea, select, [contenteditable='true']");
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
+        event.preventDefault();
+        openSearch();
+      } else if (event.key === "/" && !isTyping && !dialog?.open) {
+        event.preventDefault();
+        openSearch();
+      }
+    });
+
+    const slug = (value: string) => value.toLowerCase().trim()
+      .replace(/[^a-z0-9\s-]/g, "")
+      .replace(/\s+/g, "-")
+      .replace(/-+/g, "-");
+    const toc = document.querySelector<HTMLElement>("[data-docs-toc]");
+    const tocNav = toc?.querySelector("nav");
+    const headings = [...document.querySelectorAll<HTMLElement>(".docs-body h2, .docs-body h3")];
+    if (toc && tocNav && headings.length) {
+      for (const heading of headings) {
+        heading.id ||= slug(heading.textContent ?? "section");
+        const link = document.createElement("a");
+        link.href = `#${heading.id}`;
+        link.textContent = heading.textContent;
+        if (heading.tagName === "H3") link.className = "nested";
+        tocNav.append(link);
+      }
+    } else {
+      toc?.remove();
+    }
+
+    document.querySelectorAll<HTMLElement>(".docs-body pre").forEach((block) => {
+      const code = block.querySelector("code")?.textContent;
+      if (!code) return;
+      block.classList.add("copyable");
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "copy-code";
+      button.textContent = "Copy";
+      button.addEventListener("click", async () => {
+        await navigator.clipboard.writeText(code);
+        button.textContent = "Copied";
+        setTimeout(() => button.textContent = "Copy", 1_500);
+      });
+      block.append(button);
+    });
+  </script>
 </BaseLayout>

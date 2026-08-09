@@ -1,11 +1,16 @@
 # Federated Fleet Analytics delivery program
 
-**Status:** Planned post-Fleet program; implementation is inactive until the activation gate below passes
+**Status:** M9–M13 implemented and under M14 production qualification; the full production matrix,
+independent assessment and canary remain pending
 
-**Updated:** 8 August 2026
+**Updated:** 9 August 2026
 
 **Controlling decision:**
 [ADR 0004: Federated Fleet Analytics with trusted rollup ingestion](decisions/0004-federated-fleet-analytics.md)
+
+**Normative V1 semantics:** [Fleet Analytics V1 semantic contract](FLEET_ANALYTICS_V1.md)
+
+**Developer guide:** [Fleet Analytics architecture and rollout](https://rustyauth.dev/docs/fleet-analytics)
 
 ## Purpose
 
@@ -34,12 +39,17 @@ are the durable product contracts; GreptimeDB SQL and storage layout are not pub
 
 ## Activation gate
 
-Product implementation starts only after the main delivery roadmap's M8 exit gate is complete and the release
-status matrix identifies Fleet as shipped. Specifically, all of the following must be true:
+The maintainer confirmed Fleet delivery and opened this gate on 9 August 2026. M10 subsequently served the
+bidirectional connector for `telemetry.rollups.v1`, added a pairing-derived connection proof and qualified the
+realm exporter against outage, restart, duplicate delivery and exact acknowledgement. The complete private
+management-command topology remains separately gated; analytics export does not depend on central commands.
+
+The activation review used these prerequisites:
 
 - stable realm IDs survive restart, restore, upgrade, disconnect and re-pair;
 - organization, project, environment and connection records are durable and authorization-tested;
-- public-endpoint and outbound-connector modes are shipped with credential rotation and revocation;
+- the public-endpoint mode is shipped with credential revocation, and the private connector has an explicit
+  versioned contract and delivery milestone;
 - partial, stale and offline realm states are represented correctly in the live Dioxus product;
 - Fleet and every realm have independently qualified backup and clean-room restore procedures;
 - version and capability negotiation is additive and exercised against supported skew;
@@ -47,9 +57,12 @@ status matrix identifies Fleet as shipped. Specifically, all of the following mu
 - published dashboard, control-plane and realm images are independently deployable; and
 - the README and release notes no longer describe Fleet as preview or planned.
 
-Before activation, this document and ADR may be refined and read-only benchmarks may be run. No production
-realm should emit central telemetry and no customer data should be placed in a central analytics store merely
-to prepare for the feature.
+Newly paired realms now receive the `telemetry.export` scope and emit closed rollups after the M10 outbox,
+capability and failure-isolation gates passed. Fleet also serves a bounded, organization-required
+`FleetService.GetAnalyticsOverview` preview from its trusted acceptance ledger and uses it in Dioxus.
+The dedicated multi-scope AnalyticsService, private GreptimeDB canonical/derived store, policy controls and
+signed Parquet recovery path are implemented. Production support remains gated by the complete M14
+scale/soak/chaos/upgrade/downgrade/cost matrix, independent-assessment and canary evidence.
 
 ## Product outcomes
 
@@ -91,7 +104,7 @@ flowchart LR
         Archive -.-> CustomerBucket["Customer/project object store"]
     end
 
-    Local -->|"realm-initiated mTLS gRPC"| Gateway["Fleet telemetry ingestion gateway"]
+    Local -->|"realm-initiated authenticated gRPC"| Gateway["Fleet telemetry acceptance gateway"]
     CustomerBucket -.->|"manifest-driven repair/backfill"| Importer["Fleet archive importer"]
     Registry["Fleet SableDB registry and cursors"] --> Gateway
     Registry --> Importer
@@ -123,9 +136,10 @@ flowchart LR
 The normal serving path transports complete bucket snapshots, not per-event increments. A full snapshot is
 safe to retry and avoids double-counting after ambiguous network failures.
 
-The connector carries a versioned `TelemetryBucketBatch` payload either inside the existing bidirectional
-connector frame or through a dedicated streaming RPC sharing the same connection identity and interceptors.
-The exact service shape is locked in milestone A1 after connector load testing.
+The connector carries a versioned `TelemetryBucketBatch` inside explicit telemetry batch/ack frames on the
+existing bidirectional `RealmConnectorService.Connect` RPC. TLS protects the channel and a directional proof
+derived from the pairing credential authenticates the exact connection; production ingress may additionally
+require mTLS workload identity. The V1 payload semantics remain independent of this adapter.
 
 Each bucket contains:
 
@@ -199,8 +213,7 @@ latency, egress and missing-source interpretation would become part of every das
 ### Canonical interval
 
 - V1 windows are five-minute, UTC-aligned, left-closed and right-open.
-- A realm may send provisional revisions while a window is open, but only closed windows contribute to
-  long-term materialized rollups.
+- V1 exports closed windows only; provisional open-window snapshots are not accepted.
 - The default close grace is two minutes after the window ends.
 - A late correction increments `revision` and resends the entire bucket.
 - Event time, not central receipt time, selects the bucket. Receipt time is retained separately for freshness.
@@ -299,7 +312,7 @@ Foreign external tables are never Flow sources for product-serving rollups.
 
 ### Fleet SableDB state
 
-Fleet SableDB stores only coordination and authority:
+Fleet SableDB is the durable coordination and authority store:
 
 - highest accepted bucket revision and source sequence per realm/window;
 - expected, reporting, stale and disabled realm sets;
@@ -309,7 +322,9 @@ Fleet SableDB stores only coordination and authority:
 - repair/backfill jobs and their idempotency state; and
 - redacted audit records for policy changes, imports, repairs and purges.
 
-It does not duplicate the analytical time series.
+During M10 it also held the validated, identity-free bucket payload required to make acknowledgement durable
+and power the bounded preview. M11 moved canonical product-serving time series into GreptimeDB; SableDB now
+retains the acceptance/revision record and only the recovery window required by the qualified adapter.
 
 ## Retention and residency baseline
 
@@ -332,8 +347,9 @@ realm's local event log or customer-owned archive.
 
 ## Public Fleet Analytics API
 
-A dedicated Protobuf service is planned under `rustyauth.analytics.v1`. Dioxus never submits SQL. The bounded
-surface is expected to include:
+`rustyauth.analytics.v1.AnalyticsService` is the bounded product API. It caps ranges at 28 days, uses checked
+aggregation and ratio-of-sums/merged-histogram semantics, returns registry-backed coverage, never accepts SQL
+and is protected by both transport policy and Fleet hierarchy authorization. It serves:
 
 ```text
 GetAnalyticsOverview
@@ -342,6 +358,8 @@ GetAuthenticationFunnel
 GetFailureBreakdown
 GetReportingCoverage
 CompareScopes
+GetAnalyticsPolicy
+UpdateAnalyticsPolicy
 ```
 
 Every request carries one typed scope:
@@ -504,7 +522,7 @@ The chaos matrix includes:
 
 ### A0 — Activation and decision refresh
 
-**State:** gated by main-roadmap M8
+**State:** complete on 9 August 2026
 
 - Verify every activation prerequisite against shipped artifacts and release notes.
 - Revalidate ADR 0004 against the final connector, registry, role and recovery implementation.
@@ -517,8 +535,10 @@ owners, budgets and a release target without weakening Fleet availability.
 
 ### A1 — Semantic and protocol lock
 
+**State:** complete on 9 August 2026
+
 - Freeze metric names, units, histogram boundaries, allowed dimensions and forbidden data.
-- Define five-minute bucket closure, provisional revision, correction and clock-skew behavior.
+- Define five-minute closed-bucket-only export, correction and clock-skew behavior.
 - Add versioned telemetry bucket, acknowledgement, coverage and archive-manifest Protobuf messages.
 - Add `telemetry.rollups.v1` and `telemetry.archive-manifest.v1` capabilities.
 - Specify canonical Parquet schemas and golden fixtures.
@@ -529,17 +549,23 @@ unknown dimensions and incompatible versions fail closed.
 
 ### A2 — Realm projection and durable export
 
+**State:** complete on 9 August 2026
+
 - Instrument request/ceremony paths required by the metric catalogue without logging secrets.
 - Implement the local projector, bucket snapshots, revision state and bounded SableDB outbox.
 - Expose local metrics through the standalone MetricsService before enabling Fleet export.
 - Add connector transport, acknowledgement, retry, compaction and capability controls.
 - Prove authentication continues under exporter panic, queue saturation and central outage.
-- Add optional metric-bucket Parquet production; raw-event archive remains disabled.
+- Keep runtime Parquet production and import gated for the M13 recovery/residency milestone; raw-event archive
+  remains disabled.
 
 **Exit gate:** a realm survives restart and a 24-hour disconnected test, then exports each closed bucket once
 logically despite repeated physical delivery.
 
 ### A3 — Trusted central ingestion and canonical GreptimeDB store
+
+**State:** complete; trusted stamping, canonical GreptimeDB, policy/coverage/quota coordination and measured
+medium-tier serving gates pass
 
 - Implement the ingestion gateway and hierarchy-stamping policy.
 - Add Fleet SableDB revision, cursor, coverage, policy and manifest records.
@@ -553,6 +579,9 @@ and query targets; GreptimeDB loss does not affect realm authentication.
 
 ### A4 — Hierarchical read API and Dioxus journeys
 
+**State:** complete; the dedicated typed API and explicit Dioxus coverage/error states are live
+
+- Evolve the shipped organization-required `FleetService.GetAnalyticsOverview` preview into the dedicated API.
 - Implement bounded Fleet Analytics RPCs and role-aware scope resolution.
 - Add coverage joins, last-complete-window semantics and partial-result warnings.
 - Ship realm, environment, project, organization and authorized fleet views.
@@ -565,6 +594,9 @@ different organization cannot infer its existence, values or freshness.
 
 ### A5 — Hourly/daily materialization and Parquet recovery
 
+**State:** complete; Flow correction, signed import, short-lived exact-object access, audited purge and local
+clean-room/live convergence gates pass
+
 - Add hourly and daily scope rollups derived from canonical realm buckets.
 - Qualify GreptimeDB Flow for finalized windows and implement deterministic repair for corrected windows.
 - Implement signed manifests, short-lived object access and `COPY FROM` backfill.
@@ -576,6 +608,9 @@ different organization cannot infer its existence, values or freshness.
 while live traffic continues and without double-counting.
 
 ### A6 — Production qualification and GA
+
+**State:** in progress; internal assessment, runbook and measured medium gate complete; independent review and
+organization canary pending
 
 - Complete scale, soak, chaos, upgrade, downgrade, cost and clean-room recovery tests.
 - Complete independent analytics threat and privacy assessments.
@@ -625,8 +660,9 @@ Feature controls exist at three levels:
 - organization: telemetry disabled, rollups only, or rollups plus approved archive; and
 - realm connection: advertised capability and export state.
 
-Defaults are central analytics disabled until configured, organization rollups opt-in during beta, and raw
-event archive disabled.
+Realm export is activated by an explicit Fleet pairing carrying `telemetry.export`. Central analytical serving
+fails closed unless its private store is configured; organization policy controls are part of that serving
+plane, and raw event archive remains disabled.
 
 Rollback stops new export, hides unsupported Analytics RPCs through capability discovery and preserves local
 realm telemetry. Central read-only history may remain available according to retention. Removing GreptimeDB or
@@ -649,19 +685,19 @@ Federated Fleet Analytics is complete only when:
 10. documentation, status matrix, release notes, runbooks and threat assessment agree; and
 11. disabling or removing the feature leaves a fully supported Fleet deployment.
 
-## Decisions to close at activation
+## Remaining deployment decisions
 
-ADR 0004 sets the direction but deliberately leaves these deployment choices to A0/A1 evidence:
+ADR 0004 sets the direction. A1 fixed the histogram profiles, failure catalogue and closed-bucket-only V1
+contract. The following deployment choices remain gated by later milestone evidence:
 
 1. self-hosted distributed GreptimeDB versus a managed service for hosted Fleet;
-2. the exact histogram boundaries and error-class catalogue;
-3. whether provisional open buckets are needed or closed buckets provide sufficient freshness;
-4. the supported maximum local outbox duration and disk budget;
-5. whether organization isolation uses one database per organization or shared tables behind strict service
+2. disk budgets for tiers that extend beyond the shipped 288-bucket / 24-hour local outbox;
+3. whether organization isolation uses one database per organization or shared tables behind strict service
    isolation;
-6. the maximum supported retention for each commercial tier;
-7. the connector-frame versus dedicated telemetry-stream transport shape; and
-8. whether optional raw redacted events belong in GreptimeDB at all or remain archive-only.
+4. the maximum supported retention for each product tier;
+5. whether a later high-throughput version needs a dedicated telemetry RPC instead of the shipped connector
+   frames; and
+6. whether a later schema ever permits optional raw redacted events in GreptimeDB or keeps them archive-only.
 
 Each choice must preserve the contracts and invariants above; none permits a dashboard or realm to connect
 directly to GreptimeDB.
