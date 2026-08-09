@@ -22,7 +22,7 @@ permissions:
 
 concurrency:
   group: railway-production
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   prepare:
@@ -318,7 +318,7 @@ jobs:
           --health-url "${RAILWAY_DASHBOARD_URL%/}/readyz"
           --receipt "${RUNNER_TEMP}/railway-receipts/sabledb.json"
       - name: Restore the previous Railway deployment set
-        if: failure()
+        if: failure() || cancelled()
         run: |
           rollback_failed=0
           rollback_service() {
@@ -380,7 +380,7 @@ jobs:
           rollback_service "${RUNNER_TEMP}/railway-receipts/api.json"
           exit "${rollback_failed}"
       - name: Show bounded deployment logs on failure
-        if: failure()
+        if: failure() || cancelled()
         run: |
           for service in \
             "${RAILWAY_API_SERVICE_ID}" \
