@@ -13,7 +13,7 @@ categories = ["authentication", "web-programming::http-server"]
 publish = false
 
 [dependencies]
-aes-gcm = "0.10"
+aes-gcm = "0.11"
 anyhow = "1"
 async-stream = "0.3"
 aws-config = "1.8"
@@ -28,26 +28,26 @@ aws-sdk-s3 = { version = "1.141", default-features = false, features = [
     "sigv4a",
 ] }
 axum = "0.8"
-base64 = "0.22"
-buffa = "0.8.1"
+base64 = "0.23"
+buffa = "0.9.1"
 connectrpc = { version = "0.8.1", features = ["axum", "client", "client-tls"] }
 futures = "0.3"
 hex = "0.4"
 http = "1"
 jsonwebtoken = { version = "11", default-features = false, features = ["aws_lc_rs"] }
-p256 = { version = "0.13", features = ["ecdsa", "pem", "pkcs8"] }
+p256 = { version = "0.14", features = ["ecdsa", "pem", "pkcs8"] }
 postcard = { version = "1", default-features = false, features = ["alloc"] }
-rand = "0.9"
+rand = "0.10"
 redis = { version = "1.5", default-features = false, features = ["aio", "connection-manager", "tokio-rustls-comp"] }
 secrecy = { version = "0.10", features = ["serde"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-sha2 = "0.10"
+sha2 = "0.11"
 subtle = "2"
 thiserror = "2"
 time = { version = "0.3", features = ["formatting", "serde"] }
 tokio = { version = "1", features = ["macros", "net", "rt-multi-thread", "signal", "sync", "time"] }
-tower-http = { version = "0.6", features = ["catch-panic", "cors", "fs", "limit", "request-id", "sensitive-headers", "set-header", "timeout", "trace"] }
+tower-http = { version = "0.7", features = ["catch-panic", "cors", "fs", "limit", "request-id", "sensitive-headers", "set-header", "timeout", "trace"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 url = { version = "2", features = ["serde"] }
