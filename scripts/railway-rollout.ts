@@ -131,10 +131,7 @@ export function serviceUpdateInput(
         numReplicas: 1,
         overlapSeconds: 0,
         drainingSeconds: 25,
-        preDeployCommand: [
-          "/usr/local/bin/rustyauth backup create",
-          "/usr/local/bin/rustyauth doctor",
-        ],
+        preDeployCommand: ["/usr/local/bin/rustyauth doctor"],
         restartPolicyType: "ON_FAILURE",
         restartPolicyMaxRetries: 10,
       };
