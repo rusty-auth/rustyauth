@@ -96,9 +96,9 @@ digest in a terminal `SUCCESS` deployment. Mutable `latest` tags are never used 
 
 Rollouts are serialized across the state boundaries:
 
-1. The realm API runs the target image's read-only `rustyauth doctor` pre-deploy command, reaches `/healthz`
-   and `/readyz`, and must then log a fresh encrypted, read-back-verified recovery point from its own
-   single-writer scheduler.
+1. The realm API records the active successful deployment, stops that exact one-writer service, and runs the
+   target image's `rustyauth backup create` pre-deploy command. The fresh encrypted recovery point must pass
+   read-back verification before the replacement can start and reach `/healthz` and `/readyz`.
 2. The stateless dashboard deploys and reaches both probes through its public origin, including its private
    upstream readiness check.
 3. Private SableDB is replaced without recreating its volume, after which both API and dashboard readiness are
@@ -368,14 +368,12 @@ namespace's SableDB writer lease. It renews the 60-second lease every 10 seconds
 fails or the ownership token changes. Multi-key operations use SableDB atomic pipelines and compound mutations
 also use a process-local mutex; active/active mutation has not been qualified and is unsupported.
 
-`railway.json` pins `numReplicas: 1` and `overlapSeconds: 0` so a scale-up or a rolling deploy cannot silently
-start a second writer. This narrows the window rather than removing it: `drainingSeconds` (25) is the time the
-outgoing process has between `SIGTERM` and `SIGKILL`, and for that period the old process is still finishing
-in-flight requests while the new one is live. It stops accepting new work at `SIGTERM`, so the overlap covers
-requests already in progress, not new mutations — but it is not zero. Treat a deploy as a short window in
-which the outgoing process may still be draining. The replacement cannot serve while the old process retains
-the writer lease; the platform may therefore need to wait up to the lease TTL before the new instance starts.
-Avoid deploying during a bulk migration and configure health/restart policy to tolerate that bounded wait.
+`railway.json` pins `numReplicas: 1` and `overlapSeconds: 0`, and the production workflow performs an explicit
+stop-before-start handoff. Railway otherwise keeps the old deployment live until its replacement becomes
+ready, which deadlocks a correctly fenced one-writer service. The workflow writes the rollback receipt first,
+stops the serving deployment, creates and verifies a backup in the target image's pre-deploy container, and
+then starts the replacement. This creates a bounded maintenance window but never weakens the writer lease.
+Avoid deploying during a bulk migration.
 
 Raising `numReplicas` above 1 is not supported in this version. A second process using the same namespace
 fails startup while the lease is owned, and a process that loses ownership stops the server. The lease is a

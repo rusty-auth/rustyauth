@@ -69,7 +69,7 @@ Deno.test("Railway service profiles preserve the one-writer and readiness polici
     numReplicas: 1,
     overlapSeconds: 0,
     drainingSeconds: 25,
-    preDeployCommand: ["/usr/local/bin/rustyauth doctor"],
+    preDeployCommand: ["/usr/local/bin/rustyauth backup create"],
     restartPolicyType: "ON_FAILURE",
     restartPolicyMaxRetries: 10,
   });
@@ -108,6 +108,7 @@ Deno.test("a historical matching image is not mistaken for the active deployment
     JSON.stringify([deployment("current", "SUCCESS", false), deployment("historical", "SUCCESS")]),
     projectStatus(),
     JSON.stringify({ data: { serviceInstanceUpdate: true } }),
+    "",
     JSON.stringify({ id: "requested" }),
     JSON.stringify([deployment("new", "SUCCESS"), deployment("current", "SUCCESS", false)]),
   ];
@@ -143,6 +144,7 @@ Deno.test("rollout waits for the exact digest to reach terminal success before h
     JSON.stringify([deployment("old", "SUCCESS", false)]),
     projectStatus(),
     JSON.stringify({ data: { serviceInstanceUpdate: true } }),
+    "",
     JSON.stringify({ id: "requested" }),
     JSON.stringify([deployment("queued", "QUEUED"), deployment("old", "SUCCESS", false)]),
     JSON.stringify([deployment("new", "DEPLOYING"), deployment("old", "SUCCESS", false)]),
@@ -185,6 +187,9 @@ Deno.test("rollout waits for the exact digest to reach terminal success before h
   assertEquals(receipt.previousDeploymentId, "old");
   assertEquals(healthChecks, 1);
   assert(commands.some((args) => args[0] === "api"), "service update mutation was not invoked");
+  const down = commands.findIndex((args) => args[0] === "down");
+  const redeployIndex = commands.findIndex((args) => args[0] === "redeploy");
+  assert(down >= 0 && down < redeployIndex, "realm writer handoff did not precede deployment");
   assert(commands.some((args) => args[0] === "redeploy"), "updated source was not explicitly deployed");
   const mutation = commands.find((args) => args[0] === "api");
   const variablesIndex = mutation?.indexOf("--variables") ?? -1;
@@ -201,6 +206,7 @@ Deno.test("a deployment receipt exists before a failing health check so rollback
     JSON.stringify([deployment("old", "SUCCESS", false)]),
     projectStatus(),
     JSON.stringify({ data: { serviceInstanceUpdate: true } }),
+    "",
     JSON.stringify({ id: "requested" }),
     JSON.stringify([deployment("new", "SUCCESS"), deployment("old", "SUCCESS", false)]),
   ];
@@ -314,6 +320,7 @@ Deno.test("rollout fails closed on a terminal failed deployment", async () => {
     JSON.stringify([deployment("old", "SUCCESS", false)]),
     projectStatus(),
     JSON.stringify({ data: { serviceInstanceUpdate: true } }),
+    "",
     JSON.stringify({ id: "requested" }),
     JSON.stringify([deployment("failed", "FAILED")]),
   ];

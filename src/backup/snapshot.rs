@@ -225,7 +225,7 @@ impl BackupSnapshot {
         for record in &self.records {
             let family = record_family(&record.key)?;
             *index.families.entry(family.clone()).or_insert(0) += 1;
-            if family != "session" && record.expires_at.is_some() {
+            if !record_family_allows_expiry(&family) && record.expires_at.is_some() {
                 bail!(
                     "durable backup record {} unexpectedly has an expiry",
                     record.key
@@ -522,6 +522,26 @@ impl BackupSnapshot {
                         bail!("backup contains duplicate Fleet audit records");
                     }
                 }
+                "event-min-sequence"
+                | "invitation"
+                | "invitation-code"
+                | "webhook"
+                | "webhook-cursor"
+                | "webhook-delivery"
+                | "webhook-delivery-event"
+                | "fleet-assignment-epoch"
+                | "fleet-analytics-bucket"
+                | "fleet-analytics-policy"
+                | "fleet-analytics-policy-idempotency"
+                | "fleet-analytics-quarantine"
+                | "fleet-analytics-ingestion-audit"
+                | "fleet-analytics-operator-audit"
+                | "fleet-analytics-maintenance-audit"
+                | "fleet-analytics-manifest"
+                | "analytics-projector-cursor"
+                | "analytics-closure-cursor"
+                | "analytics-bucket"
+                | "analytics-outbox" => {}
                 _ => unreachable!("record_family returns known families"),
             }
         }
@@ -553,6 +573,17 @@ impl BackupSnapshot {
         }
         Ok(())
     }
+}
+
+fn record_family_allows_expiry(family: &str) -> bool {
+    matches!(
+        family,
+        "session"
+            | "remote-mutation"
+            | "fleet-analytics-quarantine"
+            | "fleet-analytics-ingestion-audit"
+            | "fleet-analytics-maintenance-audit"
+    )
 }
 
 #[derive(Default)]
@@ -1009,6 +1040,9 @@ fn record_family(key: &str) -> Result<String> {
     if key == "auth:event-sequence" {
         return Ok("event-sequence".into());
     }
+    if key == "auth:event-min-sequence" {
+        return Ok("event-min-sequence".into());
+    }
     if key == KEYSET_KEY {
         return Ok("keyset".into());
     }
@@ -1022,6 +1056,12 @@ fn record_family(key: &str) -> Result<String> {
         ("auth:credential:", "credential-index"),
         ("auth:session:", "session"),
         ("auth:event:", "event"),
+        ("auth:invitation:", "invitation"),
+        ("auth:invitation-code:", "invitation-code"),
+        ("auth:webhook:", "webhook"),
+        ("auth:webhook-cursor:", "webhook-cursor"),
+        ("auth:webhook-delivery:", "webhook-delivery"),
+        ("auth:webhook-delivery-event:", "webhook-delivery-event"),
         ("auth:operator:", "operator"),
         ("auth:service-account:", "service-account"),
         ("auth:service-credential:", "service-credential"),
@@ -1038,11 +1078,40 @@ fn record_family(key: &str) -> Result<String> {
         ("fleet:role-binding:", "fleet-role-binding"),
         ("fleet:role-binding-subject:", "fleet-role-binding-subject"),
         ("fleet:idempotency:", "fleet-idempotency"),
+        ("fleet:assignment-epoch:", "fleet-assignment-epoch"),
         ("fleet:audit:", "fleet-audit"),
+        ("fleet:analytics-bucket:", "fleet-analytics-bucket"),
+        ("fleet:analytics-policy:", "fleet-analytics-policy"),
+        (
+            "fleet:analytics-policy-idempotency:",
+            "fleet-analytics-policy-idempotency",
+        ),
+        ("fleet:analytics-quarantine:", "fleet-analytics-quarantine"),
+        (
+            "fleet:analytics-ingestion-audit:",
+            "fleet-analytics-ingestion-audit",
+        ),
+        (
+            "fleet:analytics-operator-audit:",
+            "fleet-analytics-operator-audit",
+        ),
+        (
+            "fleet:analytics-maintenance-audit:",
+            "fleet-analytics-maintenance-audit",
+        ),
+        ("fleet:analytics-manifest:", "fleet-analytics-manifest"),
+        ("analytics:bucket:", "analytics-bucket"),
+        ("analytics:outbox:", "analytics-outbox"),
     ] {
         if key.starts_with(prefix) && key.len() > prefix.len() {
             return Ok(family.into());
         }
+    }
+    if key == "analytics:projector-cursor" {
+        return Ok("analytics-projector-cursor".into());
+    }
+    if key == "analytics:closure-cursor" {
+        return Ok("analytics-closure-cursor".into());
     }
     bail!("backup contains unsupported key {key}")
 }
@@ -1195,6 +1264,30 @@ fn rehash(snapshot: &mut BackupSnapshot) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn durable_analytics_records_are_covered_by_the_backup_manifest() {
+        let snapshot = BackupSnapshot::from_records(
+            "tenant-a",
+            1_000,
+            vec![
+                StoreRecord {
+                    key: "analytics:bucket:00000000001786127100".into(),
+                    value: "bucket".into(),
+                    expires_at: None,
+                },
+                StoreRecord {
+                    key: KEYSET_KEY.into(),
+                    value: keyset_value(),
+                    expires_at: None,
+                },
+            ],
+        )
+        .unwrap();
+
+        assert_eq!(snapshot.manifest.key_families["analytics-bucket"], 1);
+        snapshot.validate("tenant-a").unwrap();
+    }
 
     #[test]
     fn compact_binary_snapshot_round_trips_without_json_field_names() {

@@ -131,7 +131,7 @@ export function serviceUpdateInput(
         numReplicas: 1,
         overlapSeconds: 0,
         drainingSeconds: 25,
-        preDeployCommand: ["/usr/local/bin/rustyauth doctor"],
+        preDeployCommand: ["/usr/local/bin/rustyauth backup create"],
         restartPolicyType: "ON_FAILURE",
         restartPolicyMaxRetries: 10,
       };
@@ -297,6 +297,19 @@ function redeployArgs(options: RailwayRolloutOptions): string[] {
   ];
 }
 
+function downArgs(options: RailwayRolloutOptions): string[] {
+  return [
+    "down",
+    "--project",
+    options.project,
+    "--environment",
+    options.environment,
+    "--service",
+    options.service,
+    "--yes",
+  ];
+}
+
 function updateArgs(options: RailwayRolloutOptions, sourceImage: string): string[] {
   const variables = {
     serviceId: options.service,
@@ -352,7 +365,10 @@ export async function rolloutRailwayImage(
   const digest = normalizeDigest(options.digest);
   const sourceImage = pinnedImageReference(options.image, digest);
   const baseline = parseDeployments(await runJson(runner, deploymentListArgs(options)));
-  const previous = baseline[0];
+  // Failed attempts may be newer than the deployment that is actually serving.
+  // The newest successful deployment is the rollback target; using baseline[0]
+  // can select a failed image and make recovery fail a second time.
+  const previous = baseline.find((deployment) => deployment.status === "SUCCESS");
   const current = previous && matchingDeployment([previous], sourceImage, digest);
 
   const receipt: RailwayRolloutReceipt = {
@@ -397,9 +413,17 @@ export async function rolloutRailwayImage(
         fail("Railway rejected the service image/configuration update");
       }
     }
-    await runJson(runner, redeployArgs(options));
     receipt.changed = true;
     await writeReceipt();
+
+    // Railway keeps the old deployment alive until its replacement is ready,
+    // even with overlapSeconds=0. A RustyAuth realm intentionally refuses to
+    // start while that old process owns the one-writer lease, so perform an
+    // explicit, receipt-backed handoff before starting the replacement.
+    if (options.profile === "realm" && previous) {
+      await runJson(runner, downArgs(options));
+    }
+    await runJson(runner, redeployArgs(options));
 
     const baselineIds = new Set(baseline.map((existing) => existing.id));
     const deadline = now().getTime() + options.timeoutMs;
