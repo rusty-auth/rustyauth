@@ -72,6 +72,41 @@ backup bucket is a project resource rather than a running service:
 The bucket remains optional, but any deployment claiming recovery must configure it and complete a restore
 drill.
 
+### Automatic maintained-template upgrades
+
+The maintained Railway production/template-source project follows successful merges to `main` through
+`.github/workflows/railway-production.yml`. The workflow starts only after the repository's `CI` workflow has
+completed successfully for the current `main` tip. A later merge makes an older successful result stale, so
+the older result is recorded as skipped rather than being allowed to roll production backwards.
+
+Each merge publishes separate API, dashboard and SableDB images under a full-commit tag. The images include
+SBOM and provenance attestations and are signed by GitHub OIDC. Railway is updated to that exact tag, and the
+rollout accepts success only when Railway reports the expected registry digest in a terminal `SUCCESS`
+deployment. Mutable `latest` tags are never used by this path.
+
+Rollouts are serialized across the state boundaries:
+
+1. The realm API runs the target image's `rustyauth doctor` as a Railway pre-deploy command, then reaches
+   `/healthz` and `/readyz` on the application API origin.
+2. The stateless dashboard deploys and reaches both probes through its public origin, including its private
+   upstream readiness check.
+3. Private SableDB is replaced without recreating its volume, after which both API and dashboard readiness
+   are checked again.
+
+The GitHub `railway-production` environment owns the workspace-scoped `RAILWAY_API_TOKEN` and non-secret
+target IDs/URLs. The token is restricted to the Railway workspace containing this project; project-scoped
+tokens are preferred when the workspace permits their creation. The environment must define
+`RAILWAY_PROJECT_ID`, `RAILWAY_ENVIRONMENT_ID`, `RAILWAY_API_SERVICE_ID`,
+`RAILWAY_DASHBOARD_SERVICE_ID`, `RAILWAY_SABLEDB_SERVICE_ID`, `RAILWAY_API_URL` and
+`RAILWAY_DASHBOARD_URL`. The job aligns the issuer and WebAuthn relying-party settings to the dashboard origin
+without printing their existing values. Every successful or failed run retains per-service deployment
+receipts for 90 days.
+
+A manual dispatch defaults to the current `main` tip. Selecting an older full SHA additionally requires the
+explicit `allow_non_tip` rollback input, and the workflow still rejects commits that are not ancestors of
+`main`. Customer projects cloned from the public template remain independently owned and are never mutated by
+RustyAuth's repository credentials; operators choose when to adopt a newer pinned release.
+
 ### RustyAuth service
 
 Use the repository root as the source root and `Dockerfile` as the builder. Set:
