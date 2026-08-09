@@ -31,14 +31,16 @@ Deno.test("deep security and qualification are outside the merge gate", () => {
     assert(assurance.includes(command), command);
   }
   assertStringIncludes(assurance, "schedule:");
+  assertStringIncludes(assurance, "workflow_run:");
   assertStringIncludes(assurance, "branches: [main]");
+  assertStringIncludes(assurance, "github.event.workflow_run.head_sha || github.sha");
 });
 
-Deno.test("fuzzing and native preview qualification run after merge or on schedules", () => {
+Deno.test("fuzzing and native preview qualification remain scheduled or manual", () => {
   for (const workflow of [fuzz, native]) {
     assertEquals(workflow.includes("pull_request:"), false);
-    assertStringIncludes(workflow, "push:");
-    assertStringIncludes(workflow, "branches: [main]");
+    assertEquals(workflow.includes("push:"), false);
     assertStringIncludes(workflow, "schedule:");
+    assertStringIncludes(workflow, "workflow_dispatch:");
   }
 });

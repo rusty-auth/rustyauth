@@ -1,11 +1,6 @@
 name: Native preview qualification
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - "console/**"
-      - ".github/workflows/native-packaging.yml"
   schedule:
     - cron: "41 3 * * 1"
   workflow_dispatch:
