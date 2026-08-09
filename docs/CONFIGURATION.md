@@ -472,15 +472,17 @@ Browser CORS permits only the configured relying-party origin.
 
 | Scheme   | Production rule                                                                                                                                              |
 | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `redis`  | Host must end in `.railway.internal`. The link is plaintext, so private networking is the only thing protecting sessions and wrapped signing keys in transit |
+| `redis`  | Host must end in `.railway.internal` or `.svc.cluster.local`. The link is plaintext, so private networking is the only thing protecting sessions and wrapped signing keys in transit |
 | `rediss` | Accepted from any host. TLS protects the link itself, so the hostname check would add nothing                                                                |
 
 Development accepts either scheme against any host.
 
-`rediss` exists so a deployment outside Railway can encrypt datastore traffic instead of being forced onto
-plaintext. It is not a way to expose SableDB publicly: transport encryption authenticates and protects the
-connection, it does not authorize the caller. Keep SableDB unreachable from the public internet regardless of
-scheme, and do not switch a `redis` URL off `.railway.internal` to avoid the check.
+The Kubernetes allowance requires a fully qualified Service name such as
+`sabledb.identity.svc.cluster.local`; a short name such as `sabledb` is rejected in production. `rediss`
+exists so a deployment outside these private platform networks can encrypt datastore traffic instead of
+being forced onto plaintext. It is not a way to expose SableDB publicly: transport encryption authenticates
+and protects the connection, it does not authorize the caller. Keep SableDB unreachable from the public
+internet regardless of scheme.
 
 SableDB requires a persistent volume at `/var/lib/sabledb`. RustyAuth assumes the database namespace belongs
 to one configured tenant.

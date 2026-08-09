@@ -1,0 +1,89 @@
+---
+import DocsLayout from "../../layouts/DocsLayout.astro";
+---
+<DocsLayout title="Kubernetes and Civo K3s" eyebrow="Operate" intro="Install RustyAuth as an integrated realm, a central Fleet control plane, or lightweight isolated realms with copy-ready Helm commands.">
+  <div class="doc-callout warning"><strong>Pre-release deployment</strong><p>RustyAuth and these charts are version 0.1. Use them for evaluation and integration work until the published production qualification gates pass. Pin a tagged chart and immutable image digests when evaluating upgrades.</p></div>
+
+  <h2>Choose the boundary</h2>
+  <table><thead><tr><th>Chart</th><th>Installs</th><th>Use it for</th></tr></thead><tbody><tr><td><code>rustyauth-integrated</code></td><td>WASM dashboard gateway, Realm API, SableDB</td><td>One self-contained app environment</td></tr><tr><td><code>rustyauth-fleet</code></td><td>WASM Fleet dashboard gateway, control plane, Fleet SableDB</td><td>One central management plane</td></tr><tr><td><code>rustyauth-realm</code></td><td>Realm API and SableDB</td><td>One lightweight Fleet-managed environment</td></tr></tbody></table>
+  <p>Yes, Fleet and realms should be separate charts. That makes each realm a real identity, secret, storage and recovery boundary instead of a subcomponent that shares the control plane's lifecycle.</p>
+  <p>The Dioxus application delivered to the browser is compiled to WebAssembly. The same-origin gateway, Rust API and SableDB remain native Linux binaries in hardened scratch containers. Kubernetes orchestrates those server processes; it does not turn them into browser WASM.</p>
+
+  <h2>Why this fits Civo</h2>
+  <p><a href="https://www.civo.com/docs/kubernetes/create-a-cluster">Civo Kubernetes uses K3s</a> and its default applications include Traefik, so the charts use standard Kubernetes resources and default to the <code>traefik</code> IngressClass. Confirm what is installed on your cluster:</p>
+  <pre><code>kubectl get nodes
+kubectl get ingressclass
+kubectl get storageclass</code></pre>
+  <p>The storage class is left unset so the cluster default is used. Civo documents <a href="https://www.civo.com/docs/kubernetes/config/kubernetes-volumes">its default <code>civo-volume</code> class with a Delete reclaim policy</a>, so RustyAuth marks every SableDB claim for retention on Helm uninstall.</p>
+
+  <h2>Integrated install</h2>
+  <p>Save this as <code>integrated-values.yaml</code>, replacing all example names and origins:</p>
+  <pre><code>config:
+  tenantId: acme
+  realmId: production
+  publicIssuer: https://auth.acme.example
+  relyingParty:
+    id: auth.acme.example
+    origin: https://auth.acme.example
+    name: Acme Account
+  tokens:
+    audience: acme-api
+    accessTtl: 5m
+  operators:
+    bootstrapEmails:
+      - owner@acme.example
+
+ingress:
+  enabled: true
+  className: traefik
+  hosts:
+    - host: auth.acme.example
+      paths:
+        - path: /
+          pathType: Prefix
+  tls:
+    - secretName: auth-acme-tls
+      hosts:
+        - auth.acme.example</code></pre>
+  <p>Create the namespace and high-entropy credentials outside Helm. This keeps credentials out of Helm release values:</p>
+  <pre><code>kubectl create namespace rustyauth
+kubectl -n rustyauth create secret generic auth-rustyauth-integrated-secrets \
+  --from-literal=AUTH_MASTER_KEY_HEX="$(openssl rand -hex 32)" \
+  --from-literal=BOOTSTRAP_TOKEN="$(openssl rand -base64 48)" \
+  --from-literal=AUTH_EVENT_RPC_TOKEN="$(openssl rand -base64 48)" \
+  --from-literal=AUTH_IDENTITY_RPC_TOKEN="$(openssl rand -base64 48)"</code></pre>
+  <p>Install from a repository checkout:</p>
+  <pre><code>helm upgrade --install auth ./charts/rustyauth-integrated \
+  --namespace rustyauth \
+  --values integrated-values.yaml \
+  --wait --atomic</code></pre>
+  <p>Tagged releases also attach version-matched chart archives:</p>
+  <pre><code>VERSION=0.1.0
+CHART=https://github.com/rusty-auth/rustyauth/releases/download/v$VERSION/rustyauth-integrated-$VERSION.tgz
+helm upgrade --install auth "$CHART" \
+  --namespace rustyauth \
+  --values integrated-values.yaml \
+  --wait --atomic</code></pre>
+
+  <h2>Fleet plus realms</h2>
+  <p>Install <code>rustyauth-fleet</code> once. Install <code>rustyauth-realm</code> once per project environment, normally in separate namespaces. Each realm gets distinct keys, RPC tokens, SableDB volume, public issuer and backup boundary.</p>
+  <pre><code>kubectl create namespace rustyauth-fleet
+kubectl -n rustyauth-fleet create secret generic fleet-rustyauth-fleet-secrets \
+  --from-literal=AUTH_MASTER_KEY_HEX="$(openssl rand -hex 32)" \
+  --from-literal=BOOTSTRAP_TOKEN="$(openssl rand -base64 48)"
+helm upgrade --install fleet ./charts/rustyauth-fleet \
+  --namespace rustyauth-fleet --values fleet-values.yaml --wait --atomic</code></pre>
+  <pre><code>kubectl create namespace acme-payments-production
+kubectl -n acme-payments-production create secret generic realm-rustyauth-realm-secrets \
+  --from-literal=AUTH_MASTER_KEY_HEX="$(openssl rand -hex 32)" \
+  --from-literal=BOOTSTRAP_TOKEN="$(openssl rand -base64 48)" \
+  --from-literal=AUTH_EVENT_RPC_TOKEN="$(openssl rand -base64 48)" \
+  --from-literal=AUTH_IDENTITY_RPC_TOKEN="$(openssl rand -base64 48)"
+helm upgrade --install realm ./charts/rustyauth-realm \
+  --namespace acme-payments-production --values realm-values.yaml --wait --atomic</code></pre>
+  <p>The realm chart intentionally has no dashboard. Pair its public management endpoint through the normal <a href="/docs/fleet">Fleet workflow</a>; Fleet never receives that realm's database URL or encryption keys.</p>
+
+  <h2>Operational defaults</h2>
+  <ul><li>API and control-plane replicas are fixed at one and updated with <code>Recreate</code>, matching the current single-writer contract.</li><li>All containers run without privilege escalation, with read-only root filesystems, dropped capabilities and no service-account token.</li><li>A NetworkPolicy permits SableDB ingress only from its API or control-plane pod.</li><li>Liveness uses <code>/healthz</code>; readiness uses <code>/readyz</code> and therefore includes the datastore.</li><li>SableDB uses a retained <code>ReadWriteOnce</code> PVC. Deleting that claim is an explicit destructive operation.</li></ul>
+  <p>For backups, webhooks, Analytics, external ConfigMaps, secret rotation, upgrades and exact release archive commands, use the <a href="https://github.com/rusty-auth/rustyauth/blob/main/docs/KUBERNETES.md">complete repository runbook</a>.</p>
+</DocsLayout>

@@ -1252,9 +1252,10 @@ fn validate_sable_url(environment: &Environment, value: &SecretString, name: &st
     if environment == &Environment::Production
         && url.scheme() == "redis"
         && !host.ends_with(".railway.internal")
+        && !host.ends_with(".svc.cluster.local")
     {
         bail!(
-            "production SABLEDB_URL must use Railway private networking (*.railway.internal) or the rediss scheme"
+            "production SABLEDB_URL must use private platform DNS (*.railway.internal or *.svc.cluster.local) or the rediss scheme"
         );
     }
     Ok(())
@@ -1337,6 +1338,41 @@ mod tests {
         );
         // A scheme the client cannot speak should fail at startup, not first upload.
         assert!(validate_backup_endpoint(&Environment::Development, &other, "endpoint").is_err());
+    }
+
+    #[test]
+    fn production_sabledb_requires_private_platform_dns_or_tls() {
+        for endpoint in [
+            "redis://sabledb.railway.internal:6379",
+            "redis://rustyauth-sabledb.identity.svc.cluster.local:6379",
+            "rediss://sabledb.example.com:6379",
+        ] {
+            assert!(
+                validate_sable_url(
+                    &Environment::Production,
+                    &SecretString::from(endpoint),
+                    "SABLEDB_URL",
+                )
+                .is_ok(),
+                "expected {endpoint} to be accepted",
+            );
+        }
+
+        for endpoint in [
+            "redis://sabledb:6379",
+            "redis://sabledb.example.com:6379",
+            "redis://sabledb.svc.cluster.local.example.com:6379",
+        ] {
+            assert!(
+                validate_sable_url(
+                    &Environment::Production,
+                    &SecretString::from(endpoint),
+                    "SABLEDB_URL",
+                )
+                .is_err(),
+                "expected {endpoint} to be rejected",
+            );
+        }
     }
 
     #[test]

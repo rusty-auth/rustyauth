@@ -135,6 +135,13 @@ export const docsNavigation: DocsGroup[] = [
         keywords: ["railway", "container", "production", "topology", "scale"],
       },
       {
+        label: "Kubernetes and K3s",
+        href: "/docs/kubernetes",
+        seoTitle: "Deploy Passkey Authentication on Kubernetes and Civo K3s | RustyAuth",
+        description: "Integrated, Fleet and lightweight realm Helm charts for Kubernetes and Civo K3s.",
+        keywords: ["kubernetes", "k3s", "civo", "helm", "traefik", "fleet", "wasm"],
+      },
+      {
         label: "Security",
         href: "/docs/security",
         seoTitle: "Passkey and WebAuthn Security Model | RustyAuth",

@@ -266,7 +266,8 @@ encryption keys with no entropy, partial backup configuration, invalid origins, 
 tokens and plaintext production SableDB addresses outside private networking.
 
 - [Configuration reference](docs/CONFIGURATION.md)
-- [Docker and Railway deployment](docs/DEPLOYMENT.md)
+- [Docker, Kubernetes and Railway deployment](docs/DEPLOYMENT.md)
+- [Kubernetes and Civo K3s Helm charts](docs/KUBERNETES.md)
 - [Security policy and threat model](SECURITY.md)
 
 The intended realm topology is a public Dioxus dashboard, a private RustyAuth backend and a private persistent
@@ -374,7 +375,8 @@ records which document must change with each API, schema, configuration or deplo
 ### Deploy and operate
 
 - [Configuration](docs/CONFIGURATION.md)
-- [Docker and Railway deployment](docs/DEPLOYMENT.md)
+- [Docker, Kubernetes and Railway deployment](docs/DEPLOYMENT.md)
+- [Kubernetes and Civo K3s Helm charts](docs/KUBERNETES.md)
 - [Railway service topologies](docs/RAILWAY_TEMPLATE.md)
 - [Security hardening](docs/SECURITY_HARDENING.md) and [security policy](SECURITY.md)
 - [Releasing](RELEASING.md)

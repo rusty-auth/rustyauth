@@ -1,0 +1,15 @@
+apiVersion: v2
+name: rustyauth-realm
+description: Lightweight RustyAuth Realm API and SableDB for Fleet-managed environments
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+kubeVersion: ">=1.27.0-0"
+home: https://rustyauth.dev/fleet
+icon: https://rustyauth.dev/brand/rustyauth-mark.png
+sources:
+  - https://github.com/rusty-auth/rustyauth
+keywords: [authentication, realm, fleet, passkeys, webauthn]
+annotations:
+  artifacthub.io/license: Apache-2.0
+  artifacthub.io/prerelease: "true"

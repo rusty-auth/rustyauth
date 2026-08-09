@@ -29,6 +29,12 @@ jobs:
             "packages/client/deno.json:$(jq -r .version packages/client/deno.json)"
             "packages/protocol/deno.json:$(jq -r .version packages/protocol/deno.json)"
             "site/package.json:$(jq -r .version site/package.json)"
+            "charts/rustyauth-integrated/Chart.yaml:$(awk '/^version:/ { print $2; exit }' charts/rustyauth-integrated/Chart.yaml)"
+            "charts/rustyauth-fleet/Chart.yaml:$(awk '/^version:/ { print $2; exit }' charts/rustyauth-fleet/Chart.yaml)"
+            "charts/rustyauth-realm/Chart.yaml:$(awk '/^version:/ { print $2; exit }' charts/rustyauth-realm/Chart.yaml)"
+            "charts/rustyauth-integrated/Chart.yaml appVersion:$(awk '/^appVersion:/ { gsub(/\"/, \"\", $2); print $2; exit }' charts/rustyauth-integrated/Chart.yaml)"
+            "charts/rustyauth-fleet/Chart.yaml appVersion:$(awk '/^appVersion:/ { gsub(/\"/, \"\", $2); print $2; exit }' charts/rustyauth-fleet/Chart.yaml)"
+            "charts/rustyauth-realm/Chart.yaml appVersion:$(awk '/^appVersion:/ { gsub(/\"/, \"\", $2); print $2; exit }' charts/rustyauth-realm/Chart.yaml)"
           )
           for item in "${versions[@]}"; do
             file="${item%%:*}"
@@ -37,6 +43,14 @@ jobs:
               echo "::error file=${file}::tag v${tag} does not match ${file} version ${version}"
               exit 1
             fi
+          done
+          for values_file in charts/*/values.yaml; do
+            while IFS= read -r image_tag; do
+              if [[ "${image_tag}" != "${GITHUB_REF_NAME}" ]]; then
+                echo "::error file=${values_file}::default image tag ${image_tag} does not match ${GITHUB_REF_NAME}"
+                exit 1
+              fi
+            done < <(awk '/^[[:space:]]+tag:/ { print $2 }' "${values_file}")
           done
       - name: Install pinned Rust toolchain
         run: rustup toolchain install 1.94.1 --profile minimal
@@ -61,6 +75,10 @@ jobs:
       - run: deno task release:test
       - run: deno task site:check
       - run: deno task site:test
+      - uses: azure/setup-helm@1a275c3b69536ee54be43f2070a358922e12c8d4 # v4.3.1
+        with:
+          version: v4.2.0
+      - run: scripts/check-helm.sh
       # The tagged artefact is what operators actually run, so it gets the same
       # supply-chain gate as a pull request. Without this a release could ship an
       # advisory that CI would have refused to merge.
@@ -394,11 +412,25 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: azure/setup-helm@1a275c3b69536ee54be43f2070a358922e12c8d4 # v4.3.1
+        with:
+          version: v4.2.0
+      - name: Package Helm charts
+        run: |
+          mkdir -p dist
+          for chart in charts/rustyauth-integrated charts/rustyauth-fleet charts/rustyauth-realm; do
+            helm package "${chart}" --destination dist
+          done
+          (
+            cd dist
+            sha256sum ./*.tgz > SHA256SUMS
+          )
       - name: Create release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh release create "${GITHUB_REF_NAME}" \
+            dist/*.tgz dist/SHA256SUMS \
             --title "RustyAuth ${GITHUB_REF_NAME}" \
             --generate-notes \
-            --notes "Full details in [CHANGELOG.md](https://github.com/${GITHUB_REPOSITORY}/blob/${GITHUB_REF_NAME}/CHANGELOG.md). Images: \`ghcr.io/${GITHUB_REPOSITORY}:${GITHUB_REF_NAME}\`, \`ghcr.io/rusty-auth/control-plane:${GITHUB_REF_NAME}\`, \`ghcr.io/rusty-auth/dashboard:${GITHUB_REF_NAME}\`, and \`ghcr.io/rusty-auth/sabledb:${GITHUB_REF_NAME}\`."
+            --notes "Full details in [CHANGELOG.md](https://github.com/${GITHUB_REPOSITORY}/blob/${GITHUB_REF_NAME}/CHANGELOG.md). Images: \`ghcr.io/${GITHUB_REPOSITORY}:${GITHUB_REF_NAME}\`, \`ghcr.io/rusty-auth/control-plane:${GITHUB_REF_NAME}\`, \`ghcr.io/rusty-auth/dashboard:${GITHUB_REF_NAME}\`, and \`ghcr.io/rusty-auth/sabledb:${GITHUB_REF_NAME}\`. This release also includes version-matched integrated, Fleet and realm Helm chart archives plus \`SHA256SUMS\`."

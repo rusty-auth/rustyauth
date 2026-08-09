@@ -65,3 +65,11 @@ Deno.test("unknown paths fail safe by selecting every lane", () => {
   const selected = classifyCiChanges(["helm/rustyauth/Chart.yaml"]);
   for (const area of CI_AREAS) assertEquals(selected[area], true, area);
 });
+
+Deno.test("Helm chart changes select deployment policy without rebuilding images", () => {
+  const selected = classifyCiChanges(["charts/rustyauth-realm/values.yaml"]);
+  assertEquals(selected.policy, true);
+  assertEquals(selected.api_image, false);
+  assertEquals(selected.dashboard_image, false);
+  assertEquals(selected.rust, false);
+});

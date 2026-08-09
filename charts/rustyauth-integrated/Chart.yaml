@@ -1,0 +1,19 @@
+apiVersion: v2
+name: rustyauth-integrated
+description: Integrated RustyAuth Realm, WebAssembly dashboard gateway and SableDB
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+kubeVersion: ">=1.27.0-0"
+home: https://rustyauth.dev
+icon: https://rustyauth.dev/brand/rustyauth-mark.png
+sources:
+  - https://github.com/rusty-auth/rustyauth
+keywords:
+  - authentication
+  - passkeys
+  - webauthn
+  - wasm
+annotations:
+  artifacthub.io/license: Apache-2.0
+  artifacthub.io/prerelease: "true"

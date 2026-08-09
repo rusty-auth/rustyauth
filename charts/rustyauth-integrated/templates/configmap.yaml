@@ -1,0 +1,11 @@
+{{- if not .Values.config.existingConfigMap }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "rustyauth-integrated.configMapName" . }}
+  labels:
+    {{- include "rustyauth-integrated.labels" . | nindent 4 }}
+data:
+  {{ .Values.config.existingConfigMapKey }}: |
+    {{- include "rustyauth-integrated.config" . | nindent 4 }}
+{{- end }}

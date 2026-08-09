@@ -1,0 +1,222 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "nameOverride": { "type": "string" },
+    "fullnameOverride": { "type": "string" },
+    "clusterDomain": { "type": "string", "const": "cluster.local" },
+    "imagePullSecrets": { "type": "array", "items": { "type": "object" } },
+    "images": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["api", "dashboard", "sabledb"],
+      "properties": {
+        "api": { "$ref": "#/definitions/image" },
+        "dashboard": { "$ref": "#/definitions/image" },
+        "sabledb": { "$ref": "#/definitions/image" }
+      }
+    },
+    "config": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["existingConfigMap", "existingConfigMapKey", "environment", "tenantId", "realmId", "publicIssuer", "trustedProxyHops", "relyingParty", "tokens", "sessions", "events", "signingKeys", "operators"],
+      "properties": {
+        "existingConfigMap": { "type": "string" },
+        "existingConfigMapKey": { "type": "string", "minLength": 1 },
+        "environment": { "type": "string", "enum": ["development", "production"] },
+        "tenantId": { "$ref": "#/definitions/id" },
+        "realmId": { "$ref": "#/definitions/id" },
+        "publicIssuer": { "type": "string", "format": "uri" },
+        "trustedProxyHops": { "type": "integer", "minimum": 0 },
+        "relyingParty": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["id", "origin", "name"],
+          "properties": {
+            "id": { "type": "string", "minLength": 1 },
+            "origin": { "type": "string", "format": "uri" },
+            "name": { "type": "string", "minLength": 1 }
+          }
+        },
+        "tokens": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["audience", "accessTtl"],
+          "properties": {
+            "audience": { "type": "string", "minLength": 1 },
+            "accessTtl": { "$ref": "#/definitions/duration" }
+          }
+        },
+        "sessions": { "$ref": "#/definitions/sessions" },
+        "events": { "$ref": "#/definitions/events" },
+        "signingKeys": { "$ref": "#/definitions/signingKeys" },
+        "operators": { "$ref": "#/definitions/operators" }
+      }
+    },
+    "secrets": { "$ref": "#/definitions/realmSecrets" },
+    "api": { "$ref": "#/definitions/api" },
+    "dashboard": { "$ref": "#/definitions/dashboard" },
+    "sabledb": { "$ref": "#/definitions/sabledb" },
+    "ingress": { "$ref": "#/definitions/ingress" },
+    "networkPolicy": { "$ref": "#/definitions/networkPolicy" },
+    "nodeSelector": { "type": "object" },
+    "tolerations": { "type": "array", "items": { "type": "object" } },
+    "affinity": { "type": "object" }
+  },
+  "definitions": {
+    "id": { "type": "string", "pattern": "^[A-Za-z0-9_-]{1,64}$" },
+    "duration": { "type": "string", "pattern": "^[0-9]+(s|m|h|d)$" },
+    "image": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["repository", "tag", "digest", "pullPolicy"],
+      "properties": {
+        "repository": { "type": "string", "minLength": 1 },
+        "tag": { "type": "string", "minLength": 1 },
+        "digest": { "type": "string", "pattern": "^$|^sha256:[a-f0-9]{64}$" },
+        "pullPolicy": { "type": "string", "enum": ["Always", "IfNotPresent", "Never"] }
+      }
+    },
+    "resources": { "type": "object" },
+    "sessions": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["idleTimeout", "absoluteTimeout"],
+      "properties": {
+        "idleTimeout": { "$ref": "#/definitions/duration" },
+        "absoluteTimeout": { "$ref": "#/definitions/duration" }
+      }
+    },
+    "events": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["retention"],
+      "properties": { "retention": { "$ref": "#/definitions/duration" } }
+    },
+    "signingKeys": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["rotateEvery", "prepublishFor", "overlapFor", "maintenanceInterval"],
+      "properties": {
+        "rotateEvery": { "$ref": "#/definitions/duration" },
+        "prepublishFor": { "$ref": "#/definitions/duration" },
+        "overlapFor": { "$ref": "#/definitions/duration" },
+        "maintenanceInterval": { "$ref": "#/definitions/duration" }
+      }
+    },
+    "operators": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["bootstrapEmails"],
+      "properties": {
+        "bootstrapEmails": { "type": "array", "items": { "type": "string", "format": "email" } }
+      }
+    },
+    "secretValues": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["masterKeyHex", "bootstrapToken", "eventRpcToken", "identityRpcToken"],
+      "properties": {
+        "masterKeyHex": { "type": "string" },
+        "bootstrapToken": { "type": "string" },
+        "eventRpcToken": { "type": "string" },
+        "identityRpcToken": { "type": "string" }
+      }
+    },
+    "realmSecrets": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["existingSecret", "create", "values", "extra"],
+      "properties": {
+        "existingSecret": { "type": "string" },
+        "create": { "type": "boolean" },
+        "values": { "$ref": "#/definitions/secretValues" },
+        "extra": { "type": "object", "additionalProperties": { "type": "string" } }
+      }
+    },
+    "api": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["replicaCount", "logFilter", "podAnnotations", "resources"],
+      "properties": {
+        "replicaCount": { "type": "integer", "const": 1 },
+        "logFilter": { "type": "string" },
+        "podAnnotations": { "type": "object" },
+        "resources": { "$ref": "#/definitions/resources" }
+      }
+    },
+    "dashboard": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["replicaCount", "podAnnotations", "resources"],
+      "properties": {
+        "replicaCount": { "type": "integer", "minimum": 1 },
+        "podAnnotations": { "type": "object" },
+        "resources": { "$ref": "#/definitions/resources" }
+      }
+    },
+    "sabledb": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["podAnnotations", "resources", "persistence"],
+      "properties": {
+        "podAnnotations": { "type": "object" },
+        "resources": { "$ref": "#/definitions/resources" },
+        "persistence": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["enabled", "storageClass", "accessModes", "size", "retain"],
+          "properties": {
+            "enabled": { "type": "boolean" },
+            "storageClass": { "type": "string" },
+            "accessModes": { "type": "array", "minItems": 1, "items": { "type": "string" } },
+            "size": { "type": "string", "minLength": 1 },
+            "retain": { "type": "boolean" }
+          }
+        }
+      }
+    },
+    "ingress": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["enabled", "className", "annotations", "hosts", "tls"],
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "className": { "type": "string" },
+        "annotations": { "type": "object" },
+        "hosts": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["host", "paths"],
+            "properties": {
+              "host": { "type": "string", "minLength": 1 },
+              "paths": {
+                "type": "array",
+                "minItems": 1,
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["path", "pathType"],
+                  "properties": {
+                    "path": { "type": "string" },
+                    "pathType": { "type": "string", "enum": ["Exact", "Prefix", "ImplementationSpecific"] }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "tls": { "type": "array", "items": { "type": "object" } }
+      }
+    },
+    "networkPolicy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["enabled"],
+      "properties": { "enabled": { "type": "boolean" } }
+    }
+  }
+}

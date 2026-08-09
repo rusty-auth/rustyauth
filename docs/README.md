@@ -17,7 +17,7 @@ is not necessarily production-qualified; use [Project status](#project-status) a
 | Run the Dioxus operator dashboard               | [Standalone quick start](QUICKSTART.md)  | [Architecture](ARCHITECTURE.md), [Security hardening](SECURITY_HARDENING.md)                                                    |
 | Manage organizations, projects and environments | [Fleet quick start](FLEET_QUICKSTART.md) | [Fleet control plane](FLEET_CONTROL_PLANE.md), [Fleet Analytics](FLEET_ANALYTICS.md)                                            |
 | Build or review federated Fleet analytics       | [Fleet Analytics](FLEET_ANALYTICS.md)    | [V1 semantics](FLEET_ANALYTICS_V1.md), [developer guide](https://rustyauth.dev/docs/fleet-analytics)                            |
-| Deploy to Railway or containers                 | [Deployment](DEPLOYMENT.md)              | [Railway topology](RAILWAY_TEMPLATE.md), [Backups and recovery](BACKUPS.md)                                                     |
+| Deploy to Kubernetes, Railway or containers     | [Deployment](DEPLOYMENT.md)              | [Kubernetes and Civo K3s](KUBERNETES.md), [Railway topology](RAILWAY_TEMPLATE.md), [Backups and recovery](BACKUPS.md)             |
 | Standardize policy across environments          | [Configuration](CONFIGURATION.md)        | [JSON Schema](../schemas/rustyauth-config-v1alpha1.schema.json), [production example](../examples/config/realm-production.yaml) |
 | Contribute safely                               | [Contributing](../CONTRIBUTING.md)       | [Engineering](ENGINEERING.md), [ADRs](#architecture-decisions)                                                                  |
 
@@ -71,7 +71,8 @@ connects directly to a realm database.
 
 | Document                                            | Use it for                                                      |
 | --------------------------------------------------- | --------------------------------------------------------------- |
-| [Deployment](DEPLOYMENT.md)                         | Docker, Railway, private networking, scaling and release gates  |
+| [Deployment](DEPLOYMENT.md)                         | Docker, Kubernetes, Railway, private networking and release gates |
+| [Kubernetes and Civo K3s](KUBERNETES.md)            | Integrated, Fleet and lightweight realm Helm deployments       |
 | [Railway template](RAILWAY_TEMPLATE.md)             | Exact standalone, Fleet and evaluation service graphs           |
 | [Configuration](CONFIGURATION.md)                   | Policy, secrets, backups and platform-specific inputs           |
 | [Backups and recovery](BACKUPS.md)                  | Snapshot scope, binary format, S3 posture, health and restore   |
@@ -145,7 +146,7 @@ When behavior changes, update the closest normative document in the same pull re
 - persisted identity state: `docs/IDENTITY_DATA_MODEL.md`;
 - configuration: schema, examples and `docs/CONFIGURATION.md`;
 - backup or restore behavior: `docs/BACKUPS.md` and the Astro recovery guide;
-- deployment or platform topology: `docs/DEPLOYMENT.md` and `docs/RAILWAY_TEMPLATE.md` when relevant;
+- deployment or platform topology: `docs/DEPLOYMENT.md`, `docs/KUBERNETES.md` and `docs/RAILWAY_TEMPLATE.md` when relevant;
 - Fleet behavior: `docs/FLEET_CONTROL_PLANE.md` or the Analytics documents; and
 - security assumptions or limitations: `SECURITY.md` and `docs/SECURITY_HARDENING.md`.
 

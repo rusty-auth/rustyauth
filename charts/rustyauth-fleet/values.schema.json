@@ -1,0 +1,120 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["images", "config", "secrets", "controlPlane", "dashboard", "sabledb", "ingress", "networkPolicy"],
+  "properties": {
+    "nameOverride": { "type": "string" },
+    "fullnameOverride": { "type": "string" },
+    "clusterDomain": { "type": "string", "const": "cluster.local" },
+    "imagePullSecrets": { "type": "array" },
+    "images": {
+      "type": "object",
+      "required": ["controlPlane", "dashboard", "sabledb"],
+      "properties": {
+        "controlPlane": { "$ref": "#/definitions/image" },
+        "dashboard": { "$ref": "#/definitions/image" },
+        "sabledb": { "$ref": "#/definitions/image" }
+      }
+    },
+    "config": {
+      "type": "object",
+      "required": ["existingConfigMap", "existingConfigMapKey", "environment", "tenantId", "publicIssuer", "trustedProxyHops", "relyingParty", "tokens", "sessions", "events", "signingKeys", "operators"],
+      "properties": {
+        "existingConfigMap": { "type": "string" },
+        "existingConfigMapKey": { "type": "string", "minLength": 1 },
+        "environment": { "enum": ["development", "production"] },
+        "tenantId": { "$ref": "#/definitions/id" },
+        "publicIssuer": { "type": "string", "format": "uri" },
+        "trustedProxyHops": { "type": "integer", "minimum": 0 },
+        "relyingParty": { "$ref": "#/definitions/relyingParty" },
+        "tokens": { "type": "object", "required": ["accessTtl"], "properties": { "accessTtl": { "$ref": "#/definitions/duration" } } },
+        "sessions": { "$ref": "#/definitions/sessions" },
+        "events": { "$ref": "#/definitions/events" },
+        "signingKeys": { "$ref": "#/definitions/signingKeys" },
+        "operators": { "$ref": "#/definitions/operators" }
+      }
+    },
+    "secrets": {
+      "type": "object",
+      "required": ["existingSecret", "create", "values", "extra"],
+      "properties": {
+        "existingSecret": { "type": "string" },
+        "create": { "type": "boolean" },
+        "values": {
+          "type": "object",
+          "required": ["masterKeyHex", "bootstrapToken"],
+          "properties": { "masterKeyHex": { "type": "string" }, "bootstrapToken": { "type": "string" } }
+        },
+        "extra": { "type": "object", "additionalProperties": { "type": "string" } }
+      }
+    },
+    "controlPlane": { "$ref": "#/definitions/writer" },
+    "dashboard": { "$ref": "#/definitions/dashboard" },
+    "sabledb": { "$ref": "#/definitions/sabledb" },
+    "ingress": { "$ref": "#/definitions/ingress" },
+    "networkPolicy": { "type": "object", "required": ["enabled"], "properties": { "enabled": { "type": "boolean" } } },
+    "nodeSelector": { "type": "object" },
+    "tolerations": { "type": "array" },
+    "affinity": { "type": "object" }
+  },
+  "definitions": {
+    "id": { "type": "string", "pattern": "^[A-Za-z0-9_-]{1,64}$" },
+    "duration": { "type": "string", "pattern": "^[0-9]+(s|m|h|d)$" },
+    "image": {
+      "type": "object",
+      "required": ["repository", "tag", "digest", "pullPolicy"],
+      "properties": {
+        "repository": { "type": "string", "minLength": 1 },
+        "tag": { "type": "string", "minLength": 1 },
+        "digest": { "type": "string", "pattern": "^$|^sha256:[a-f0-9]{64}$" },
+        "pullPolicy": { "enum": ["Always", "IfNotPresent", "Never"] }
+      }
+    },
+    "relyingParty": {
+      "type": "object",
+      "required": ["id", "origin", "name"],
+      "properties": { "id": { "type": "string" }, "origin": { "type": "string", "format": "uri" }, "name": { "type": "string" } }
+    },
+    "sessions": {
+      "type": "object",
+      "required": ["idleTimeout", "absoluteTimeout"],
+      "properties": { "idleTimeout": { "$ref": "#/definitions/duration" }, "absoluteTimeout": { "$ref": "#/definitions/duration" } }
+    },
+    "events": { "type": "object", "required": ["retention"], "properties": { "retention": { "$ref": "#/definitions/duration" } } },
+    "signingKeys": {
+      "type": "object",
+      "required": ["rotateEvery", "prepublishFor", "overlapFor", "maintenanceInterval"],
+      "properties": {
+        "rotateEvery": { "$ref": "#/definitions/duration" }, "prepublishFor": { "$ref": "#/definitions/duration" },
+        "overlapFor": { "$ref": "#/definitions/duration" }, "maintenanceInterval": { "$ref": "#/definitions/duration" }
+      }
+    },
+    "operators": { "type": "object", "required": ["bootstrapEmails"], "properties": { "bootstrapEmails": { "type": "array", "items": { "type": "string", "format": "email" } } } },
+    "writer": {
+      "type": "object", "required": ["replicaCount", "logFilter", "podAnnotations", "resources"],
+      "properties": { "replicaCount": { "const": 1 }, "logFilter": { "type": "string" }, "podAnnotations": { "type": "object" }, "resources": { "type": "object" } }
+    },
+    "dashboard": {
+      "type": "object", "required": ["replicaCount", "podAnnotations", "resources"],
+      "properties": { "replicaCount": { "type": "integer", "minimum": 1 }, "podAnnotations": { "type": "object" }, "resources": { "type": "object" } }
+    },
+    "sabledb": {
+      "type": "object", "required": ["podAnnotations", "resources", "persistence"],
+      "properties": {
+        "podAnnotations": { "type": "object" }, "resources": { "type": "object" },
+        "persistence": {
+          "type": "object", "required": ["enabled", "storageClass", "accessModes", "size", "retain"],
+          "properties": { "enabled": { "type": "boolean" }, "storageClass": { "type": "string" }, "accessModes": { "type": "array" }, "size": { "type": "string" }, "retain": { "type": "boolean" } }
+        }
+      }
+    },
+    "ingress": {
+      "type": "object", "required": ["enabled", "className", "annotations", "hosts", "tls"],
+      "properties": {
+        "enabled": { "type": "boolean" }, "className": { "type": "string" }, "annotations": { "type": "object" }, "tls": { "type": "array" },
+        "hosts": { "type": "array", "items": { "type": "object", "required": ["host", "paths"], "properties": { "host": { "type": "string" }, "paths": { "type": "array" } } } }
+      }
+    }
+  }
+}
