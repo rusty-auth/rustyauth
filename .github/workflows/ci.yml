@@ -35,6 +35,7 @@ jobs:
           breaking: ${{ github.event_name == 'pull_request' }}
           breaking_against: ${{ github.event.repository.clone_url }}#format=git,branch=${{ github.base_ref }}
           push: false
+          pr_comment: false
 
   site:
     name: Site checks
