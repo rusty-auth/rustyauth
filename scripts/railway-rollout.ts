@@ -44,11 +44,13 @@ export interface RailwayRolloutReceipt {
   previousDigest: string | null;
   deploymentId: string;
   image: string;
+  sourceImage: string;
   digest: string;
   status: "SUCCESS";
   changed: boolean;
   healthUrls: string[];
-  verifiedAt: string;
+  deploymentSucceededAt: string;
+  healthVerifiedAt: string | null;
 }
 
 const UPDATE_SERVICE_MUTATION = `
@@ -96,6 +98,18 @@ export function normalizeDigest(value: string): string {
     fail(`digest must be a sha256 digest, received ${JSON.stringify(value)}`);
   }
   return digest;
+}
+
+export function pinnedImageReference(image: string, digest: string): string {
+  const normalizedDigest = normalizeDigest(digest);
+  const withoutDigest = image.trim().split("@", 1)[0];
+  const lastSlash = withoutDigest.lastIndexOf("/");
+  const lastColon = withoutDigest.lastIndexOf(":");
+  const repository = lastColon > lastSlash ? withoutDigest.slice(0, lastColon) : withoutDigest;
+  if (!repository || !repository.includes("/") || /\s/.test(repository)) {
+    fail(`image must include a registry repository, received ${JSON.stringify(image)}`);
+  }
+  return `${repository}@${normalizedDigest}`;
 }
 
 export function serviceUpdateInput(
@@ -213,11 +227,11 @@ function deploymentListArgs(options: RailwayRolloutOptions): string[] {
   ];
 }
 
-function updateArgs(options: RailwayRolloutOptions): string[] {
+function updateArgs(options: RailwayRolloutOptions, sourceImage: string): string[] {
   const variables = {
     serviceId: options.service,
     environmentId: options.environment,
-    input: serviceUpdateInput(options.profile, options.image),
+    input: serviceUpdateInput(options.profile, sourceImage),
   };
   return [
     "api",
@@ -266,16 +280,17 @@ export async function rolloutRailwayImage(
   healthCheck: (urls: string[]) => Promise<void> = verifyHealth,
 ): Promise<RailwayRolloutReceipt> {
   const digest = normalizeDigest(options.digest);
+  const sourceImage = pinnedImageReference(options.image, digest);
   const baseline = parseDeployments(await runJson(runner, deploymentListArgs(options)));
   const previous = baseline[0];
-  const current = previous && matchingDeployment([previous], options.image, digest);
+  const current = previous && matchingDeployment([previous], sourceImage, digest);
 
   let deployment: RailwayDeployment | undefined;
   let changed = false;
   if (current?.status === "SUCCESS" && deploymentMatchesProfile(current, options.profile)) {
     deployment = current;
   } else {
-    const update = JSON.parse(await runJson(runner, updateArgs(options))) as {
+    const update = JSON.parse(await runJson(runner, updateArgs(options, sourceImage))) as {
       data?: { serviceInstanceUpdate?: boolean };
       errors?: unknown[];
     };
@@ -289,7 +304,7 @@ export async function rolloutRailwayImage(
     let latestObserved = "no deployment";
     while (now().getTime() < deadline) {
       const deployments = parseDeployments(await runJson(runner, deploymentListArgs(options)));
-      const candidate = matchingDeployment(deployments, options.image, digest, baselineIds);
+      const candidate = matchingDeployment(deployments, sourceImage, digest, baselineIds);
       if (!candidate) {
         latestObserved = deployments[0] ? `${deployments[0].id} (${deployments[0].status})` : "no deployment";
         await sleep(options.pollMs);
@@ -315,7 +330,6 @@ export async function rolloutRailwayImage(
   }
 
   if (!deployment) fail("Railway rollout completed without a deployment");
-  await healthCheck(options.healthUrls);
   const receipt: RailwayRolloutReceipt = {
     project: options.project,
     environment: options.environment,
@@ -326,13 +340,20 @@ export async function rolloutRailwayImage(
     previousDigest: previous?.meta?.imageDigest ?? null,
     deploymentId: deployment.id,
     image: options.image,
+    sourceImage,
     digest,
     status: "SUCCESS",
     changed,
     healthUrls: options.healthUrls,
-    verifiedAt: now().toISOString(),
+    deploymentSucceededAt: now().toISOString(),
+    healthVerifiedAt: null,
   };
 
+  if (options.receipt) {
+    await Deno.writeTextFile(options.receipt, `${JSON.stringify(receipt, null, 2)}\n`);
+  }
+  await healthCheck(options.healthUrls);
+  receipt.healthVerifiedAt = now().toISOString();
   if (options.receipt) {
     await Deno.writeTextFile(options.receipt, `${JSON.stringify(receipt, null, 2)}\n`);
   }

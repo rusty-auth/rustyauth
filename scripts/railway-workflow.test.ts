@@ -39,7 +39,8 @@ Deno.test("Railway candidates are immutable, signed and digest-verified", () => 
       "provenance: mode=max",
       "sbom: true",
       "cosign sign --yes",
-      "matchingDeployment(deployments, options.image, digest, baselineIds)",
+      "matchingDeployment(deployments, sourceImage, digest, baselineIds)",
+      "pinnedImageReference(options.image, digest)",
       'candidate.status === "SUCCESS"',
     ]
   ) assertIncludes(workflow + rollout, required);
@@ -60,4 +61,16 @@ Deno.test("Railway rollout is serialized across every stateful boundary", () => 
   for (const required of ["/healthz", "/readyz", "retention-days: 90"]) {
     assertIncludes(workflow, required);
   }
+});
+
+Deno.test("a partial Railway rollout restores services and browser origin in reverse order", () => {
+  assertIncludes(workflow, "name: Restore the previous Railway deployment set");
+  assertOrdered(workflow, [
+    'rollback_service "${RUNNER_TEMP}/railway-receipts/sabledb.json"',
+    'rollback_service "${RUNNER_TEMP}/railway-receipts/dashboard.json"',
+    '"AUTH_ISSUER=${previous_issuer}"',
+    'rollback_service "${RUNNER_TEMP}/railway-receipts/api.json"',
+  ]);
+  assertIncludes(workflow, "railway down");
+  assertIncludes(rollout, "healthVerifiedAt: null");
 });

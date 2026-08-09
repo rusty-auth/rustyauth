@@ -81,8 +81,8 @@ the older result is recorded as skipped rather than being allowed to roll produc
 
 Each merge publishes separate API, dashboard and SableDB images under a full-commit tag. The images include
 SBOM and provenance attestations and are signed by GitHub OIDC. Railway is updated to that exact tag, and the
-rollout accepts success only when Railway reports the expected registry digest in a terminal `SUCCESS`
-deployment. Mutable `latest` tags are never used by this path.
+rollout sends Railway a digest reference rather than a tag and accepts success only when Railway reports that
+digest in a terminal `SUCCESS` deployment. Mutable `latest` tags are never used by this path.
 
 Rollouts are serialized across the state boundaries:
 
@@ -92,6 +92,12 @@ Rollouts are serialized across the state boundaries:
    upstream readiness check.
 3. Private SableDB is replaced without recreating its volume, after which both API and dashboard readiness
    are checked again.
+
+Before the first mutation, the workflow records the active deployment and browser-origin configuration. A
+later deployment or readiness failure restores every completed service in reverse order, restores the prior
+issuer and relying-party values, and retains both forward and rollback receipts. If a newly introduced service
+had no prior deployment, rollback removes only that service's latest deployment; it never deletes the service
+or a datastore volume. A rollback failure keeps the workflow red and requires operator repair.
 
 The GitHub `railway-production` environment owns the workspace-scoped `RAILWAY_API_TOKEN` and non-secret
 target IDs/URLs. The token is restricted to the Railway workspace containing this project; project-scoped

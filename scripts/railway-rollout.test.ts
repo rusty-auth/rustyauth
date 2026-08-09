@@ -3,6 +3,7 @@ import {
   matchingDeployment,
   normalizeDigest,
   parseDeployments,
+  pinnedImageReference,
   RailwayDeployment,
   RailwayRunner,
   rolloutRailwayImage,
@@ -11,6 +12,7 @@ import {
 
 const digest = `sha256:${"a".repeat(64)}`;
 const image = "ghcr.io/rusty-auth/rustyauth:main-0123456789abcdef";
+const sourceImage = `ghcr.io/rusty-auth/rustyauth@${digest}`;
 
 function assert(condition: unknown, message: string): asserts condition {
   if (!condition) throw new Error(message);
@@ -28,7 +30,7 @@ function deployment(id: string, status: string, target = true): RailwayDeploymen
   return {
     id,
     status,
-    meta: target ? { image, imageDigest: digest, serviceManifest: { deploy: policy } } : {
+    meta: target ? { image: sourceImage, imageDigest: digest, serviceManifest: { deploy: policy } } : {
       image: "ghcr.io/rusty-auth/rustyauth:older",
       imageDigest: `sha256:${"b".repeat(64)}`,
     },
@@ -61,10 +63,12 @@ Deno.test("deployment parsing and matching require the exact image and digest", 
     deployment("other", "SUCCESS", false),
     deployment("candidate", "SUCCESS"),
   ]));
-  assertEquals(matchingDeployment(deployments, image, digest)?.id, "candidate");
-  assertEquals(matchingDeployment(deployments, image, digest, new Set(["candidate"])), undefined);
-  assertEquals(matchingDeployment(deployments, image, `sha256:${"c".repeat(64)}`), undefined);
+  assertEquals(matchingDeployment(deployments, sourceImage, digest)?.id, "candidate");
+  assertEquals(matchingDeployment(deployments, sourceImage, digest, new Set(["candidate"])), undefined);
+  assertEquals(matchingDeployment(deployments, sourceImage, `sha256:${"c".repeat(64)}`), undefined);
   assertEquals(normalizeDigest(digest.toUpperCase()), digest);
+  assertEquals(pinnedImageReference(image, digest), sourceImage);
+  assertEquals(pinnedImageReference(`${image}@${digest}`, digest), sourceImage);
   assert(deploymentMatchesProfile(deployments[1], "realm"), "candidate policy did not match");
 });
 
@@ -97,6 +101,7 @@ Deno.test("a historical matching image is not mistaken for the active deployment
     () => Promise.resolve(),
   );
   assertEquals(receipt.deploymentId, "new");
+  assertEquals(receipt.sourceImage, sourceImage);
   assertEquals(mutations, 1);
 });
 
@@ -145,7 +150,55 @@ Deno.test("rollout waits for the exact digest to reach terminal success before h
   assertEquals(receipt.previousDeploymentId, "old");
   assertEquals(healthChecks, 1);
   assert(commands.some((args) => args[0] === "api"), "service update mutation was not invoked");
+  const mutation = commands.find((args) => args[0] === "api");
+  const variablesIndex = mutation?.indexOf("--variables") ?? -1;
+  const variables = JSON.parse(variablesIndex >= 0 ? mutation?.[variablesIndex + 1] ?? "{}" : "{}") as {
+    input?: { source?: { image?: string } };
+  };
+  assertEquals(variables.input?.source?.image, sourceImage);
   assert(commands.filter((args) => args[0] === "deployment").length === 4, "rollout did not poll");
+});
+
+Deno.test("a deployment receipt exists before a failing health check so rollback can restore it", async () => {
+  const receiptPath = await Deno.makeTempFile();
+  const outputs = [
+    JSON.stringify([deployment("old", "SUCCESS", false)]),
+    JSON.stringify({ data: { serviceInstanceUpdate: true } }),
+    JSON.stringify([deployment("new", "SUCCESS"), deployment("old", "SUCCESS", false)]),
+  ];
+  const runner: RailwayRunner = () =>
+    Promise.resolve({ code: 0, stdout: outputs.shift() ?? "[]", stderr: "" });
+  try {
+    let error = "";
+    try {
+      await rolloutRailwayImage(
+        {
+          project: "project",
+          environment: "production",
+          service: "api",
+          profile: "realm",
+          image,
+          digest,
+          healthUrls: ["https://auth.example.test/readyz"],
+          receipt: receiptPath,
+          timeoutMs: 100,
+          pollMs: 1,
+        },
+        runner,
+        () => Promise.resolve(),
+        () => new Date(0),
+        () => Promise.reject(new Error("synthetic health failure")),
+      );
+    } catch (caught) {
+      error = caught instanceof Error ? caught.message : String(caught);
+    }
+    assert(error.includes("synthetic health failure"), `unexpected error: ${error}`);
+    const receipt = JSON.parse(await Deno.readTextFile(receiptPath)) as Record<string, unknown>;
+    assertEquals(receipt.deploymentId, "new");
+    assertEquals(receipt.healthVerifiedAt, null);
+  } finally {
+    await Deno.remove(receiptPath);
+  }
 });
 
 Deno.test("rollout is idempotent when the exact successful digest is already active", async () => {

@@ -246,6 +246,19 @@ jobs:
             --project "${RAILWAY_PROJECT_ID}" \
             --environment "${RAILWAY_ENVIRONMENT_ID}" \
             --service "${RAILWAY_API_SERVICE_ID}" --json >/dev/null
+      - name: Create deployment receipt directory
+        run: mkdir -p "${RUNNER_TEMP}/railway-receipts"
+      - name: Capture the current browser origin configuration
+        run: |
+          railway variable list \
+            --project "${RAILWAY_PROJECT_ID}" \
+            --environment "${RAILWAY_ENVIRONMENT_ID}" \
+            --service "${RAILWAY_API_SERVICE_ID}" --json \
+            | jq '{AUTH_ISSUER, WEBAUTHN_RP_ORIGIN, WEBAUTHN_RP_ID}' \
+              > "${RUNNER_TEMP}/railway-receipts/browser-origin-before.json"
+          jq --exit-status \
+            '.AUTH_ISSUER and .WEBAUTHN_RP_ORIGIN and .WEBAUTHN_RP_ID' \
+            "${RUNNER_TEMP}/railway-receipts/browser-origin-before.json" >/dev/null
       - name: Align the browser issuer and relying-party origin
         run: |
           dashboard_url="${RAILWAY_DASHBOARD_URL%/}"
@@ -262,8 +275,6 @@ jobs:
             "AUTH_ISSUER=${dashboard_url}" \
             "WEBAUTHN_RP_ORIGIN=${dashboard_url}" \
             "WEBAUTHN_RP_ID=${dashboard_host}" >/dev/null
-      - name: Create deployment receipt directory
-        run: mkdir -p "${RUNNER_TEMP}/railway-receipts"
       - name: Deploy realm API
         run: >-
           deno run --allow-env --allow-net --allow-run --allow-write="${RUNNER_TEMP}/railway-receipts"
@@ -303,6 +314,68 @@ jobs:
           --health-url "${RAILWAY_API_URL%/}/readyz"
           --health-url "${RAILWAY_DASHBOARD_URL%/}/readyz"
           --receipt "${RUNNER_TEMP}/railway-receipts/sabledb.json"
+      - name: Restore the previous Railway deployment set
+        if: failure()
+        run: |
+          rollback_failed=0
+          rollback_service() {
+            receipt="$1"
+            [[ -f "${receipt}" ]] || return 0
+            [[ "$(jq -r '.changed' "${receipt}")" == "true" ]] || return 0
+
+            service="$(jq -r '.service' "${receipt}")"
+            profile="$(jq -r '.profile' "${receipt}")"
+            previous_image="$(jq -r '.previousImage // empty' "${receipt}")"
+            previous_digest="$(jq -r '.previousDigest // empty' "${receipt}")"
+            base="$(basename "${receipt}" .json)"
+            if [[ -z "${previous_image}" || -z "${previous_digest}" ]]; then
+              railway down \
+                --project "${RAILWAY_PROJECT_ID}" \
+                --environment "${RAILWAY_ENVIRONMENT_ID}" \
+                --service "${service}" --yes || rollback_failed=1
+              return 0
+            fi
+
+            health_args=()
+            while IFS= read -r url; do
+              health_args+=(--health-url "${url}")
+            done < <(jq -r '.healthUrls[]' "${receipt}")
+            deno run \
+              --allow-env --allow-net --allow-run \
+              --allow-write="${RUNNER_TEMP}/railway-receipts" \
+              scripts/railway-rollout.ts \
+              --project "${RAILWAY_PROJECT_ID}" \
+              --environment "${RAILWAY_ENVIRONMENT_ID}" \
+              --service "${service}" \
+              --profile "${profile}" \
+              --image "${previous_image}" \
+              --digest "${previous_digest}" \
+              "${health_args[@]}" \
+              --receipt "${RUNNER_TEMP}/railway-receipts/rollback-${base}.json" \
+              || rollback_failed=1
+          }
+
+          rollback_service "${RUNNER_TEMP}/railway-receipts/sabledb.json"
+          rollback_service "${RUNNER_TEMP}/railway-receipts/dashboard.json"
+
+          origin_receipt="${RUNNER_TEMP}/railway-receipts/browser-origin-before.json"
+          if [[ -f "${origin_receipt}" ]]; then
+            previous_issuer="$(jq -r '.AUTH_ISSUER' "${origin_receipt}")"
+            previous_origin="$(jq -r '.WEBAUTHN_RP_ORIGIN' "${origin_receipt}")"
+            previous_rp_id="$(jq -r '.WEBAUTHN_RP_ID' "${origin_receipt}")"
+            railway variable set \
+              --project "${RAILWAY_PROJECT_ID}" \
+              --environment "${RAILWAY_ENVIRONMENT_ID}" \
+              --service "${RAILWAY_API_SERVICE_ID}" \
+              --skip-deploys --json \
+              "AUTH_ISSUER=${previous_issuer}" \
+              "WEBAUTHN_RP_ORIGIN=${previous_origin}" \
+              "WEBAUTHN_RP_ID=${previous_rp_id}" >/dev/null \
+              || rollback_failed=1
+          fi
+
+          rollback_service "${RUNNER_TEMP}/railway-receipts/api.json"
+          exit "${rollback_failed}"
       - name: Show bounded deployment logs on failure
         if: failure()
         run: |
