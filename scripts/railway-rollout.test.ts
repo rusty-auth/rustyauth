@@ -1,4 +1,5 @@
 import {
+  configuredServiceImage,
   deploymentMatchesProfile,
   matchingDeployment,
   normalizeDigest,
@@ -37,6 +38,22 @@ function deployment(id: string, status: string, target = true): RailwayDeploymen
   };
 }
 
+function projectStatus(configuredImage = "ghcr.io/rusty-auth/rustyauth@sha256:older"): string {
+  return JSON.stringify({
+    environments: {
+      edges: [{
+        node: {
+          id: "production",
+          name: "production",
+          serviceInstances: {
+            edges: [{ node: { serviceId: "api", serviceName: "api", source: { image: configuredImage } } }],
+          },
+        },
+      }],
+    },
+  });
+}
+
 Deno.test("Railway service profiles preserve the one-writer and readiness policies", () => {
   assertEquals(serviceUpdateInput("realm", image), {
     source: { image },
@@ -70,11 +87,13 @@ Deno.test("deployment parsing and matching require the exact image and digest", 
   assertEquals(pinnedImageReference(image, digest), sourceImage);
   assertEquals(pinnedImageReference(`${image}@${digest}`, digest), sourceImage);
   assert(deploymentMatchesProfile(deployments[1], "realm"), "candidate policy did not match");
+  assertEquals(configuredServiceImage(projectStatus(sourceImage), "production", "api"), sourceImage);
 });
 
 Deno.test("a historical matching image is not mistaken for the active deployment", async () => {
   const outputs = [
     JSON.stringify([deployment("current", "SUCCESS", false), deployment("historical", "SUCCESS")]),
+    projectStatus(),
     JSON.stringify({ data: { serviceInstanceUpdate: true } }),
     JSON.stringify([deployment("new", "SUCCESS"), deployment("current", "SUCCESS", false)]),
   ];
@@ -108,6 +127,7 @@ Deno.test("a historical matching image is not mistaken for the active deployment
 Deno.test("rollout waits for the exact digest to reach terminal success before health checks", async () => {
   const outputs = [
     JSON.stringify([deployment("old", "SUCCESS", false)]),
+    projectStatus(),
     JSON.stringify({ data: { serviceInstanceUpdate: true } }),
     JSON.stringify([deployment("queued", "QUEUED"), deployment("old", "SUCCESS", false)]),
     JSON.stringify([deployment("new", "DEPLOYING"), deployment("old", "SUCCESS", false)]),
@@ -163,6 +183,7 @@ Deno.test("a deployment receipt exists before a failing health check so rollback
   const receiptPath = await Deno.makeTempFile();
   const outputs = [
     JSON.stringify([deployment("old", "SUCCESS", false)]),
+    projectStatus(),
     JSON.stringify({ data: { serviceInstanceUpdate: true } }),
     JSON.stringify([deployment("new", "SUCCESS"), deployment("old", "SUCCESS", false)]),
   ];
@@ -232,10 +253,49 @@ Deno.test("rollout is idempotent when the exact successful digest is already act
   assertEquals(calls, 1);
 });
 
+Deno.test("rollout forces a fresh deployment when the desired source previously failed", async () => {
+  const outputs = [
+    JSON.stringify([deployment("failed", "FAILED")]),
+    projectStatus(sourceImage),
+    JSON.stringify({ id: "requested" }),
+    JSON.stringify([deployment("new", "SUCCESS"), deployment("failed", "FAILED")]),
+  ];
+  const commands: string[][] = [];
+  const runner: RailwayRunner = (args) => {
+    commands.push(args);
+    return Promise.resolve({ code: 0, stdout: outputs.shift() ?? "[]", stderr: "" });
+  };
+  const receipt = await rolloutRailwayImage(
+    {
+      project: "project",
+      environment: "production",
+      service: "api",
+      profile: "realm",
+      image,
+      digest,
+      healthUrls: [],
+      timeoutMs: 100,
+      pollMs: 1,
+    },
+    runner,
+    () => Promise.resolve(),
+    () => new Date(0),
+    () => Promise.resolve(),
+  );
+
+  assertEquals(receipt.deploymentId, "new");
+  assertEquals(receipt.changed, true);
+  assert(!commands.some((args) => args[0] === "api"), "unchanged source should not be updated again");
+  const redeploy = commands.find((args) => args[0] === "redeploy");
+  assert(redeploy?.includes("--from-source"), "failed configured source was not redeployed");
+  assert(redeploy?.includes("--yes"), "redeploy was not non-interactive");
+});
+
 Deno.test("rollout fails closed on a terminal failed deployment", async () => {
   const receiptPath = await Deno.makeTempFile();
   const outputs = [
     JSON.stringify([deployment("old", "SUCCESS", false)]),
+    projectStatus(),
     JSON.stringify({ data: { serviceInstanceUpdate: true } }),
     JSON.stringify([deployment("failed", "FAILED")]),
   ];
