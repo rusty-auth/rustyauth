@@ -71,7 +71,13 @@ Deno.test("Railway rollout is serialized across every stateful boundary", () => 
   assertIncludes(workflow, '"AUTH_TRUSTED_PROXY_HOPS=1"');
   assertIncludes(workflow, '"AUTH_BACKUP_STORAGE_PROFILE=portable"');
   assertIncludes(workflow, '"AUTH_BACKUP_SSE=provider"');
-  assertIncludes(rollout, '"/usr/local/bin/rustyauth backup create"');
+  assertIncludes(workflow, "name: Require a fresh verified recovery point");
+  assertIncludes(workflow, "encrypted backup created and verified");
+  assertOrdered(workflow, [
+    "name: Deploy realm API",
+    "name: Require a fresh verified recovery point",
+    "name: Deploy dashboard",
+  ]);
 });
 
 Deno.test("a partial Railway rollout restores services and browser origin in reverse order", () => {

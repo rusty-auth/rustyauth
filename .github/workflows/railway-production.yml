@@ -311,6 +311,26 @@ jobs:
           --health-url "${RAILWAY_API_URL%/}/healthz"
           --health-url "${RAILWAY_API_URL%/}/readyz"
           --receipt "${RUNNER_TEMP}/railway-receipts/api.json"
+      - name: Require a fresh verified recovery point
+        run: |
+          deployment_id="$(jq -r '.deploymentId' "${RUNNER_TEMP}/railway-receipts/api.json")"
+          for attempt in {1..12}; do
+            logs="$(railway logs "${deployment_id}" \
+              --project "${RAILWAY_PROJECT_ID}" \
+              --environment "${RAILWAY_ENVIRONMENT_ID}" \
+              --service "${RAILWAY_API_SERVICE_ID}" \
+              --lines 200 --json || true)"
+            if jq --slurp --exit-status \
+              'any(.[]; (.message // "") | contains("encrypted backup created and verified"))' \
+              <<<"${logs}" >/dev/null; then
+              exit 0
+            fi
+            if [[ "${attempt}" -lt 12 ]]; then
+              sleep 5
+            fi
+          done
+          echo "::error::candidate did not create and verify a fresh encrypted backup"
+          exit 1
       - name: Deploy dashboard
         run: >-
           deno run --allow-env --allow-net --allow-run --allow-write="${RUNNER_TEMP}/railway-receipts"

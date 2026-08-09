@@ -11,7 +11,7 @@ use tokio::sync::watch;
 use tracing::error;
 
 use crate::{
-    config::KeyRing,
+    config::{BackupStorageProfile, KeyRing},
     store::{Store, now},
 };
 
@@ -30,6 +30,7 @@ pub struct BackupStatus {
     pub rpo_seconds: u64,
     pub retention_days: u64,
     pub storage_profile: String,
+    pub profile_transition_pending: bool,
     pub overdue: bool,
     pub alerting: bool,
 }
@@ -55,6 +56,19 @@ impl BackupStore {
             .map(|value| serde_json::from_str(&value).context("decode persisted backup status"))
             .transpose()?
             .unwrap_or_default();
+        status.profile_transition_pending =
+            storage_profile_transition_pending(&status.storage_profile, self.storage_profile);
+        if status.profile_transition_pending {
+            // A failure under one provider contract says nothing about the new
+            // contract. Keep the transition visible, but let the candidate start
+            // so its immediate scheduler tick can establish the first recovery
+            // point under the selected profile.
+            status.running = false;
+            status.last_attempt_at = None;
+            status.last_success_at = None;
+            status.last_object_key = None;
+            status.consecutive_failures = 0;
+        }
         status.rpo_seconds = self.rpo_seconds;
         status.retention_days = self.retention_days;
         status.storage_profile = self.storage_profile.as_str().to_owned();
@@ -81,6 +95,7 @@ impl BackupStore {
             status.rpo_seconds = self.rpo_seconds;
             status.retention_days = self.retention_days;
             status.storage_profile = self.storage_profile.as_str().to_owned();
+            status.profile_transition_pending = false;
             self.evaluate_health(&mut status);
             self.persist_status(store, &status).await;
         }
@@ -181,5 +196,44 @@ impl BackupStore {
                 }
             }
         }
+    }
+}
+
+fn storage_profile_transition_pending(
+    stored_profile: &str,
+    current_profile: BackupStorageProfile,
+) -> bool {
+    let current_profile = current_profile.as_str();
+    match stored_profile {
+        // Status written before profiles existed represented the immutable
+        // contract. Preserve its failures unless this deployment explicitly
+        // moves to portable storage.
+        "" => current_profile == "portable",
+        stored_profile => stored_profile != current_profile,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn storage_profile_transitions_are_explicit_without_erasing_legacy_strict_failures() {
+        assert!(!storage_profile_transition_pending(
+            "",
+            BackupStorageProfile::Immutable
+        ));
+        assert!(storage_profile_transition_pending(
+            "",
+            BackupStorageProfile::Portable
+        ));
+        assert!(storage_profile_transition_pending(
+            "portable",
+            BackupStorageProfile::Immutable
+        ));
+        assert!(!storage_profile_transition_pending(
+            "portable",
+            BackupStorageProfile::Portable
+        ));
     }
 }

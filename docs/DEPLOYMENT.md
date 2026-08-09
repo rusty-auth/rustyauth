@@ -96,13 +96,13 @@ digest in a terminal `SUCCESS` deployment. Mutable `latest` tags are never used 
 
 Rollouts are serialized across the state boundaries:
 
-1. The realm API creates and verifies a fresh recovery point and then runs the target image's
-   `rustyauth doctor` as Railway pre-deploy commands, then reaches
-   `/healthz` and `/readyz` on the application API origin.
+1. The realm API runs the target image's read-only `rustyauth doctor` pre-deploy command, reaches `/healthz`
+   and `/readyz`, and must then log a fresh encrypted, read-back-verified recovery point from its own
+   single-writer scheduler.
 2. The stateless dashboard deploys and reaches both probes through its public origin, including its private
    upstream readiness check.
-3. Private SableDB is replaced without recreating its volume, after which both API and dashboard readiness
-   are checked again.
+3. Private SableDB is replaced without recreating its volume, after which both API and dashboard readiness are
+   checked again.
 
 Before the first mutation, the workflow records the active deployment and browser-origin configuration. A
 later deployment or readiness failure restores every completed service in reverse order, restores the prior

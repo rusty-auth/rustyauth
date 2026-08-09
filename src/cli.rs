@@ -775,6 +775,7 @@ async fn doctor(
                 "rpoSeconds": status.rpo_seconds,
                 "retentionDays": status.retention_days,
                 "storageProfile": status.storage_profile,
+                "profileTransitionPending": status.profile_transition_pending,
                 "overdue": status.overdue,
                 "alerting": status.alerting,
             })
