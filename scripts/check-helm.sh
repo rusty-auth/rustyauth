@@ -21,15 +21,15 @@ for chart_name in "${charts[@]}"; do
     --namespace rustyauth-smoke \
     --set ingress.enabled=true > "${rendered_path}"
 
-  rg --quiet '^kind: NetworkPolicy$' "${rendered_path}"
-  rg --quiet '^kind: PersistentVolumeClaim$' "${rendered_path}"
-  rg --quiet 'helm.sh/resource-policy: keep' "${rendered_path}"
-  rg --quiet 'readOnlyRootFilesystem: true' "${rendered_path}"
-  rg --quiet 'runAsNonRoot: true' "${rendered_path}"
-  rg --quiet '^kind: Ingress$' "${rendered_path}"
-  rg --quiet "redis://smoke-${chart_name}-sabledb.rustyauth-smoke.svc.cluster.local:6379" "${rendered_path}"
+  grep -Eq -- '^kind: NetworkPolicy$' "${rendered_path}"
+  grep -Eq -- '^kind: PersistentVolumeClaim$' "${rendered_path}"
+  grep -Eq -- 'helm.sh/resource-policy: keep' "${rendered_path}"
+  grep -Eq -- 'readOnlyRootFilesystem: true' "${rendered_path}"
+  grep -Eq -- 'runAsNonRoot: true' "${rendered_path}"
+  grep -Eq -- '^kind: Ingress$' "${rendered_path}"
+  grep -Eq -- "redis://smoke-${chart_name}-sabledb.rustyauth-smoke.svc.cluster.local:6379" "${rendered_path}"
 
-  if rg --quiet '^kind: Secret$' "${rendered_path}"; then
+  if grep -Eq -- '^kind: Secret$' "${rendered_path}"; then
     echo "${chart_name} rendered a Secret with the secure defaults" >&2
     exit 1
   fi
@@ -47,20 +47,20 @@ for chart_name in "${charts[@]}"; do
   fi
   helm template smoke "${chart_path}" --namespace rustyauth-smoke \
     "${secret_args[@]}" > "${secret_rendered_path}"
-  rg --quiet '^kind: Secret$' "${secret_rendered_path}"
-  rg --quiet 'AUTH_MASTER_KEY_HEX:' "${secret_rendered_path}"
-  rg --quiet 'BOOTSTRAP_TOKEN:' "${secret_rendered_path}"
+  grep -Eq -- '^kind: Secret$' "${secret_rendered_path}"
+  grep -Eq -- 'AUTH_MASTER_KEY_HEX:' "${secret_rendered_path}"
+  grep -Eq -- 'BOOTSTRAP_TOKEN:' "${secret_rendered_path}"
 done
 
 for chart_name in rustyauth-integrated rustyauth-realm; do
   rendered_path="${render_dir}/${chart_name}.yaml"
-  rg --quiet 'AUTH_EVENT_RPC_TOKEN:' "${render_dir}/${chart_name}-with-secret.yaml"
-  rg --quiet 'AUTH_IDENTITY_RPC_TOKEN:' "${render_dir}/${chart_name}-with-secret.yaml"
-  rg --quiet 'type: Recreate' "${rendered_path}"
+  grep -Eq -- 'AUTH_EVENT_RPC_TOKEN:' "${render_dir}/${chart_name}-with-secret.yaml"
+  grep -Eq -- 'AUTH_IDENTITY_RPC_TOKEN:' "${render_dir}/${chart_name}-with-secret.yaml"
+  grep -Eq -- 'type: Recreate' "${rendered_path}"
 done
 
-rg --quiet 'type: Recreate' "${render_dir}/rustyauth-fleet.yaml"
-rg --quiet 'app.kubernetes.io/component: control-plane' "${render_dir}/rustyauth-fleet.yaml"
+grep -Eq -- 'type: Recreate' "${render_dir}/rustyauth-fleet.yaml"
+grep -Eq -- 'app.kubernetes.io/component: control-plane' "${render_dir}/rustyauth-fleet.yaml"
 
 if helm template invalid "${repository_root}/charts/rustyauth-integrated" \
   --set api.replicaCount=2 >/dev/null 2>&1; then
