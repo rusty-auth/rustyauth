@@ -17,7 +17,15 @@ fn round_trip<M: Message>(data: &[u8]) {
     if let Ok(decoded) = M::decode_from_slice(data) {
         let encoded = decoded.encode_to_vec();
         let reparsed = M::decode_from_slice(&encoded).expect("an encoded message must decode");
-        assert!(decoded == reparsed, "protobuf round trip changed the message");
+        // Message equality is not a sound round-trip invariant because valid
+        // protobuf doubles may contain NaN, and IEEE NaN is not equal to
+        // itself. The canonical wire representation must instead become
+        // stable after the first successful decode.
+        assert_eq!(
+            encoded,
+            reparsed.encode_to_vec(),
+            "protobuf wire representation did not stabilize"
+        );
     }
 }
 
@@ -29,7 +37,11 @@ fuzz_target!(|data: &[u8]| {
     // Invalid hex continues through the raw decoder and therefore cannot hide a
     // parser state from the fuzzer.
     let textual_selector = payload.starts_with(b"hex:") && selector.is_ascii_digit();
-    let selector = if textual_selector { selector - b'0' } else { selector };
+    let selector = if textual_selector {
+        selector - b'0'
+    } else {
+        selector
+    };
     let decoded = payload
         .strip_prefix(b"hex:")
         .and_then(|value| hex::decode(value).ok());
