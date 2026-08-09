@@ -7,6 +7,13 @@ on:
 permissions:
   contents: read
 
+# A retrigger for the same immutable tag supersedes its older attempt. Different
+# release tags remain isolated so a newer release cannot interrupt publication of
+# another version.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   verify:
     name: Verify tag and tests

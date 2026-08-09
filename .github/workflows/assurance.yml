@@ -15,8 +15,11 @@ permissions:
 # Assurance follows main and is intentionally independent of the release gate.
 # Only the newest main revision needs the expensive qualification pass.
 concurrency:
-  group: assurance-${{ github.ref }}
-  cancel-in-progress: true
+  # Main-triggered assurance shares the main CI group: a new merge therefore
+  # preempts old assurance before it can compete with the latest correctness run.
+  # Scheduled/manual assurance queues behind CI and cannot cancel it.
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'workflow_run' }}
 
 jobs:
   codeql:

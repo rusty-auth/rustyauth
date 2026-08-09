@@ -1,4 +1,5 @@
 const workflow = await Deno.readTextFile(".github/workflows/railway-production.yml");
+const releaseWorkflow = await Deno.readTextFile(".github/workflows/release.yml");
 const rollout = await Deno.readTextFile("scripts/railway-rollout.ts");
 
 function assertIncludes(source: string, required: string): void {
@@ -24,7 +25,7 @@ Deno.test("Railway automatic deployments follow successful current-main CI only"
       "git merge-base --is-ancestor",
       "Skipping stale successful CI result",
       "group: railway-production",
-      "cancel-in-progress: false",
+      "cancel-in-progress: true",
       "RAILWAY_API_TOKEN: ${{ secrets.RAILWAY_API_TOKEN }}",
     ]
   ) assertIncludes(workflow, required);
@@ -65,6 +66,7 @@ Deno.test("Railway rollout is serialized across every stateful boundary", () => 
 
 Deno.test("a partial Railway rollout restores services and browser origin in reverse order", () => {
   assertIncludes(workflow, "name: Restore the previous Railway deployment set");
+  assertIncludes(workflow, "if: failure() || cancelled()");
   assertOrdered(workflow, [
     'rollback_service "${RUNNER_TEMP}/railway-receipts/sabledb.json"',
     'rollback_service "${RUNNER_TEMP}/railway-receipts/dashboard.json"',
@@ -73,4 +75,9 @@ Deno.test("a partial Railway rollout restores services and browser origin in rev
   ]);
   assertIncludes(workflow, "railway down");
   assertIncludes(rollout, "healthVerifiedAt: null");
+});
+
+Deno.test("same-revision release retries cancel without crossing tag boundaries", () => {
+  assertIncludes(releaseWorkflow, "group: release-${{ github.ref }}");
+  assertIncludes(releaseWorkflow, "cancel-in-progress: true");
 });
