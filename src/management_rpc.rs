@@ -1,5 +1,7 @@
 //! Realm-side Fleet management and one-time pairing boundary.
 
+use std::sync::Arc;
+
 use connectrpc::{
     ConnectError, ErrorCode, RequestContext, Response, ServiceRequest, ServiceResult,
 };
@@ -13,6 +15,7 @@ use crate::{
     config::Environment,
     operator_auth::{OperatorAuthorizer, OperatorCapability},
     proto::rustyauth::management::v1::*,
+    rate_limit::{RateLimitClass, RateLimiter},
     store::{RealmFleetGrantRecord, Store, StorePolicyError, now},
 };
 
@@ -27,6 +30,7 @@ pub(crate) struct ManagementRpc {
     realm_id: String,
     issuer: String,
     rp_id: String,
+    rate_limiter: Arc<RateLimiter>,
 }
 
 impl ManagementRpc {
@@ -37,6 +41,7 @@ impl ManagementRpc {
         realm_id: String,
         issuer: String,
         rp_id: String,
+        rate_limiter: Arc<RateLimiter>,
     ) -> Self {
         Self {
             store,
@@ -45,6 +50,7 @@ impl ManagementRpc {
             realm_id,
             issuer,
             rp_id,
+            rate_limiter,
         }
     }
 
@@ -187,6 +193,16 @@ impl RealmManagementService for ManagementRpc {
         _ctx: RequestContext,
         request: ServiceRequest<'_, ExchangePairingCodeRequest>,
     ) -> ServiceResult<PairingGrant> {
+        if !self
+            .rate_limiter
+            .check(RateLimitClass::PairingExchange, "realm-pairing-global")
+            .allowed
+        {
+            return Err(ConnectError::new(
+                ErrorCode::ResourceExhausted,
+                "pairing exchange rate limit exceeded",
+            ));
+        }
         required_uuid(request.request_id, "request_id")?;
         let code = safe_secret(request.code, 16, 256)?;
         let origin = safe_control_plane_origin(request.control_plane_origin, &self.environment)?;

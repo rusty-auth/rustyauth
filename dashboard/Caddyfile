@@ -16,6 +16,7 @@
 		Cross-Origin-Resource-Policy "same-origin"
 		Permissions-Policy "geolocation=(), camera=(), microphone=(), payment=()"
 		Referrer-Policy "no-referrer"
+		Strict-Transport-Security "max-age=63072000; includeSubDomains"
 		X-Content-Type-Options "nosniff"
 		X-Frame-Options "DENY"
 		-Server

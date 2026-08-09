@@ -86,7 +86,8 @@ identity projections.
 - Additional-passkey ceremonies require a recent passkey session and are bound to the exact
   session that created them; initial and additional registration ceremonies are not interchangeable.
 - Private endpoints require both exact origin and a valid durable session.
-- The production session cookie is HttpOnly, Secure, SameSite=Strict and time bounded.
+- The production session cookie uses the `__Host-Http-` prefix and is HttpOnly, Secure, SameSite=Strict,
+  Path-scoped to `/`, domainless and time bounded.
 - `AUTH_ENV` must be set explicitly. It gates Secure cookies, HTTPS origin validation and
   identity-verification enforcement, so no default can be safe in both directions.
 - A master or backup encryption key whose 32 bytes are all identical is rejected as a placeholder.
@@ -103,6 +104,8 @@ identity projections.
 - The bootstrap token is compared in constant time over fixed-width digests.
 - Every response carries CSP, frame denial, cross-origin isolation, a restrictive permissions policy
   and, in production, HSTS.
+- Authentication, identity and Fleet responses default to `Cache-Control: no-store`; explicitly public
+  artifacts such as JWKS may supply their own bounded cache policy.
 - Request duration, request body size and shutdown grace are all bounded.
 - `Authorization`, `Cookie`, `x-bootstrap-token` and `Set-Cookie` are marked sensitive before the
   tracing layer observes them.
@@ -119,6 +122,10 @@ identity projections.
 - Restore accepts only an empty target and invalidates durable sessions by default. An incomplete
   restore marker prevents the service from starting.
 - SableDB is private and volume-backed.
+- Supplied containers run without root, writable root filesystems, ambient Linux capabilities or privilege
+  escalation.
+- Production Fleet management endpoints reject literal private, local and metadata targets; production
+  infrastructure must additionally deny those destinations at egress to close DNS-rebinding paths.
 - Missing state or invalid configuration fails closed.
 - Logs and events must never contain bearer or credential payloads.
 
@@ -142,6 +149,10 @@ These are explicit reasons RustyAuth is pre-release:
   use separate static bearer credentials rather than workload identity or mTLS.
 - Stored keys are one configured tenant per instance rather than tenant-prefixed.
 - Compound-mutation coordination is process-local; multiple writer replicas are unqualified.
+- Fleet rate limits are process-local, so horizontally scaled control planes do not yet share one budget.
+- Fleet management endpoint validation cannot by itself prevent DNS rebinding. Production must enforce the
+  same private, link-local and metadata denial at the network egress boundary.
+- Sensitive Fleet mutations do not yet have a dedicated recent-passkey step-up and human-reason flow.
 - Protocol fuzzing and an independent assessment are not complete. Dependency auditing is automated
   for the two ecosystems that carry code: `cargo-deny` gates the Rust service on every push and every
   tagged release, over advisories, licences, bans and sources, with an enforced expiry date on each

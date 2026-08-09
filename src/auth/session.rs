@@ -14,7 +14,8 @@ use super::{
     guard::{authenticated, require_origin},
 };
 
-const SESSION_COOKIE: &str = "passkey_auth_session";
+const DEVELOPMENT_SESSION_COOKIE: &str = "passkey_auth_session";
+const PRODUCTION_SESSION_COOKIE: &str = "__Host-Http-rustyauth_session";
 
 pub(super) async fn token(
     State(state): State<AppState>,
@@ -29,7 +30,7 @@ pub(super) async fn sign_out(
     headers: HeaderMap,
 ) -> Result<Response, ApiError> {
     require_origin(&state, &headers)?;
-    if let Some(token) = session_cookie(&headers) {
+    if let Some(token) = session_cookie(&headers, state.secure_cookie) {
         state
             .store
             .delete_session(token)
@@ -59,14 +60,23 @@ pub(super) fn token_response(
     Ok((status, [(header::SET_COOKIE, cookie)], Json(body)).into_response())
 }
 
-pub(super) fn session_cookie(headers: &HeaderMap) -> Option<&str> {
+pub(super) fn session_cookie(headers: &HeaderMap, secure: bool) -> Option<&str> {
+    let name = session_cookie_name(secure);
     headers
         .get(header::COOKIE)?
         .to_str()
         .ok()?
         .split(';')
         .map(str::trim)
-        .find_map(|part| part.strip_prefix(&format!("{SESSION_COOKIE}=")))
+        .find_map(|part| part.strip_prefix(&format!("{name}=")))
+}
+
+pub(crate) const fn session_cookie_name(secure: bool) -> &'static str {
+    if secure {
+        PRODUCTION_SESSION_COOKIE
+    } else {
+        DEVELOPMENT_SESSION_COOKIE
+    }
 }
 
 fn set_cookie(state: &AppState, token: &str) -> HeaderValue {
@@ -78,9 +88,10 @@ pub(super) fn set_cookie_with_lifetime(
     token: &str,
     lifetime_seconds: u64,
 ) -> HeaderValue {
-    let secure = if secure { "; Secure" } else { "" };
+    let name = session_cookie_name(secure);
+    let secure_attribute = if secure { "; Secure" } else { "" };
     HeaderValue::from_str(&format!(
-        "{SESSION_COOKIE}={token}; Path=/; HttpOnly; SameSite=Strict; Max-Age={lifetime_seconds}{secure}"
+        "{name}={token}; Path=/; HttpOnly; SameSite=Strict; Max-Age={lifetime_seconds}{secure_attribute}"
     ))
     .expect("session cookie contains only validated characters")
 }
@@ -97,7 +108,7 @@ mod tests {
     fn session_cookies_are_http_only_same_site_strict_and_secure_in_production() {
         let production = set_cookie_with_lifetime(true, "token-value", 900);
         let production = production.to_str().unwrap();
-        assert!(production.starts_with("passkey_auth_session=token-value;"));
+        assert!(production.starts_with("__Host-Http-rustyauth_session=token-value;"));
         assert!(production.contains("; HttpOnly"));
         // SameSite=Strict is the CSRF control for every cookie-authenticated route.
         assert!(production.contains("; SameSite=Strict"));
@@ -108,6 +119,8 @@ mod tests {
         // Development serves over plain HTTP on loopback, where Secure would stop
         // the browser storing the cookie at all.
         let development = set_cookie_with_lifetime(false, "token-value", 900);
-        assert!(!development.to_str().unwrap().contains("Secure"));
+        let development = development.to_str().unwrap();
+        assert!(development.starts_with("passkey_auth_session=token-value;"));
+        assert!(!development.contains("Secure"));
     }
 }

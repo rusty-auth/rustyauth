@@ -38,6 +38,8 @@ use self::{
     session::{sign_out, token},
 };
 
+pub(crate) use self::session::session_cookie_name;
+
 const CEREMONY_SECONDS: u64 = 300;
 
 pub fn routes() -> Router<AppState> {

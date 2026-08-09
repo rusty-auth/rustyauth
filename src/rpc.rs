@@ -380,6 +380,7 @@ pub fn service(config: RpcServiceConfig<'_>) -> RpcService {
         store.clone(),
         rp_origin.to_owned(),
         session_idle_seconds,
+        environment == Environment::Production,
         operator_emails,
     );
     let router = match deployment_role {
@@ -393,6 +394,7 @@ pub fn service(config: RpcServiceConfig<'_>) -> RpcService {
                 control_plane_instance_id.clone(),
                 issuer,
                 rp_id,
+                Arc::clone(&rate_limiter),
             )))
             .add_service(Arc::new(OrganizationRpc::new(
                 store.clone(),

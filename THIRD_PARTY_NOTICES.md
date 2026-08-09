@@ -49,12 +49,12 @@ of RustyAuth's own source files.
 ## Other Rust dependencies
 
 RustyAuth's locked dependency graph includes Apache-2.0, MIT, BSD, ISC,
-Unicode-3.0, Zlib, BSL-1.0, CC0, 0BSD and compatible multi-licence expressions.
+Unicode-3.0, Zlib, BSL-1.0, CDLA-Permissive-2.0, CC0, 0BSD and compatible multi-licence expressions.
 Exact package versions, selected licence expressions, upstream links and full
 texts are recorded in `Cargo.lock` and `THIRD_PARTY_LICENSES.html`.
 
 Regenerate the inventory after any dependency change:
 
 ```sh
-cargo about generate about.hbs > THIRD_PARTY_LICENSES.html
+cargo about generate --locked --output-file THIRD_PARTY_LICENSES.html about.hbs
 ```

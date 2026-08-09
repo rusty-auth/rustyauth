@@ -24,6 +24,8 @@ pub enum RateLimitClass {
     IdentifierProbe,
     /// The unauthenticated service-account token exchange.
     CredentialExchange,
+    /// One-time Fleet pairing-code exchange at a realm boundary.
+    PairingExchange,
 }
 
 impl RateLimitClass {
@@ -35,6 +37,7 @@ impl RateLimitClass {
             Self::Ceremony => 30,
             Self::IdentifierProbe => 10,
             Self::CredentialExchange => 60,
+            Self::PairingExchange => 60,
         }
     }
 

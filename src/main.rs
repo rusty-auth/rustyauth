@@ -327,6 +327,13 @@ fn apply_transport_policy(
             header::X_CONTENT_TYPE_OPTIONS,
             HeaderValue::from_static("nosniff"),
         ))
+        // Authentication, identity and Fleet responses can carry bearer or
+        // operator-visible state. Public artifacts such as JWKS set their own
+        // explicit cache policy, which `if_not_present` preserves.
+        .layer(SetResponseHeaderLayer::if_not_present(
+            header::CACHE_CONTROL,
+            HeaderValue::from_static("no-store"),
+        ))
         .layer(SetResponseHeaderLayer::if_not_present(
             header::REFERRER_POLICY,
             HeaderValue::from_static("no-referrer"),
@@ -517,6 +524,7 @@ mod tests {
             let headers = response.headers();
             for name in [
                 header::X_CONTENT_TYPE_OPTIONS,
+                header::CACHE_CONTROL,
                 header::CONTENT_SECURITY_POLICY,
                 header::X_FRAME_OPTIONS,
                 header::REFERRER_POLICY,

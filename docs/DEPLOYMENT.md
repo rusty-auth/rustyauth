@@ -195,6 +195,19 @@ API image contains a JavaScript dashboard runtime.
 
 The SableDB image runs as non-root UID/GID `10002` and stores data under `/var/lib/sabledb`.
 
+The supplied Compose files additionally make every service root filesystem read-only, mount a bounded
+`noexec` temporary filesystem, drop all Linux capabilities, enable `no-new-privileges` and cap the process
+count. Preserve equivalent controls in Railway or any other production platform. They are runtime policy,
+not image properties, so publishing the same image does not automatically apply them.
+
+Fleet realm-management URLs are outbound request targets. Production validation rejects literal private,
+loopback, link-local, metadata and local-name endpoints, but DNS can change after validation. Enforce an
+egress allowlist or proxy at the infrastructure boundary and deny cloud metadata and private address ranges
+there. Do not rely on URL parsing alone as an SSRF control.
+
+See [Security hardening and qualification](SECURITY_HARDENING.md) for the release verification matrix and
+remaining production gates.
+
 ## TLS and proxying
 
 RustyAuth expects the deployment platform to terminate TLS. `AUTH_ISSUER` and `WEBAUTHN_RP_ORIGIN` must
@@ -217,6 +230,7 @@ header is absent, so a proxy that already sets one wins:
 | `Cross-Origin-Resource-Policy` | `same-origin`                                                                                                                                                                                                        | Always          |
 | `Permissions-Policy`           | `geolocation=(), camera=(), microphone=(), payment=()`                                                                                                                                                               | Always          |
 | `X-Content-Type-Options`       | `nosniff`                                                                                                                                                                                                            | Always          |
+| `Cache-Control`                | `no-store` unless a public artifact such as JWKS sets a narrower explicit policy                                                                                                                                     | Default         |
 | `Referrer-Policy`              | `no-referrer`                                                                                                                                                                                                        | Always          |
 | `Strict-Transport-Security`    | `max-age=63072000; includeSubDomains; preload`                                                                                                                                                                       | Production only |
 

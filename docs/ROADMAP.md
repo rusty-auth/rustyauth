@@ -168,8 +168,14 @@ authorization semantics.
 
 **State:** in progress; CI publishing and local templates implemented, production qualification pending
 
+- Harden supplied containers with non-root users, read-only roots, dropped capabilities, no-new-privileges,
+  bounded process counts and private database networking.
+- Keep the locked Rust graph free of known advisories and publish release-image SBOM and provenance
+  attestations.
 - Publish pinned `ghcr.io/rusty-auth/rustyauth` and `ghcr.io/rusty-auth/sabledb` images with provenance, SBOMs
   and signatures.
+- Enforce production Fleet endpoint and network egress policy against private, link-local and instance
+  metadata destinations; qualify redirects and DNS rebinding defenses.
 - Add Railway standalone and Fleet templates with private SableDB networking and no public database domain.
 - Add protocol conformance, end-to-end, recovery, version-skew, connector-failure and upgrade tests.
 - Add SLOs, metrics, traces, security alerts, backup/restore drills and incident runbooks.

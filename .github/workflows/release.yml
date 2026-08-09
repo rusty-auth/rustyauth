@@ -78,6 +78,8 @@ jobs:
           context: .
           push: true
           platforms: linux/amd64
+          provenance: mode=max
+          sbom: true
           tags: |
             ghcr.io/${{ github.repository }}:${{ github.ref_name }}
             ghcr.io/${{ github.repository }}:latest
@@ -107,6 +109,8 @@ jobs:
           file: Dockerfile.dashboard
           push: true
           platforms: linux/amd64
+          provenance: mode=max
+          sbom: true
           tags: |
             ghcr.io/rusty-auth/dashboard:${{ github.ref_name }}
             ghcr.io/rusty-auth/dashboard:latest
@@ -135,6 +139,8 @@ jobs:
           context: ./sabledb
           push: true
           platforms: linux/amd64
+          provenance: mode=max
+          sbom: true
           tags: |
             ghcr.io/rusty-auth/sabledb:${{ github.ref_name }}
             ghcr.io/rusty-auth/sabledb:latest

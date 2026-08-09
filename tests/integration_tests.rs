@@ -31,6 +31,8 @@ use rustyauth::{
     },
 };
 
+const PRODUCTION_SESSION_COOKIE: &str = "__Host-Http-rustyauth_session";
+
 #[tokio::test]
 #[ignore = "requires the compose.integration.yaml services"]
 async fn clean_room_backup_restore_and_rotation() -> Result<()> {
@@ -496,7 +498,10 @@ async fn request(
     if let Some(origin) = origin {
         builder = builder.header(header::ORIGIN, origin);
     }
-    builder = builder.header(header::COOKIE, format!("passkey_auth_session={token}"));
+    builder = builder.header(
+        header::COOKIE,
+        format!("{PRODUCTION_SESSION_COOKIE}={token}"),
+    );
     let body = if let Some(value) = body {
         builder = builder.header(header::CONTENT_TYPE, "application/json");
         Body::from(serde_json::to_vec(&value)?)

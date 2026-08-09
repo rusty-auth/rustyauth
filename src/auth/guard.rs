@@ -114,8 +114,8 @@ pub(super) async fn authenticated<'a>(
     headers: &'a HeaderMap,
 ) -> Result<(&'a str, crate::store::Session, crate::store::User), ApiError> {
     require_origin(state, headers)?;
-    let raw =
-        session_cookie(headers).ok_or_else(|| ApiError::unauthorized("authentication required"))?;
+    let raw = session_cookie(headers, state.secure_cookie)
+        .ok_or_else(|| ApiError::unauthorized("authentication required"))?;
     let (session, user) = state
         .store
         .session(raw, state.session_idle_seconds)

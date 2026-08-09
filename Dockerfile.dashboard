@@ -22,6 +22,10 @@ LABEL org.opencontainers.image.title="RustyAuth Dashboard" \
       org.opencontainers.image.description="Stateless Dioxus web dashboard and bounded same-origin gateway" \
       org.opencontainers.image.source="https://github.com/rusty-auth/rustyauth" \
       org.opencontainers.image.licenses="Apache-2.0"
+RUN setcap -r /usr/bin/caddy \
+  && addgroup -S -g 10001 rustyauth-dashboard \
+  && adduser -S -D -H -u 10001 -G rustyauth-dashboard rustyauth-dashboard
 COPY dashboard/Caddyfile /etc/caddy/Caddyfile
-COPY --from=build /src/console/target/dx/rustyauth-console/release/web/public /srv
+COPY --chown=10001:10001 --from=build /src/console/target/dx/rustyauth-console/release/web/public /srv
+USER 10001:10001
 EXPOSE 8080

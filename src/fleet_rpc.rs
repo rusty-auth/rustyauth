@@ -4,7 +4,7 @@
 //! durable organization/project/environment hierarchy, central audit history,
 //! scoped delegated roles, and origin-bound realm pairing.
 
-use std::{sync::Arc, time::Duration};
+use std::{net::IpAddr, sync::Arc, time::Duration};
 
 use aes_gcm::{
     AeadCore, Aes256Gcm, KeyInit,
@@ -739,7 +739,7 @@ impl FleetService for FleetRpc {
             .await
             .map_err(management_error)?
             .into_owned();
-        let grant = client
+        let mut grant = client
             .exchange_pairing_code_with_options(
                 ExchangePairingCodeRequest {
                     code: pairing_code.expose_secret().to_owned(),
@@ -760,7 +760,9 @@ impl FleetService for FleetRpc {
             ));
         }
         let id = required_uuid(&grant.connection_id, "pairing connection_id")?;
-        let credential = SecretString::from(grant.credential.clone());
+        // Move the plaintext into a zeroizing wrapper instead of retaining a second
+        // allocation until the complete pairing response is dropped.
+        let credential = SecretString::from(std::mem::take(&mut grant.credential));
         let encrypted = seal_fleet_credential(&self.credential_keys, id, &credential)?;
         let record = FleetConnectionRecord {
             id,
@@ -1282,6 +1284,9 @@ fn safe_management_endpoint(
     let host = endpoint
         .host_str()
         .ok_or_else(|| invalid("management endpoint has no host"))?;
+    if environment == &RuntimeEnvironment::Production && !public_management_host(host) {
+        return Err(invalid("management endpoint must use a public host"));
+    }
     match endpoint.scheme() {
         "https" => {}
         "http"
@@ -1297,6 +1302,69 @@ fn safe_management_endpoint(
         _ => return Err(invalid("management endpoint must use HTTPS")),
     }
     Ok(endpoint)
+}
+
+/// Rejects endpoints that can address the control plane itself, a private
+/// service, or cloud instance metadata. Public-endpoint mode is deliberately
+/// internet-routable; private realms use the outbound connector instead.
+///
+/// This is a validation boundary, not the only SSRF control. Production
+/// deployments must also deny private/link-local egress at the network layer so
+/// a permitted DNS name cannot later be rebound to an internal address.
+fn public_management_host(host: &str) -> bool {
+    if let Ok(address) = host.parse::<IpAddr>() {
+        return match address {
+            IpAddr::V4(address) => {
+                let octets = address.octets();
+                !(address.is_unspecified()
+                    || address.is_private()
+                    || address.is_loopback()
+                    || address.is_link_local()
+                    || address.is_broadcast()
+                    || address.is_multicast()
+                    || octets[0] == 0
+                    || (octets[0] == 100 && (64..=127).contains(&octets[1]))
+                    || (octets[0] == 192 && octets[1] == 0 && octets[2] == 0)
+                    || (octets[0] == 192 && octets[1] == 0 && octets[2] == 2)
+                    || (octets[0] == 198 && matches!(octets[1], 18 | 19))
+                    || (octets[0] == 198 && octets[1] == 51 && octets[2] == 100)
+                    || (octets[0] == 203 && octets[1] == 0 && octets[2] == 113)
+                    || octets[0] >= 240)
+            }
+            IpAddr::V6(address) => {
+                if let Some(mapped) = address.to_ipv4_mapped() {
+                    return public_management_host(&mapped.to_string());
+                }
+                let octets = address.octets();
+                let blocked = address.is_unspecified()
+                    || address.is_loopback()
+                    || address.is_multicast()
+                    || octets[0] & 0xfe == 0xfc
+                    || (octets[0] == 0xfe && octets[1] & 0xc0 == 0x80)
+                    || (octets[0] == 0x20
+                        && octets[1] == 0x01
+                        && octets[2] == 0x0d
+                        && octets[3] == 0xb8);
+                !blocked && octets[0] & 0xe0 == 0x20
+            }
+        };
+    }
+
+    let host = host.trim_end_matches('.').to_ascii_lowercase();
+    host.contains('.')
+        && !matches!(
+            host.as_str(),
+            "localhost" | "metadata.google.internal" | "metadata.amazonaws.com"
+        )
+        && ![
+            ".localhost",
+            ".local",
+            ".internal",
+            ".home.arpa",
+            ".invalid",
+        ]
+        .iter()
+        .any(|suffix| host.ends_with(suffix))
 }
 
 fn safe_secret(
@@ -1670,5 +1738,37 @@ mod tests {
             )
             .is_err()
         );
+    }
+
+    #[test]
+    fn production_management_endpoints_cannot_target_private_or_metadata_networks() {
+        assert!(
+            safe_management_endpoint(
+                "https://auth.customer.example",
+                &RuntimeEnvironment::Production,
+            )
+            .is_ok()
+        );
+        assert!(
+            safe_management_endpoint("https://1.1.1.1", &RuntimeEnvironment::Production).is_ok()
+        );
+        for endpoint in [
+            "https://127.0.0.1",
+            "https://10.0.0.1",
+            "https://100.64.0.1",
+            "https://169.254.169.254",
+            "https://192.168.1.1",
+            "https://[::1]",
+            "https://[fd00::1]",
+            "https://[fe80::1]",
+            "https://metadata.google.internal",
+            "https://realm.railway.internal",
+            "https://realm",
+        ] {
+            assert!(
+                safe_management_endpoint(endpoint, &RuntimeEnvironment::Production).is_err(),
+                "{endpoint} must not pass the public-endpoint SSRF boundary"
+            );
+        }
     }
 }

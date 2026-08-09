@@ -344,6 +344,7 @@ never committed or stored in plain Pulumi configuration.
 | [Releasing](RELEASING.md)                                                                         | Tagged releases, container image, JSR and BSR publishing                                                  |
 | [Configuration](docs/CONFIGURATION.md)                                                            | Every environment variable and validation rule                                                            |
 | [Deployment](docs/DEPLOYMENT.md)                                                                  | Docker, Railway, persistence and operations                                                               |
+| [Security hardening](docs/SECURITY_HARDENING.md)                                                  | Container, supply-chain and qualification controls plus remaining production gates                        |
 | [Security policy](SECURITY.md)                                                                    | Reporting, threat model and known limitations                                                             |
 | [Contributing](CONTRIBUTING.md)                                                                   | Build, review and pull-request expectations                                                               |
 | [Code of conduct](CODE_OF_CONDUCT.md)                                                             | Community expectations and enforcement                                                                    |

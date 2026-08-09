@@ -11,8 +11,6 @@ use crate::store::{
     Store, User,
 };
 
-const SESSION_COOKIE: &str = "passkey_auth_session";
-
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum OperatorCapability {
     Read,
@@ -31,6 +29,7 @@ pub(crate) struct OperatorAuthorizer {
     store: Store,
     origin: String,
     session_idle_seconds: u64,
+    secure_cookie: bool,
     bootstrap_emails: Arc<HashSet<String>>,
 }
 
@@ -39,12 +38,14 @@ impl OperatorAuthorizer {
         store: Store,
         origin: String,
         session_idle_seconds: u64,
+        secure_cookie: bool,
         bootstrap_emails: Vec<String>,
     ) -> Self {
         Self {
             store,
             origin: origin.trim_end_matches('/').to_owned(),
             session_idle_seconds,
+            secure_cookie,
             bootstrap_emails: Arc::new(bootstrap_emails.into_iter().collect()),
         }
     }
@@ -96,7 +97,7 @@ impl OperatorAuthorizer {
         if origin != Some(self.origin.as_str()) {
             return Err(permission_denied("request origin is not allowed"));
         }
-        let raw = session_cookie(headers)
+        let raw = session_cookie(headers, self.secure_cookie)
             .ok_or_else(|| unauthenticated("passkey operator session required"))?;
         let (session, user) = self
             .store
@@ -173,14 +174,15 @@ fn fleet_allows(role: FleetRoleRecord, capability: OperatorCapability) -> bool {
     }
 }
 
-fn session_cookie(headers: &HeaderMap) -> Option<&str> {
+fn session_cookie(headers: &HeaderMap, secure: bool) -> Option<&str> {
+    let name = crate::auth::session_cookie_name(secure);
     headers
         .get(header::COOKIE)?
         .to_str()
         .ok()?
         .split(';')
         .map(str::trim)
-        .find_map(|part| part.strip_prefix(&format!("{SESSION_COOKIE}=")))
+        .find_map(|part| part.strip_prefix(&format!("{name}=")))
 }
 
 fn unauthenticated(message: &'static str) -> ConnectError {
@@ -416,6 +418,15 @@ mod tests {
                 .parse()
                 .unwrap(),
         );
-        assert_eq!(session_cookie(&headers), Some("correct"));
+        assert_eq!(session_cookie(&headers, false), Some("correct"));
+
+        let mut production = HeaderMap::new();
+        production.insert(
+            header::COOKIE,
+            "passkey_auth_session=shadow; __Host-Http-rustyauth_session=secure"
+                .parse()
+                .unwrap(),
+        );
+        assert_eq!(session_cookie(&production, true), Some("secure"));
     }
 }
