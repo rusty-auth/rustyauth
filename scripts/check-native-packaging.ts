@@ -23,6 +23,9 @@ const requiredWorkflow = [
   "preview-unsigned",
   "if-no-files-found: error",
   "retention-days: 7",
+  "push:",
+  "branches: [main]",
+  "schedule:",
 ];
 const missingWorkflow = requiredWorkflow.filter((value) => !workflow.includes(value));
 
@@ -46,11 +49,11 @@ if (config.includes("signing_identity") || config.includes("certificate_thumbpri
   Deno.exit(1);
 }
 
-if (workflow.includes("push:") || workflow.includes('tags: ["v*"]')) {
+if (workflow.includes('tags: ["v*"]')) {
   console.error("Unsigned native preview packages must not run on or block GA release tags");
   Deno.exit(1);
 }
 
 console.log(
-  "Native preview policy covers ephemeral unsigned macOS, Windows, and Linux packages without coupling them to GA tags.",
+  "Native preview policy covers asynchronous main/scheduled unsigned macOS, Windows, and Linux packages without coupling them to GA tags.",
 );
