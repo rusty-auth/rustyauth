@@ -1,6 +1,7 @@
 import {
   configuredServiceImage,
   deploymentMatchesProfile,
+  imageReferenceDigest,
   matchingDeployment,
   normalizeDigest,
   parseDeployments,
@@ -36,6 +37,12 @@ function deployment(id: string, status: string, target = true): RailwayDeploymen
       imageDigest: `sha256:${"b".repeat(64)}`,
     },
   };
+}
+
+function pinnedDeploymentWithoutSeparateDigest(id: string, status: string): RailwayDeployment {
+  const candidate = deployment(id, status);
+  if (candidate.meta) delete candidate.meta.imageDigest;
+  return candidate;
 }
 
 function projectStatus(configuredImage = "ghcr.io/rusty-auth/rustyauth@sha256:older"): string {
@@ -86,6 +93,12 @@ Deno.test("deployment parsing and matching require the exact image and digest", 
   assertEquals(normalizeDigest(digest.toUpperCase()), digest);
   assertEquals(pinnedImageReference(image, digest), sourceImage);
   assertEquals(pinnedImageReference(`${image}@${digest}`, digest), sourceImage);
+  assertEquals(imageReferenceDigest(sourceImage), digest);
+  assertEquals(imageReferenceDigest(image), null);
+  assertEquals(
+    matchingDeployment([pinnedDeploymentWithoutSeparateDigest("pinned", "SUCCESS")], sourceImage, digest)?.id,
+    "pinned",
+  );
   assert(deploymentMatchesProfile(deployments[1], "realm"), "candidate policy did not match");
   assertEquals(configuredServiceImage(projectStatus(sourceImage), "production", "api"), sourceImage);
 });
@@ -95,6 +108,7 @@ Deno.test("a historical matching image is not mistaken for the active deployment
     JSON.stringify([deployment("current", "SUCCESS", false), deployment("historical", "SUCCESS")]),
     projectStatus(),
     JSON.stringify({ data: { serviceInstanceUpdate: true } }),
+    JSON.stringify({ id: "requested" }),
     JSON.stringify([deployment("new", "SUCCESS"), deployment("current", "SUCCESS", false)]),
   ];
   let mutations = 0;
@@ -129,6 +143,7 @@ Deno.test("rollout waits for the exact digest to reach terminal success before h
     JSON.stringify([deployment("old", "SUCCESS", false)]),
     projectStatus(),
     JSON.stringify({ data: { serviceInstanceUpdate: true } }),
+    JSON.stringify({ id: "requested" }),
     JSON.stringify([deployment("queued", "QUEUED"), deployment("old", "SUCCESS", false)]),
     JSON.stringify([deployment("new", "DEPLOYING"), deployment("old", "SUCCESS", false)]),
     JSON.stringify([deployment("new", "SUCCESS"), deployment("old", "SUCCESS", false)]),
@@ -170,6 +185,7 @@ Deno.test("rollout waits for the exact digest to reach terminal success before h
   assertEquals(receipt.previousDeploymentId, "old");
   assertEquals(healthChecks, 1);
   assert(commands.some((args) => args[0] === "api"), "service update mutation was not invoked");
+  assert(commands.some((args) => args[0] === "redeploy"), "updated source was not explicitly deployed");
   const mutation = commands.find((args) => args[0] === "api");
   const variablesIndex = mutation?.indexOf("--variables") ?? -1;
   const variables = JSON.parse(variablesIndex >= 0 ? mutation?.[variablesIndex + 1] ?? "{}" : "{}") as {
@@ -185,6 +201,7 @@ Deno.test("a deployment receipt exists before a failing health check so rollback
     JSON.stringify([deployment("old", "SUCCESS", false)]),
     projectStatus(),
     JSON.stringify({ data: { serviceInstanceUpdate: true } }),
+    JSON.stringify({ id: "requested" }),
     JSON.stringify([deployment("new", "SUCCESS"), deployment("old", "SUCCESS", false)]),
   ];
   const runner: RailwayRunner = () =>
@@ -297,6 +314,7 @@ Deno.test("rollout fails closed on a terminal failed deployment", async () => {
     JSON.stringify([deployment("old", "SUCCESS", false)]),
     projectStatus(),
     JSON.stringify({ data: { serviceInstanceUpdate: true } }),
+    JSON.stringify({ id: "requested" }),
     JSON.stringify([deployment("failed", "FAILED")]),
   ];
   const runner: RailwayRunner = () =>
