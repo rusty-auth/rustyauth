@@ -24,11 +24,11 @@ jobs:
       # Override rust-toolchain.toml for cargo-fuzz and every Cargo/rustc child it starts.
       RUSTUP_TOOLCHAIN: nightly-2026-08-01
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: dtolnay/rust-toolchain@75be91dd2711b583df57c31d0873b4145c89f1d9
         with:
           toolchain: nightly-2026-08-01
-      - uses: Swatinem/rust-cache@49a0bdc70d2e1b713ca9e2869b211fcce03d3c1c # v2
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
         with:
           workspaces: fuzz
       - run: cargo install cargo-fuzz --version 0.13.2 --locked
