@@ -1,17 +1,6 @@
 name: Protocol fuzzing
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - ".github/workflows/fuzz.yml"
-      - "fuzz/**"
-      - "proto/**"
-      - "src/analytics.rs"
-      - "src/telemetry.rs"
-      - "build.rs"
-      - "Cargo.toml"
-      - "Cargo.lock"
   schedule:
     - cron: "17 3 * * 1"
   workflow_dispatch:

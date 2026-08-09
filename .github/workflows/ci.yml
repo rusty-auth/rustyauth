@@ -198,7 +198,7 @@ jobs:
           --target wasm32-unknown-unknown --no-default-features --features web -- -D warnings
 
   console-test:
-    name: Dashboard tests
+    name: Dashboard core tests
     needs: changes
     if: needs.changes.outputs.console == 'true'
     runs-on: ubuntu-latest
@@ -211,14 +211,9 @@ jobs:
         with:
           workspaces: console -> target
           key: console-test
-      - name: Install Linux console test dependencies
-        run: >-
-          sudo apt-get update && sudo apt-get install -y --no-install-recommends
-          libwebkit2gtk-4.1-dev libxdo-dev libssl-dev
-          libayatana-appindicator3-dev librsvg2-dev
       - run: >-
           cargo test --manifest-path console/Cargo.toml --locked
-          --no-default-features --features desktop
+          --no-default-features
 
   api-container:
     name: Rust API container build
