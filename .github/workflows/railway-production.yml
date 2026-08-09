@@ -295,6 +295,7 @@ jobs:
             "AUTH_TRUSTED_PROXY_HOPS=1" \
             "AUTH_BACKUP_STORAGE_PROFILE=portable" \
             "AUTH_BACKUP_SSE=provider" \
+            "RUST_LOG=rustyauth=info,tower_http=info" \
             "AUTH_ISSUER=${dashboard_url}" \
             "WEBAUTHN_RP_ORIGIN=${dashboard_url}" \
             "WEBAUTHN_RP_ID=${dashboard_host}" >/dev/null
@@ -320,8 +321,13 @@ jobs:
               --environment "${RAILWAY_ENVIRONMENT_ID}" \
               --service "${RAILWAY_API_SERVICE_ID}" \
               --lines 200 --json || true)"
-            if jq --slurp --exit-status \
-              'any(.[]; (.message // "") | contains("encrypted backup created and verified"))' \
+            if jq --slurp --exit-status '
+              any(.[]; (.message // "") | contains("encrypted backup created and verified")) or
+              (
+                any(.[]; (.message // "") | contains("\"formatVersion\": 3")) and
+                any(.[]; (.message // "") | contains("\"objectKey\": \"rustyauth-backups/v3/")) and
+                any(.[]; (.message // "") | contains("\"storageProfile\": \"portable\""))
+              )' \
               <<<"${logs}" >/dev/null; then
               exit 0
             fi
