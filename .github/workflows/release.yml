@@ -49,6 +49,8 @@ jobs:
       - run: deno task docs:check
       - run: deno task gateway:check
       - run: deno task native:check
+      - run: deno task railway:check
+      - run: deno task railway:test
       - run: deno task release:test
       - run: deno task site:check
       - run: deno task site:test

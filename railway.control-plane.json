@@ -10,6 +10,7 @@
     "drainingSeconds": 25,
     "healthcheckPath": "/readyz",
     "healthcheckTimeout": 180,
+    "preDeployCommand": ["/usr/local/bin/rustyauth doctor"],
     "restartPolicyType": "ON_FAILURE",
     "restartPolicyMaxRetries": 10
   }

@@ -13,6 +13,8 @@
     "docs:check": "deno run --allow-read scripts/check-docs-links.ts",
     "gateway:check": "deno run --allow-read scripts/check-dashboard-gateway.ts",
     "native:check": "deno run --allow-read scripts/check-native-packaging.ts",
+    "railway:check": "deno check scripts/railway-rollout.ts",
+    "railway:test": "deno test --allow-read --allow-write scripts/railway-rollout.test.ts scripts/railway-workflow.test.ts",
     "release:check": "deno run --allow-read scripts/check-release-readiness.ts",
     "release:test": "deno test --allow-read scripts/check-release-readiness.test.ts",
     "console:dev": "cd console && dx serve --web",
@@ -31,8 +33,8 @@
     "fmt": "cargo fmt && cargo fmt --manifest-path console/Cargo.toml && deno fmt deno.json buf.yaml buf.gen.yaml packages/client packages/protocol/deno.json packages/protocol/index.ts release-evidence scripts site/src site/tests site/astro.config.mjs site/deno.json site/package.json",
     "fmt:check": "cargo fmt --check && cargo fmt --manifest-path console/Cargo.toml --check && deno fmt --check deno.json buf.yaml buf.gen.yaml packages/client packages/protocol/deno.json packages/protocol/index.ts release-evidence scripts site/src site/tests site/astro.config.mjs site/deno.json site/package.json && cd infra/cloudflare && test -z \"$(gofmt -l .)\"",
     "lint": "cargo clippy --locked --all-targets --all-features -- -D warnings && cargo clippy --manifest-path console/Cargo.toml --locked --no-default-features --features web -- -D warnings && deno lint packages/client/src packages/protocol/index.ts scripts site/src site/tests site/astro.config.mjs && cd infra/cloudflare && go vet ./...",
-    "check": "deno task fmt:check && deno task lint && deno task connect:check && deno task docs:check && deno task gateway:check && deno task native:check && deno task site:check",
-    "test": "deno task connect:test && deno task release:test && deno task site:test && cargo test --locked && cd infra/cloudflare && go test ./..."
+    "check": "deno task fmt:check && deno task lint && deno task connect:check && deno task docs:check && deno task gateway:check && deno task native:check && deno task railway:check && deno task site:check",
+    "test": "deno task connect:test && deno task railway:test && deno task release:test && deno task site:test && cargo test --locked && cd infra/cloudflare && go test ./..."
   },
   "fmt": {
     "lineWidth": 110,
