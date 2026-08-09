@@ -43,9 +43,10 @@ Deno.test("Railway candidates are immutable, signed and digest-verified", () => 
       "matchingDeployment(deployments, sourceImage, digest, baselineIds)",
       "pinnedImageReference(options.image, digest)",
       'candidate.status === "SUCCESS"',
-      "configuredImage === sourceImage",
+      "configuredImage !== sourceImage",
       '"redeploy"',
       '"--from-source"',
+      "await runJson(runner, redeployArgs(options));",
     ]
   ) assertIncludes(workflow + rollout, required);
   if (/tags:.*:latest/.test(workflow)) {

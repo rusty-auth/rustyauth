@@ -112,6 +112,11 @@ export function pinnedImageReference(image: string, digest: string): string {
   return `${repository}@${normalizedDigest}`;
 }
 
+export function imageReferenceDigest(image: string | undefined): string | null {
+  const match = image?.trim().match(/@(sha256:[0-9a-f]{64})$/i);
+  return match ? normalizeDigest(match[1]) : null;
+}
+
 export function serviceUpdateInput(
   profile: RailwayServiceProfile,
   image: string,
@@ -216,7 +221,9 @@ export function matchingDeployment(
 ): RailwayDeployment | undefined {
   return deployments.find((deployment) =>
     !excludedIds.has(deployment.id) &&
-    deployment.meta?.image === image && deployment.meta?.imageDigest?.toLowerCase() === digest
+    deployment.meta?.image === image &&
+    (deployment.meta?.imageDigest?.toLowerCase() === digest ||
+      imageReferenceDigest(deployment.meta?.image) === digest)
   );
 }
 
@@ -355,7 +362,7 @@ export async function rolloutRailwayImage(
     profile: options.profile,
     previousDeploymentId: previous?.id ?? null,
     previousImage: previous?.meta?.image ?? null,
-    previousDigest: previous?.meta?.imageDigest ?? null,
+    previousDigest: previous?.meta?.imageDigest ?? imageReferenceDigest(previous?.meta?.image),
     deploymentId: null,
     image: options.image,
     sourceImage,
@@ -381,9 +388,7 @@ export async function rolloutRailwayImage(
       options.environment,
       options.service,
     );
-    if (configuredImage === sourceImage) {
-      await runJson(runner, redeployArgs(options));
-    } else {
+    if (configuredImage !== sourceImage) {
       const update = JSON.parse(await runJson(runner, updateArgs(options, sourceImage))) as {
         data?: { serviceInstanceUpdate?: boolean };
         errors?: unknown[];
@@ -392,6 +397,7 @@ export async function rolloutRailwayImage(
         fail("Railway rejected the service image/configuration update");
       }
     }
+    await runJson(runner, redeployArgs(options));
     receipt.changed = true;
     await writeReceipt();
 
