@@ -8,6 +8,11 @@ updates:
     groups:
       cargo-dependencies:
         patterns: ["*"]
+    ignore:
+      # connectrpc 0.8.1 and connectrpc-build 0.8.0 generate against Buffa 0.8 traits. Re-enable after the
+      # upstream Buffa 0.9 compatibility work is published as a ConnectRPC release.
+      - dependency-name: buffa
+        versions: [">= 0.9.0"]
   - package-ecosystem: docker
     directory: /
     schedule:

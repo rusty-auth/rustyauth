@@ -3,12 +3,12 @@
 use std::{collections::HashSet, time::Duration};
 
 use aes_gcm::{
-    AeadCore, Aes256Gcm, KeyInit,
-    aead::{Aead, OsRng, Payload},
+    Aes256Gcm, KeyInit,
+    aead::{Aead, Generate, Nonce, Payload},
 };
 use anyhow::{Context, Result, bail};
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
-use hmac::{Hmac, Mac};
+use hmac::{Hmac, KeyInit as HmacKeyInit, Mac};
 use secrecy::{ExposeSecret, SecretString};
 use serde::Serialize;
 use sha2::Sha256;
@@ -501,7 +501,7 @@ fn secret_hint(secret: &str) -> String {
 fn seal_secret(keys: &KeyRing, webhook_id: &str, secret: &str) -> Result<EncryptedWebhookSecret> {
     let (key_id, key) = keys.active();
     let cipher = Aes256Gcm::new_from_slice(key).expect("AES-256 key length is fixed");
-    let nonce = Aes256Gcm::generate_nonce(&mut OsRng);
+    let nonce = Nonce::<Aes256Gcm>::generate();
     let ciphertext = cipher
         .encrypt(
             &nonce,
@@ -555,7 +555,7 @@ fn secret_aad(webhook_id: &str) -> String {
 }
 
 fn delivery_signature(secret: &str, timestamp: &str, body: &[u8]) -> Result<String> {
-    let mut mac = <Hmac<Sha256> as Mac>::new_from_slice(secret.as_bytes())
+    let mut mac = <Hmac<Sha256> as HmacKeyInit>::new_from_slice(secret.as_bytes())
         .map_err(|_| anyhow::anyhow!("invalid webhook signing secret"))?;
     mac.update(timestamp.as_bytes());
     mac.update(b".");

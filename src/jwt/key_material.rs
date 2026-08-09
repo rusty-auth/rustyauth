@@ -3,14 +3,13 @@
 
 use aes_gcm::{
     Aes256Gcm, KeyInit,
-    aead::{Aead, Payload},
+    aead::{Aead, Generate, Nonce, Payload},
 };
 use anyhow::{Context, Result, bail};
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use p256::{
     PublicKey,
     ecdsa::SigningKey,
-    elliptic_curve::rand_core::{OsRng, RngCore},
     pkcs8::{DecodePrivateKey, EncodePrivateKey},
 };
 use serde::{Deserialize, Serialize};
@@ -38,9 +37,9 @@ pub(super) struct EncryptedPrivateKey {
 }
 
 pub(super) fn generate(master_keys: &KeyRing, created_at: u64) -> Result<StoredSigningKey> {
-    let signing = SigningKey::random(&mut OsRng);
+    let signing = SigningKey::generate();
     let verifying = signing.verifying_key();
-    let point = verifying.to_encoded_point(false);
+    let point = verifying.to_sec1_point(false);
     let kid = Uuid::new_v4().to_string();
     let public_jwk = json!({
         "kty": "EC",
@@ -68,12 +67,11 @@ pub(super) fn seal_private_key(
 ) -> Result<EncryptedPrivateKey> {
     let (wrapping_key_id, key) = master_keys.active();
     let cipher = Aes256Gcm::new_from_slice(key).expect("validated AES-256 key");
-    let mut nonce = [0_u8; 12];
-    OsRng.fill_bytes(&mut nonce);
+    let nonce = Nonce::<Aes256Gcm>::generate();
     let aad = signing_key_aad(kid, wrapping_key_id);
     let ciphertext = cipher
         .encrypt(
-            (&nonce).into(),
+            &nonce,
             Payload {
                 msg: private_der,
                 aad: aad.as_bytes(),
@@ -106,6 +104,8 @@ pub(super) fn open_private_key(
     if nonce.len() != 12 {
         bail!("signing-key nonce must contain exactly 12 bytes");
     }
+    let nonce: [u8; 12] = nonce.try_into().expect("validated 12-byte nonce");
+    let nonce = Nonce::<Aes256Gcm>::from(nonce);
     let ciphertext = URL_SAFE_NO_PAD
         .decode(&encrypted.ciphertext)
         .context("decode encrypted signing key")?;
@@ -113,7 +113,7 @@ pub(super) fn open_private_key(
     let aad = signing_key_aad(&record.kid, &encrypted.wrapping_key_id);
     cipher
         .decrypt(
-            nonce.as_slice().into(),
+            &nonce,
             Payload {
                 msg: &ciphertext,
                 aad: aad.as_bytes(),
@@ -132,7 +132,7 @@ pub(super) fn validate_signing_key(record: &StoredSigningKey, master_keys: &KeyR
     let private_der = open_private_key(master_keys, record)?;
     let signing = SigningKey::from_pkcs8_der(private_der.as_slice())
         .context("stored signing key is not valid P-256 PKCS#8 material")?;
-    let point = signing.verifying_key().to_encoded_point(false);
+    let point = signing.verifying_key().to_sec1_point(false);
     let expected_x = URL_SAFE_NO_PAD.encode(
         point
             .x()

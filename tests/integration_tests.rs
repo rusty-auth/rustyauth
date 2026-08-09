@@ -886,7 +886,10 @@ fn session(user_id: Uuid, session_version: u64, auth_method: &str, created_at: u
 }
 
 fn session_key(token: &str) -> String {
-    format!("auth:session:{:x}", Sha256::digest(token.as_bytes()))
+    format!(
+        "auth:session:{}",
+        hex::encode(Sha256::digest(token.as_bytes()))
+    )
 }
 
 async fn request(

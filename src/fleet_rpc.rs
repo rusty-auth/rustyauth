@@ -11,8 +11,8 @@ use std::{
 };
 
 use aes_gcm::{
-    AeadCore, Aes256Gcm, KeyInit,
-    aead::{Aead, OsRng, Payload},
+    Aes256Gcm, KeyInit,
+    aead::{Aead, Generate, Nonce, Payload},
 };
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use buffa::Message;
@@ -23,7 +23,7 @@ use connectrpc::{
 };
 use futures::{StreamExt, future::BoxFuture};
 use http_body_util::{BodyExt, Full};
-use rand::RngCore;
+use rand::Rng;
 use secrecy::{ExposeSecret, SecretString};
 use time::{OffsetDateTime, format_description::well_known::Rfc3339};
 use url::Url;
@@ -2419,7 +2419,7 @@ pub(crate) fn seal_fleet_credential(
     let (key_id, key) = keys.active();
     let cipher = Aes256Gcm::new_from_slice(key)
         .map_err(|_| ConnectError::new(ErrorCode::Internal, "initialize credential encryption"))?;
-    let nonce = Aes256Gcm::generate_nonce(&mut OsRng);
+    let nonce = Nonce::<Aes256Gcm>::generate();
     let aad = fleet_credential_aad(connection_id, key_id);
     let ciphertext = cipher
         .encrypt(
@@ -2451,6 +2451,13 @@ pub(crate) fn open_fleet_credential(
     let nonce = URL_SAFE_NO_PAD
         .decode(&encrypted.nonce)
         .map_err(|_| ConnectError::new(ErrorCode::DataLoss, "decode realm credential nonce"))?;
+    let nonce: [u8; 12] = nonce.try_into().map_err(|_| {
+        ConnectError::new(
+            ErrorCode::DataLoss,
+            "realm credential nonce has wrong length",
+        )
+    })?;
+    let nonce = Nonce::<Aes256Gcm>::from(nonce);
     let ciphertext = URL_SAFE_NO_PAD
         .decode(&encrypted.ciphertext)
         .map_err(|_| ConnectError::new(ErrorCode::DataLoss, "decode encrypted realm credential"))?;
@@ -2459,7 +2466,7 @@ pub(crate) fn open_fleet_credential(
     let aad = fleet_credential_aad(connection_id, &encrypted.wrapping_key_id);
     let plaintext = cipher
         .decrypt(
-            nonce.as_slice().into(),
+            &nonce,
             Payload {
                 msg: &ciphertext,
                 aad: aad.as_bytes(),

@@ -328,18 +328,24 @@ fn identifier_key(identifier: &IdentifierValue) -> String {
 }
 
 fn session_key(token: &str) -> String {
-    format!("auth:session:{:x}", Sha256::digest(token.as_bytes()))
+    format!(
+        "auth:session:{}",
+        hex::encode(Sha256::digest(token.as_bytes()))
+    )
 }
 
 fn service_credential_key(secret: &str) -> String {
     format!(
-        "{SERVICE_CREDENTIAL_PREFIX}{:x}",
-        Sha256::digest(secret.as_bytes())
+        "{SERVICE_CREDENTIAL_PREFIX}{}",
+        hex::encode(Sha256::digest(secret.as_bytes()))
     )
 }
 
 fn handoff_key(code: &str) -> String {
-    format!("auth:agent-handoff:{:x}", Sha256::digest(code.as_bytes()))
+    format!(
+        "auth:agent-handoff:{}",
+        hex::encode(Sha256::digest(code.as_bytes()))
+    )
 }
 
 /// Store behaviour that only a real SableDB can answer.

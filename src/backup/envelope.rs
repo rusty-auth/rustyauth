@@ -5,7 +5,7 @@ use std::io::{Cursor, Read};
 
 use aes_gcm::{
     Aes256Gcm, KeyInit,
-    aead::{Aead, Payload},
+    aead::{Aead, Generate, Nonce, Payload},
 };
 use anyhow::{Context, Result, bail};
 use zeroize::Zeroizing;
@@ -52,14 +52,11 @@ pub(super) fn decode_snapshot(keys: &KeyRing, envelope: &[u8]) -> Result<BackupS
 }
 
 fn encrypt_envelope(keys: &KeyRing, magic: &[u8; 8], plaintext: &[u8]) -> Result<Vec<u8>> {
-    use aes_gcm::aead::rand_core::{OsRng, RngCore};
-
     let (key_id, key) = keys.active();
     if key_id.len() > u8::MAX as usize {
         bail!("backup encryption key id is too long");
     }
-    let mut nonce = [0_u8; 12];
-    OsRng.fill_bytes(&mut nonce);
+    let nonce = Nonce::<Aes256Gcm>::generate();
     let mut header = Vec::with_capacity(magic.len() + 1 + key_id.len() + nonce.len());
     header.extend_from_slice(magic);
     header.push(key_id.len() as u8);
@@ -68,7 +65,7 @@ fn encrypt_envelope(keys: &KeyRing, magic: &[u8; 8], plaintext: &[u8]) -> Result
     let cipher = Aes256Gcm::new_from_slice(key).expect("validated AES-256 key");
     let ciphertext = cipher
         .encrypt(
-            (&nonce).into(),
+            &nonce,
             Payload {
                 msg: plaintext,
                 aad: &header,
@@ -96,11 +93,13 @@ fn decrypt_envelope(keys: &KeyRing, envelope: &[u8]) -> Result<Vec<u8>> {
         )
     })?;
     let nonce = &envelope[nonce_start..ciphertext_start];
+    let nonce: [u8; 12] = nonce.try_into().expect("12-byte nonce slice");
+    let nonce = Nonce::<Aes256Gcm>::from(nonce);
     let header = &envelope[..ciphertext_start];
     let cipher = Aes256Gcm::new_from_slice(key).expect("validated AES-256 key");
     cipher
         .decrypt(
-            nonce.into(),
+            &nonce,
             Payload {
                 msg: &envelope[ciphertext_start..],
                 aad: header,

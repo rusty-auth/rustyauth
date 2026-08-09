@@ -15,9 +15,9 @@ use connectrpc::{
     client::{CallOptions, ClientConfig, HttpClient},
 };
 use futures::StreamExt;
-use hmac::{Hmac, Mac};
+use hmac::{Hmac, KeyInit as HmacKeyInit, Mac};
 use http::header;
-use rand::RngCore;
+use rand::Rng;
 use secrecy::ExposeSecret;
 use sha2::{Digest, Sha256};
 use subtle::ConstantTimeEq;
@@ -738,7 +738,7 @@ pub(crate) fn sign_connector_frame(
     signing_key: &[u8; 32],
 ) -> Result<(), ConnectError> {
     frame.signature.clear();
-    let mut mac = Hmac::<Sha256>::new_from_slice(signing_key)
+    let mut mac = <Hmac<Sha256> as HmacKeyInit>::new_from_slice(signing_key)
         .map_err(|_| ConnectError::new(ErrorCode::Internal, "initialize connector signature"))?;
     mac.update(&connector_frame_signing_bytes(frame));
     frame.signature = mac.finalize().into_bytes().to_vec();
@@ -766,7 +766,7 @@ fn verify_connector_frame(
             "connector frame signature is invalid",
         ));
     }
-    let mut mac = Hmac::<Sha256>::new_from_slice(signing_key)
+    let mut mac = <Hmac<Sha256> as HmacKeyInit>::new_from_slice(signing_key)
         .map_err(|_| ConnectError::new(ErrorCode::Internal, "initialize connector signature"))?;
     mac.update(&connector_frame_signing_bytes(frame));
     mac.verify_slice(&frame.signature).map_err(|_| {
