@@ -57,7 +57,7 @@ await auth.registerPasskey({
 });
 ```
 
-Use the checked-in client package as the exact source for exported names while the API is pre-release.
+Pin the `1.x` client package to the exact version qualified by your application.
 
 ## 3. Sign in
 
@@ -131,7 +131,7 @@ prefer mTLS or workload identity between controlled services.
 - [ ] Private service credentials are short-lived, scoped, rotated and absent from logs.
 - [ ] Account and credential lifecycle consumers are idempotent.
 - [ ] A clean-room restore has completed with a real passkey sign-in.
-- [ ] The pre-release [security gates](SECURITY_HARDENING.md) are accepted or completed.
+- [ ] The deployment-specific [security hardening](SECURITY_HARDENING.md) requirements are accepted or completed.
 
 ## Related reference
 

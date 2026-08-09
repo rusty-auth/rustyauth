@@ -122,7 +122,7 @@ ceilings:
 
 The mutation gate blocks writers in the same RustyAuth process. The SableDB backup lease prevents two
 RustyAuth processes from running backups simultaneously, but it does not turn a multi-writer deployment into a
-datastore-wide snapshot transaction. RustyAuth `0.1.0` therefore retains the documented one-writer
+datastore-wide snapshot transaction. RustyAuth `1.0.0` therefore retains the documented one-writer
 qualification boundary.
 
 ## Manifest and semantic validation

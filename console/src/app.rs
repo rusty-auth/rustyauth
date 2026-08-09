@@ -2037,7 +2037,7 @@ fn FleetWorkspace(
                         }
                         .into(),
                         management_endpoint: endpoint,
-                        deployment_version: "0.1.0".into(),
+                        deployment_version: "1.0.0".into(),
                         protocol_version: "1".into(),
                         state: ConnectionState::Healthy.into(),
                         last_seen_at: stamp.clone(),

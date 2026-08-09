@@ -1,13 +1,13 @@
 openapi: 3.1.0
 info:
   title: RustyAuth public HTTP API
-  version: 0.1.0
+  version: 1.0.0
   license:
     name: Apache-2.0
     identifier: Apache-2.0
   description: |
-    RustyAuth's public JSON API. This is the pre-`1.0` contract implemented by the
-    Rust service; it may change before `1.0`. The private Connect/gRPC-Web/gRPC
+    RustyAuth's public JSON API. This is the stable `1.0.0` contract implemented by
+    the Rust service; incompatible changes require a new major version. The private Connect/gRPC-Web/gRPC
     services (identity, events, organization, service accounts) are served on the
     same listener but are not part of this document.
 
@@ -521,9 +521,9 @@ paths:
         Adds a globally unique identifier and returns `201` with the account
         response. An account may hold at most 20 identifiers. Development marks
         the identifier verified immediately. Production stores it unverified and
-        appends `email.verification.requested` or `phone.verification.requested`
-        for an external delivery/verification workflow. RustyAuth `0.1.0` does
-        not itself deliver or consume a verification challenge.
+        requires the verification endpoints below. Verification codes are
+        delivered only through explicitly subscribed signed webhooks; they are
+        never written to the auth event log or delivery metadata.
       security:
         - sessionCookie: []
       requestBody:
@@ -556,6 +556,108 @@ paths:
                 $ref: "#/components/schemas/Error"
         "413":
           $ref: "#/components/responses/PayloadTooLarge"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /v1/account/identifiers/verification/request:
+    post:
+      tags: [Account]
+      operationId: requestIdentifierVerification
+      summary: Request verification of a linked identifier
+      description: |
+        Access: Session (valid `passkey_auth_session` cookie plus the exact
+        origin).
+
+        Creates a single-use 15-minute challenge for an unverified identifier
+        already linked to the current account. In production, the raw code is
+        delivered only through an explicitly subscribed
+        `identifier.email.verification` or `identifier.phone.verification`
+        signed webhook; wildcard subscriptions do not receive verification
+        codes. Only a domain-separated digest is persisted, and the code is
+        never written to the auth event log or webhook-delivery metadata.
+
+        Production returns `503` and deletes the challenge when no delivery
+        succeeds. Development returns the raw code in `developmentCode` for
+        local testing.
+      security:
+        - sessionCookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/IdentifierVerificationRequest"
+            example:
+              identifier:
+                type: email
+                value: person@example.com
+      responses:
+        "200":
+          description: Verification challenge created and delivery attempted.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IdentifierVerificationChallenge"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "408":
+          $ref: "#/components/responses/RequestTimeout"
+        "413":
+          $ref: "#/components/responses/PayloadTooLarge"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          description: No configured verification webhook accepted delivery.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /v1/account/identifiers/verification/verify:
+    post:
+      tags: [Account]
+      operationId: completeIdentifierVerification
+      summary: Complete identifier verification
+      description: |
+        Access: Session (valid `passkey_auth_session` cookie plus the exact
+        origin).
+
+        Atomically consumes a single-use challenge belonging to the current
+        account and linked identifier, marks that identifier verified and
+        returns `204`. Invalid, expired, already-consumed or cross-account
+        challenges all return the same `401` response.
+      security:
+        - sessionCookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CompleteIdentifierVerificationRequest"
+            example:
+              challengeId: 3e706d6b-091d-4dc5-a885-5de9ccbf89e8
+              code: rvc_K9d7Q0g2uTWYp1tR8mC4xA
+      responses:
+        "204":
+          description: Identifier verified and challenge consumed.
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          description: >-
+            Authentication failed, or the verification challenge is invalid,
+            expired, already consumed or belongs to another account.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "408":
+          $ref: "#/components/responses/RequestTimeout"
+        "413":
+          $ref: "#/components/responses/PayloadTooLarge"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
         "500":
           $ref: "#/components/responses/InternalError"
   /v1/account/identifiers/primary:
@@ -1148,6 +1250,45 @@ components:
             Email addresses are trimmed, lowercased and must use the supported
             ASCII dot-atom address form. Phone numbers are normalized to
             international E.164 form and must contain 8–15 digits.
+    IdentifierVerificationRequest:
+      type: object
+      required: [identifier]
+      properties:
+        identifier:
+          $ref: "#/components/schemas/IdentifierRef"
+    IdentifierVerificationChallenge:
+      type: object
+      description: A single-use identifier-verification challenge valid for 15 minutes.
+      required: [challengeId, expiresAt, delivered, developmentCode]
+      properties:
+        challengeId:
+          type: string
+          format: uuid
+        expiresAt:
+          type: integer
+          format: int64
+          description: Challenge expiry as Unix time in seconds.
+        delivered:
+          type: boolean
+          description: Whether at least one explicitly subscribed signed webhook accepted delivery.
+        developmentCode:
+          type: ["string", "null"]
+          description: Raw challenge code in development; always null in production.
+      example:
+        challengeId: 3e706d6b-091d-4dc5-a885-5de9ccbf89e8
+        expiresAt: 1786301400
+        delivered: true
+        developmentCode: null
+    CompleteIdentifierVerificationRequest:
+      type: object
+      required: [challengeId, code]
+      properties:
+        challengeId:
+          type: string
+          format: uuid
+        code:
+          type: string
+          description: The single-use `rvc_` verification code supplied by the signed webhook.
     RegistrationOptionsRequest:
       type: object
       description: >-

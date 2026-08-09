@@ -1,10 +1,14 @@
 # Changelog
 
 All notable RustyAuth changes will be documented here. The format follows
-[Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project intends to use semantic versioning
-after its public contract stabilises.
+[Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses semantic versioning for the
+supported `1.x` contract.
 
 ## Unreleased
+
+No changes yet.
+
+## 1.0.0 - 2026-08-09
 
 This release is primarily a security hardening pass. It contains breaking changes to configuration, the
 identity RPC contract and the operator-bootstrap procedure. Read [Breaking changes](#breaking-changes) before

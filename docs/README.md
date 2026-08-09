@@ -4,9 +4,10 @@ This directory is the normative technical documentation for RustyAuth. The
 [developer site](https://rustyauth.dev/docs) provides shorter learning paths; repository docs preserve
 complete contracts, operational detail and product decisions alongside the code they describe.
 
-RustyAuth is `0.1.0` pre-release software. Pin a release or commit when integrating. An implemented capability
-is not necessarily production-qualified; use [Project status](#project-status) and the
-[security policy](../SECURITY.md) before making deployment decisions.
+RustyAuth `1.0.0` is GA for the Rust server and control plane, supplied container topologies, and Dioxus web
+dashboard. Pin a release or image digest when integrating. Desktop, iOS and Android applications remain
+preview-only; use [Project status](#project-status) and the [security policy](../SECURITY.md) before making
+deployment decisions.
 
 ## Choose a path
 
@@ -63,16 +64,16 @@ connects directly to a realm database.
 | [Configuration](CONFIGURATION.md)                       | YAML schema, secret inputs, compatibility and startup validation    |
 | [Fleet control plane](FLEET_CONTROL_PLANE.md)           | Hierarchy, pairing, roles, isolation and cross-cloud management     |
 | [Fleet Analytics V1](FLEET_ANALYTICS_V1.md)             | Metric semantics, buckets, coverage, privacy and compatibility      |
-| [Fleet Analytics security](FLEET_ANALYTICS_SECURITY.md) | Internal threat/privacy assessment and residual release gates       |
+| [Fleet Analytics security](FLEET_ANALYTICS_SECURITY.md) | Internal threat/privacy assessment and residual operating risks     |
 | [Fleet Analytics runbook](FLEET_ANALYTICS_RUNBOOK.md)   | SLOs, monitoring, incidents, purge and clean-room recovery          |
 | [Protocol qualification](PROTOCOL_QUALIFICATION.md)     | Version skew, fuzzing, fault injection, upgrade and rollback policy |
 
 ## Operations and recovery
 
-| Document                                            | Use it for                                                      |
-| --------------------------------------------------- | --------------------------------------------------------------- |
+| Document                                            | Use it for                                                        |
+| --------------------------------------------------- | ----------------------------------------------------------------- |
 | [Deployment](DEPLOYMENT.md)                         | Docker, Kubernetes, Railway, private networking and release gates |
-| [Kubernetes and Civo K3s](KUBERNETES.md)            | Integrated, Fleet and lightweight realm Helm deployments       |
+| [Kubernetes and Civo K3s](KUBERNETES.md)            | Integrated, Fleet and lightweight realm Helm deployments         |
 | [Railway template](RAILWAY_TEMPLATE.md)             | Exact standalone, Fleet and evaluation service graphs           |
 | [Configuration](CONFIGURATION.md)                   | Policy, secrets, backups and platform-specific inputs           |
 | [Backups and recovery](BACKUPS.md)                  | Snapshot scope, binary format, S3 posture, health and restore   |
@@ -92,7 +93,7 @@ The complete backup contract and clean-room procedure are documented in
 
 | Document                                      | Scope                                                  |
 | --------------------------------------------- | ------------------------------------------------------ |
-| [Roadmap](ROADMAP.md)                         | Current priorities, release gates and later directions |
+| [Roadmap](ROADMAP.md)                         | Delivered 1.0 scope, current priorities and later directions |
 | [Fleet Analytics program](FLEET_ANALYTICS.md) | Federated telemetry architecture and staged delivery   |
 | [Engineering](ENGINEERING.md)                 | Module ownership, coding standards and quality gates   |
 | [Brand](BRAND.md)                             | Naming, voice, logo and attribution                    |
@@ -112,26 +113,27 @@ superseded migration state—for example, the shipped dashboard path is now Diox
 
 ## Project status
 
-Available for evaluation today:
+Available and supported in `1.0.0` GA:
 
 - passkey registration and sign-in, revocable browser sessions and multiple credentials;
 - ES256 tokens, JWKS, staged signing-key rotation and private identity/event RPC;
 - supported Dioxus web dashboard plus shared preview-only desktop/mobile feature builds;
 - single-organization operator and service-account management;
 - Fleet organization/project/environment hierarchy, scoped roles, audit and realm pairing;
+- federated Fleet Analytics V1 with trusted export, delegated queries, explicit coverage and signed recovery;
 - encrypted logical backups, verification and empty-target restore; and
 - versioned YAML configuration with separate secret inputs.
 
-Before production `1.0`:
+Continuous assurance after `1.0.0`:
 
-- publish and verify signed server, dashboard and SableDB images through clean install, upgrade and rollback;
-- qualify the supported web browser/OS/authenticator matrix;
-- complete the pinned Analytics scale, soak, chaos, upgrade/downgrade, cost and recovery matrix;
-- run a real organization-policy Analytics canary and witnessed Realm/Fleet recovery drill; and
-- complete independent application, deployment, pinned-SableDB and Analytics threat/privacy assessments.
+- verify every published server, dashboard and SableDB image through clean install, upgrade and rollback;
+- extend the supported web browser/OS/authenticator evidence matrix;
+- repeat Analytics scale, soak, chaos, upgrade/downgrade, cost and recovery exercises;
+- operate organization-policy Analytics canaries and witnessed Realm/Fleet recovery drills; and
+- continue independent application, deployment, pinned-SableDB and Analytics threat/privacy assessments.
 
 Desktop, iOS and Android applications are previews outside `1.0.0`; their signing, update and real-device
-matrices are post-1.0 release gates.
+matrices gate a later native release, not server/container/web GA.
 
 The detailed status matrix lives in the root [README](../README.md#project-status) and the delivery sequence
 in the [roadmap](ROADMAP.md). The exact promotion decision is kept in the

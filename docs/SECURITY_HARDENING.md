@@ -1,8 +1,8 @@
 # Security hardening and qualification
 
 This document records the controls in the supplied RustyAuth and Fleet deployments, the checks that qualify
-them, and the remaining production gates. It complements the trust model in [SECURITY.md](../SECURITY.md); it
-is not a claim that the pre-release product has completed an independent security assessment.
+them, and the continuous assurance program. It complements the trust model in [SECURITY.md](../SECURITY.md);
+GA status is not a claim that every deployment has completed an independent security assessment.
 
 ## Hardened deployment baseline
 
@@ -108,7 +108,7 @@ For every release candidate, additionally:
 At least quarterly, restore Fleet and a realm into clean infrastructure using only the retained runbook,
 artifacts and escrowed keys. A backup that has not passed that drill is not a recovery capability.
 
-## Remaining production gates
+## Continuous production assurance
 
 The following work remains deliberately visible rather than being hidden behind a generic “secure” claim:
 
@@ -119,14 +119,13 @@ The following work remains deliberately visible rather than being hidden behind 
 - published-image install, upgrade and rollback drills in the production topology;
 - the pinned Fleet Analytics scale, soak, chaos, upgrade/downgrade, cost and recovery matrix;
 - a real organization-policy Analytics canary; and
-- independent application, deployment, pinned-SableDB and Analytics threat/privacy assessments before
-  production support.
+- independent application, deployment, pinned-SableDB and Analytics threat/privacy assessments.
 
 Desktop, iOS and Android clients remain unsupported previews and are not `1.0.0` artifacts. Their signing,
 notarization/platform trust, update and real-device matrices are separately gated post-1.0 work.
 
 Recent-passkey step-up with mandatory human reasons, pairing-derived outbound connector proof, credential
 rotation/revocation and operator-role dominance are implemented and covered by the repository tests. The
-remaining gates are tracked in the [roadmap](ROADMAP.md) and the exact
-[1.0.0 release-readiness record](RELEASE_READINESS.md). Until they are closed, RustyAuth remains pre-release
-and must not be the sole identity system for a production service.
+assurance program is tracked in the [roadmap](ROADMAP.md), while exact artifact-publication evidence lives in
+the [1.0.0 release-readiness record](RELEASE_READINESS.md). Operators remain responsible for qualifying their
+own ingress, egress, secret management, browser/authenticator matrix and recovery process.

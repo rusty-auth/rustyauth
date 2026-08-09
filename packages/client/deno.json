@@ -1,6 +1,6 @@
 {
   "name": "@rustyauth/client",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "description": "Framework-agnostic browser client for the RustyAuth public passkey HTTP API",
   "license": "Apache-2.0",
   "repository": "https://github.com/rusty-auth/rustyauth",

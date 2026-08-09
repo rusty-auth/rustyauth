@@ -13,7 +13,9 @@ Long description:
 > RustyAuth is passkey-first authentication built in Rust on SableDB: a small, self-hosted identity
 > service for WebAuthn ceremonies, durable browser sessions and short-lived ES256 access tokens.
 
-Do not call RustyAuth production-ready until the README's production gates are complete.
+Describe `1.0.0` as GA only for the server, supplied container topologies and Dioxus web dashboard. Always label
+desktop, iOS and Android applications as previews, and never imply that GA replaces deployment-specific
+qualification or ongoing security assurance.
 
 ## Naming
 

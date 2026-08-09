@@ -1,7 +1,8 @@
 # RustyAuth HTTP and private RPC API
 
-This is the pre-`1.0` contract implemented by the Rust service. The public HTTP surface is also available as a
-machine-readable [OpenAPI 3.1 document](openapi.yaml). All JSON request bodies use
+This is the stable `1.0.0` contract implemented by the Rust service. Incompatible changes require a new major
+version. The public HTTP surface is also available as a machine-readable [OpenAPI 3.1 document](openapi.yaml).
+All JSON request bodies use
 `Content-Type: application/json`. Error responses have the form:
 
 ```json
@@ -122,7 +123,7 @@ a short-lived service-account JWT carrying `events.read`.
 | `ListAccountInvitations`  | Operator read                        | Page through redacted invitation state             |
 | `RevokeAccountInvitation` | Operator administer + recent passkey | Revoke an unused invitation                        |
 
-Version `0.1.0` supports one organization per SableDB namespace. The explicit resource and stable UUID allow a
+Version `1.0.0` supports one organization per SableDB namespace. The explicit resource and stable UUID allow a
 future migration without claiming multi-tenant isolation today.
 
 ### `rustyauth.service_accounts.v1.ServiceAccountService`

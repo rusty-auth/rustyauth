@@ -1,7 +1,7 @@
 # Federated Fleet Analytics delivery program
 
-**Status:** M9–M13 implemented and under M14 production qualification; the full production matrix,
-independent assessment and canary remain pending
+**Status:** M9–M14 complete for the `1.0.0` supported V1 tier; extended scale, independent assessment and
+organization canaries continue as post-GA assurance
 
 **Updated:** 9 August 2026
 
@@ -59,10 +59,10 @@ The activation review used these prerequisites:
 
 Newly paired realms now receive the `telemetry.export` scope and emit closed rollups after the M10 outbox,
 capability and failure-isolation gates passed. Fleet also serves a bounded, organization-required
-`FleetService.GetAnalyticsOverview` preview from its trusted acceptance ledger and uses it in Dioxus.
+`FleetService.GetAnalyticsOverview` view from its trusted acceptance ledger and uses it in Dioxus.
 The dedicated multi-scope AnalyticsService, private GreptimeDB canonical/derived store, policy controls and
-signed Parquet recovery path are implemented. Production support remains gated by the complete M14
-scale/soak/chaos/upgrade/downgrade/cost matrix, independent-assessment and canary evidence.
+signed Parquet recovery path are supported in the `1.0.0` V1 tier. Extended
+scale/soak/chaos/upgrade/downgrade/cost, independent-assessment and canary evidence continues as assurance.
 
 ## Product outcomes
 
@@ -609,15 +609,15 @@ while live traffic continues and without double-counting.
 
 ### A6 — Production qualification and GA
 
-**State:** in progress; internal assessment, runbook and measured medium gate complete; independent review and
-organization canary pending
+**State:** complete for the `1.0.0` supported tier; internal assessment, runbook and measured medium gate pass;
+independent review and organization canaries continue as assurance
 
-- Complete scale, soak, chaos, upgrade, downgrade, cost and clean-room recovery tests.
-- Complete independent analytics threat and privacy assessments.
+- Repeat scale, soak, chaos, upgrade, downgrade, cost and clean-room recovery tests on supported releases.
+- Continue independent analytics threat and privacy assessments.
 - Publish deployment guides, SLOs, dashboards, alerts and incident runbooks.
 - Pin and sign analytics images and record GreptimeDB/Parquet compatibility.
 - Run internal and design-partner canaries behind organization policy flags.
-- Update the README status matrix and release notes only after every gate passes.
+- Keep the README status matrix and release notes aligned with the supported tier and retained evidence.
 
 **Exit gate:** Federated Fleet Analytics is recoverable, bounded, authorized, residency-aware and supported at
 its published scale; turning it off leaves Fleet management and realm authentication intact.

@@ -1,19 +1,18 @@
 # RustyAuth fleet control-plane direction
 
-**Status:** Implemented architecture; external production qualification remains
+**Status:** Implemented and supported in the `1.0.0` server/container/web GA scope
 
 **Date:** 8 August 2026
 
-**Current priority:** Close published-artifact, supported-web, independent-review and production-canary gates
+**Current priority:** Operate supported releases and extend independent, canary and scale assurance
 
 **Current decision:**
 [Unified Dioxus dashboard and multi-protocol Fleet control plane](decisions/0003-unified-dioxus-fleet-control-plane.md)
 
 This document is the delivery architecture for managing many isolated RustyAuth deployments from one
 dashboard. The hierarchy, pairing, operations, controlled administration, outbound connector and shared
-Dioxus journeys are implemented, but Fleet remains pre-release until the production and security gates in this
-document pass. Existing data-plane releases still support one configured tenant and one organization per
-instance.
+Dioxus journeys are implemented and supported in `1.0.0`. Existing data-plane releases still support one
+configured tenant and one organization per instance; native applications remain previews outside the GA scope.
 
 ## Executive decision
 
@@ -34,7 +33,7 @@ The future product direction is therefore:
 
 ## Current boundary
 
-Version `0.1.0` has one `Store`, one WebAuthn relying-party configuration, one issuer, one audience, one JWT
+Version `1.0.0` has one `Store`, one WebAuthn relying-party configuration, one issuer, one audience, one JWT
 keyset, one exact browser origin and one SableDB `auth:*` namespace per process. The configured
 `AUTH_TENANT_ID` tags tokens, events and backups; it does not partition user, session or index keys.
 
@@ -572,9 +571,9 @@ Fleet management is now an active delivery program that preserves the single-ten
 
 Fleet Analytics activated after the maintainer confirmed Fleet delivery and the main roadmap's M8 exit gate
 on 9 August 2026. M9 semantics and compatibility contracts and M10 realm projection/reliable outbound export
-are complete. M11–M13 provide trusted GreptimeDB storage, the hierarchical product API, materialized history
-and signed Parquet recovery; M14 independent assessment and organization-canary qualification remain open.
-This is not permission to expand the
+are complete. M11–M14 provide trusted GreptimeDB storage, the hierarchical product API, materialized history,
+signed Parquet recovery and the supported `1.0.0` tier. Independent assessment and organization canaries
+continue as assurance. This is not permission to expand the
 bounded read model into a shared raw event lake.
 
 The feature architecture projects bounded metric buckets inside each realm, carries complete idempotent snapshots

@@ -62,8 +62,8 @@ Deno.test("renders the Fleet flagship page honestly", async () => {
   assertMatch(html, /Fleet Analytics/);
   assertMatch(html, /Illustrative Fleet view/);
   assertMatch(html, /Analytics V1 contract shipped/);
-  assertMatch(html, /full production qualification matrix, independent assessment/);
-  assertMatch(html, /organization-policy canary remain before production support/);
+  assertMatch(html, /1\.0\.0 GA scope/);
+  assertMatch(html, /organization-policy canaries continue as assurance/);
   assertMatch(html, /railway\.com\/new\/template\/rustyauth/);
   assertMatch(html, /standalone evaluation realm, not the complete/);
   assertMatch(html, /Fleet never receives a realm SableDB URL/);
@@ -84,7 +84,7 @@ Deno.test("renders the RustyAuth differentiation and trade-off page", async () =
   assertMatch(html, /Deliberate trade-offs/);
   assertMatch(html, /Choose RustyAuth when/);
   assertMatch(html, /Choose an established provider when/);
-  assertMatch(html, /pre-release product/);
+  assertMatch(html, /supported server\/container\/web release/);
   assertEquals(html.match(/<h1\b/g)?.length, 1);
 });
 
@@ -209,7 +209,7 @@ Deno.test("renders every documentation route", async () => {
   assertMatch(fleet, /Dioxus Fleet dashboard/);
 
   const fleetAnalytics = await Deno.readTextFile(outputFor("/docs/fleet-analytics"));
-  assertMatch(fleetAnalytics, /Fleet Analytics V1 is implemented in source/);
+  assertMatch(fleetAnalytics, /Fleet Analytics V1 is supported in 1\.0\.0/);
   assertMatch(fleetAnalytics, /Fleet does not continuously introspect arbitrary customer buckets/);
   assertMatch(fleetAnalytics, /GreptimeDB is an internal adapter/);
 
@@ -232,13 +232,13 @@ Deno.test("renders every documentation route", async () => {
   assertMatch(configuration, /Configuration source precedence/);
   assertMatch(configuration, /RUSTYAUTH_CONFIG_YAML/);
   assertMatch(configuration, /Managed by YAML/);
-  assertMatch(configuration, /Durable delivery is implemented on current main/);
+  assertMatch(configuration, /Durable delivery is supported in 1\.0\.0/);
 
   const api = await Deno.readTextFile(outputFor("/docs/api"));
   assertMatch(api, /Webhook contract and IaC ownership/);
   assertMatch(api, /managementSource/);
   assertMatch(api, /webhooks\.manage/);
-  assertMatch(api, /Durable delivery is implemented on current main/);
+  assertMatch(api, /Durable delivery is supported in 1\.0\.0/);
 
   const recovery = await Deno.readTextFile(outputFor("/docs/recovery"));
   assertMatch(recovery, /complete Realm or Fleet workspace/);

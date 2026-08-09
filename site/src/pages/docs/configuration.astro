@@ -100,7 +100,7 @@ done`}</code></pre>
   <p>The container automatically loads <code>/etc/rustyauth/config.yaml</code>; no wrapper entrypoint is required.</p>
   <pre><code>{`services:
   auth:
-    image: ghcr.io/rusty-auth/rustyauth:v0.1.0
+    image: ghcr.io/rusty-auth/rustyauth:v1.0.0
     configs:
       - source: rustyauth
         target: /etc/rustyauth/config.yaml
@@ -125,7 +125,7 @@ configs:
   <h2>IaC-managed webhooks</h2>
   <p>Realm documents can declare stable webhook IDs, HTTPS endpoints, enabled state and event types under <code>spec.webhooks</code>. These resources are authoritative, not initial defaults. API responses identify their management source, and the dashboard labels them <strong>Managed by YAML</strong>, disables destination controls and directs operators back to the deployment file. Dashboard-created destinations remain dashboard-managed.</p>
   <p>This single-writer rule prevents UI edits from being silently reversed on the next deploy. Operational actions such as testing, delivery inspection and signing-secret rotation remain separate from desired-state ownership.</p>
-  <div class="doc-callout"><strong>Durable delivery is implemented on current main</strong><p>Startup reconciles configured destinations before the worker sends. Deliveries are signed over the timestamp and exact body, recorded durably, retried with bounded backoff and replayable while the source event remains retained. Pin the release or commit you evaluate because RustyAuth remains a pre-release.</p></div>
+  <div class="doc-callout"><strong>Durable delivery is supported in 1.0.0</strong><p>Startup reconciles configured destinations before the worker sends. Deliveries are signed over the timestamp and exact body, recorded durably, retried with bounded backoff and replayable while the source event remains retained. Pin the exact release or image digest you operate.</p></div>
 
   <h2>Backup schedules</h2>
   <pre><code>{`backups:

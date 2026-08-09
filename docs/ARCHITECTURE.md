@@ -1,6 +1,6 @@
 # RustyAuth architecture
 
-This document describes the standalone RustyAuth implementation at version `0.1.0`. Statements about future
+This document describes the standalone RustyAuth implementation at version `1.0.0`. Statements about future
 functionality are marked explicitly.
 
 ## Design goals
@@ -371,7 +371,7 @@ Sensitive-header marking is the outermost layer, so the tracing layer beneath it
 
 ## Tenancy
 
-Version `0.1.0` is one configured tenant per RustyAuth instance. Tokens and events carry `AUTH_TENANT_ID`, but
+Version `1.0.0` is one configured tenant per RustyAuth instance. Tokens and events carry `AUTH_TENANT_ID`, but
 user/session/database keys are not tenant-prefixed. Do not point multiple independently trusted tenants at one
 SableDB namespace.
 
@@ -411,8 +411,8 @@ The [Fleet Analytics delivery program](FLEET_ANALYTICS.md), [V1 semantic contrac
 compatibility boundary. M9 contracts and the M10 local projection, standalone MetricsService, durable outbox,
 authenticated realm export and Fleet acceptance ledger are complete. The private GreptimeDB adapter,
 database-namespaced hourly/daily materialization, signed Parquet recovery and hierarchical AnalyticsService
-are implemented; their production claim remains gated by the qualification, independent-review and canary
-evidence listed in the Analytics runbook.
+are supported in the `1.0.0` V1 tier. Extended qualification, independent-review and canary evidence continues
+under the Analytics runbook.
 
 ## Concurrency and scaling
 
@@ -445,6 +445,6 @@ Internal errors are logged server-side and returned to callers as a generic fail
 See [SECURITY.md](../SECURITY.md), the README status matrix and the
 [1.0.0 release-readiness record](RELEASE_READINESS.md). RustyAuth fences its supported one-writer topology
 with a renewable datastore lease; active/active mutation remains outside the 1.0 contract. The largest
-remaining production gates are infrastructure egress enforcement, real supported-web browser/authenticator
-and published-image drills, production Analytics qualification/canary evidence and independent review. Native
-clients remain unsupported previews outside the `1.0.0` contract and are separately gated for a later release.
+continuous assurance programs cover infrastructure egress enforcement, supported-web browser/authenticator and
+published-image drills, Analytics qualification/canary evidence and independent review. Native clients remain
+unsupported previews outside the `1.0.0` contract and are separately gated for a later release.

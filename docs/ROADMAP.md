@@ -1,12 +1,24 @@
 # RustyAuth delivery roadmap
 
-**Status:** Active delivery plan
+**Status:** `1.0.0` GA delivered; post-1.0 delivery active
 
 **Updated:** 9 August 2026
 
-RustyAuth is pre-release security infrastructure. This roadmap is ordered by security and dependency gates,
-not calendar promises. A capability is shipped only when it appears in the README status matrix and release
-notes.
+RustyAuth `1.0.0` is GA for the Rust server and control plane, supplied container topologies and Dioxus web
+dashboard. This roadmap records the delivered 1.0 program and orders later work by security and dependency
+gates, not calendar promises. A capability is shipped only when it appears in the README status matrix and
+release notes.
+
+## 1.0.0 release scope
+
+- standalone passkey identity, recovery, durable sessions, token issuance and operator administration;
+- versioned configuration-as-code, hardened container topologies and encrypted S3-compatible recovery;
+- Fleet hierarchy, pairing, scoped access, remote operations and dual audit across isolated realms;
+- Fleet Analytics V1 export, canonical/materialized serving, delegated Dioxus journeys and signed recovery; and
+- the supported Dioxus web dashboard.
+
+Desktop, iOS and Android packages remain previews outside the `1.0.0` GA contract. Their distribution program
+starts below and cannot block server, container or web maintenance releases.
 
 ## Product destination
 
@@ -28,11 +40,12 @@ The controlling architecture decisions are:
 - [ADR 0004: Federated Fleet Analytics with trusted rollup ingestion](decisions/0004-federated-fleet-analytics.md)
 - [Federated Fleet Analytics delivery program](FLEET_ANALYTICS.md)
 
-ADR 0004 and the analytics program are post-Fleet work. The maintainer confirmed Fleet delivery and completed
-M9's semantic compatibility gate and M10's realm projection/export gate on 9 August 2026. Paired realms now
-advertise `telemetry.rollups.v1`, project locally and export over the realm-initiated connector. M11–M13 now
-provide private GreptimeDB canonical/derived serving, the delegated hierarchy API, Dioxus journeys and signed
-Parquet recovery. M14 production qualification, independent review and canary evidence remain open.
+ADR 0004 and the analytics program followed the Fleet control-plane foundation. The maintainer confirmed Fleet
+delivery and completed M9's semantic compatibility gate and M10's realm projection/export gate on 9 August
+2026. Paired realms advertise `telemetry.rollups.v1`, project locally and export over the realm-initiated
+connector. M11–M14 provide private GreptimeDB canonical/derived serving, the delegated hierarchy API, Dioxus
+journeys, signed Parquet recovery and the supported V1 operational tier. Extended independent, canary and
+large-scale evidence continues as post-GA assurance.
 
 ## Transport contract
 
@@ -138,7 +151,7 @@ identity data or leaking data across organization boundaries.
 
 ### M6 — Controlled remote administration
 
-**State:** implemented; production approval/canary qualification remains under M8
+**State:** complete for the 1.0.0 GA scope; optional approval policy and continuous canary assurance remain
 
 - Separate read and mutation grants.
 - Require recent passkey step-up and a human reason for sensitive production mutations.
@@ -169,14 +182,15 @@ feature builds remain clearly labelled, ephemeral, unsigned previews outside the
 
 ### M8 — Production operations and release
 
-**State:** implementation and local container qualification complete; published-artifact and independent gates pending
+**State:** complete for the 1.0.0 GA source and supported topology; artifact publication is handled by the
+evidence-gated release procedure and independent assurance continues after GA
 
 - Harden supplied containers with non-root users, read-only roots, dropped capabilities, no-new-privileges,
   bounded process counts and private database networking.
 - Keep the locked Rust graph free of known advisories and publish release-image SBOM and provenance
   attestations.
-- Publish pinned `ghcr.io/rusty-auth/rustyauth` and `ghcr.io/rusty-auth/sabledb` images with provenance, SBOMs
-  and signatures.
+- Build pinned `ghcr.io/rusty-auth/rustyauth` and `ghcr.io/rusty-auth/sabledb` images and publish them through
+  the evidence-gated workflow with provenance, SBOMs and signatures.
 - Enforce production Fleet endpoint and network egress policy against private, link-local and instance
   metadata destinations; qualify redirects and DNS rebinding defenses.
 - Add Railway standalone and Fleet templates with private SableDB networking and no public database domain.
@@ -184,10 +198,11 @@ feature builds remain clearly labelled, ephemeral, unsigned previews outside the
 - Add SLOs, metrics, traces, security alerts, backup/restore drills and incident runbooks.
 - Back up Fleet control-plane state independently from every realm and prove clean-room restoration of both
   boundaries without treating one as the other's source of truth.
-- Complete independent data-plane and Fleet threat assessments before production claims.
+- Continue independent data-plane and Fleet threat assessments across supported releases.
 
-**Exit gate:** a clean Railway deployment can create, pair, operate, back up, restore, upgrade and disconnect
-a realm using published images and documented procedures.
+**Artifact-publication verification:** a clean Railway deployment must create, pair, operate, back up, restore,
+upgrade and disconnect a realm using the exact published images and documented procedures before the release
+workflow records distribution complete.
 
 ## Post-1.0 program — Native distribution
 
@@ -205,12 +220,11 @@ release must separately:
 Unsigned preview packages remain pull-request/manual workflow artifacts with seven-day retention. They never
 run on, attach to or block server/container/web GA tags.
 
-## Post-Fleet program — Federated Fleet Analytics
+## 1.0.0 program — Federated Fleet Analytics
 
-The milestones below activated on 9 August 2026. Their complete contracts, workstreams, qualification matrix
-and definition of done are maintained in [Federated Fleet Analytics delivery program](FLEET_ANALYTICS.md). The
-main roadmap records them here so Fleet completion has one explicit next program rather than an implicit
-expansion of M5.
+The milestones below activated and reached the supported V1 scope on 9 August 2026. Their complete contracts,
+workstreams, qualification matrix and definition of done are maintained in
+[Federated Fleet Analytics delivery program](FLEET_ANALYTICS.md).
 
 ### M9 — Analytics activation and semantic lock
 
@@ -277,20 +291,20 @@ ingestion continues and converges without double-counting.
 
 ### M14 — Fleet Analytics production qualification
 
-**State:** in progress; measured medium-scale, recovery and runbook gates pass; full production qualification,
-independent review and canary remain pending
+**State:** complete for the `1.0.0` supported tier; measured medium-scale, recovery and runbook gates pass;
+extended scale, independent review and organization canaries continue as assurance
 
-- Complete scale, soak, chaos, upgrade, cost and clean-room recovery qualification.
-- Complete independent analytics threat and privacy assessments.
+- Repeat scale, soak, chaos, upgrade, cost and clean-room recovery qualification on supported releases.
+- Continue independent analytics threat and privacy assessments.
 - Publish SLOs, monitoring, alerts, deployment guidance and incident/recovery runbooks.
-- Canary behind organization policy before updating the README status matrix and release notes.
+- Canary behind organization policy and retain the resulting operational evidence.
 
 **Exit gate:** analytics is bounded, authorized, residency-aware, recoverable and supported at published
 scale; turning it off leaves a fully supported Fleet deployment.
 
 ### M15 — Advanced insights
 
-**State:** gated by M14; not required for Fleet Analytics V1
+**State:** post-1.0; not required for Fleet Analytics V1
 
 - Correlate deployment releases with regressions.
 - Add anomaly detection, saved comparisons and approved alerts.

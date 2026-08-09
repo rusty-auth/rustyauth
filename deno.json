@@ -4,6 +4,9 @@
     "./packages/client",
     "./packages/protocol"
   ],
+  "imports": {
+    "@std/assert": "jsr:@std/assert@1.0.19"
+  },
   "nodeModulesDir": "auto",
   "tasks": {
     "site:dev": "deno task --cwd site dev",

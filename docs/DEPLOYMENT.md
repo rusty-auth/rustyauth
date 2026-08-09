@@ -1,6 +1,6 @@
 # Deploying RustyAuth
 
-The current pre-release source now builds three standalone services:
+RustyAuth `1.0.0` builds three independently deployable services:
 
 - a public, stateless Dioxus dashboard and bounded same-origin Connect gateway;
 - a Rust/Axum authentication realm backend; and
@@ -296,7 +296,7 @@ infrastructure boundary and deny cloud metadata and unreviewed private address r
 defence in depth.
 
 See [Security hardening and qualification](SECURITY_HARDENING.md) for the release verification matrix and
-remaining production gates.
+continuous production-assurance program.
 
 ## TLS and proxying
 
@@ -360,7 +360,7 @@ Never delete or recreate the SableDB volume as an upgrade shortcut.
 
 ## Scaling
 
-Run one RustyAuth writer replica in version `0.1.0`. At startup every serving process must acquire the
+Run one RustyAuth writer replica in version `1.0.0`. At startup every serving process must acquire the
 namespace's SableDB writer lease. It renews the 60-second lease every 10 seconds and shuts down if renewal
 fails or the ownership token changes. Multi-key operations use SableDB atomic pipelines and compound mutations
 also use a process-local mutex; active/active mutation has not been qualified and is unsupported.
@@ -454,7 +454,7 @@ real authenticator and preserve the command receipts with the incident log.
 
 The public
 [RustyAuth Railway template](https://railway.com/new/template/rustyauth?utm_medium=integration&utm_source=button&utm_campaign=rustyauth)
-is available for evaluation and integration work. Its clean-room deployment and storage-survival checks pass:
+is available for `1.0.0` deployments. Its clean-room deployment and storage-survival checks pass:
 all three services become healthy, generated secrets are applied, the private SableDB reference resolves, and
 signing state survives SableDB container replacement.
 

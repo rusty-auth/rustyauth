@@ -1,4 +1,4 @@
-import { assert, assertEquals, assertStringIncludes } from "jsr:@std/assert@1.0.19";
+import { assert, assertEquals, assertStringIncludes } from "@std/assert";
 
 const read = (path: string): string => Deno.readTextFileSync(new URL(`../${path}`, import.meta.url));
 
