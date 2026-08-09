@@ -10,6 +10,9 @@ service OrganizationService {
   rpc GetCurrentOperator(GetCurrentOperatorRequest) returns (Operator);
   rpc UpdateOrganization(UpdateOrganizationRequest) returns (Organization);
   rpc ListOperators(ListOperatorsRequest) returns (ListOperatorsResponse);
+  rpc CreateAccountInvitation(CreateAccountInvitationRequest) returns (CreateAccountInvitationResponse);
+  rpc ListAccountInvitations(ListAccountInvitationsRequest) returns (ListAccountInvitationsResponse);
+  rpc RevokeAccountInvitation(RevokeAccountInvitationRequest) returns (AccountInvitation);
 }
 
 enum OperatorRole {
@@ -52,4 +55,50 @@ message ListOperatorsRequest {
 message ListOperatorsResponse {
   repeated Operator operators = 1;
   string next_page_token = 2;
+}
+
+enum AccountInvitationStatus {
+  ACCOUNT_INVITATION_STATUS_UNSPECIFIED = 0;
+  ACCOUNT_INVITATION_STATUS_PENDING = 1;
+  ACCOUNT_INVITATION_STATUS_CONSUMED = 2;
+  ACCOUNT_INVITATION_STATUS_REVOKED = 3;
+  ACCOUNT_INVITATION_STATUS_EXPIRED = 4;
+}
+
+message AccountInvitation {
+  string id = 1;
+  string identifier_type = 2;
+  string identifier_value = 3;
+  string created_by = 4;
+  string created_at = 5;
+  string expires_at = 6;
+  string consumed_at = 7;
+  string revoked_at = 8;
+  AccountInvitationStatus status = 9;
+}
+
+message CreateAccountInvitationRequest {
+  string identifier_type = 1;
+  string identifier_value = 2;
+  uint64 expires_in_seconds = 3;
+}
+
+message CreateAccountInvitationResponse {
+  AccountInvitation invitation = 1;
+  // Returned once. Only a digest is persisted by the service.
+  string invitation_code = 2;
+}
+
+message ListAccountInvitationsRequest {
+  uint32 page_size = 1;
+  string page_token = 2;
+}
+
+message ListAccountInvitationsResponse {
+  repeated AccountInvitation invitations = 1;
+  string next_page_token = 2;
+}
+
+message RevokeAccountInvitationRequest {
+  string invitation_id = 1;
 }

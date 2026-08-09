@@ -3,11 +3,10 @@
 /infra/cloudflare/cloudflare
 /node_modules/
 /docs/business/
-/dashboard/dist/
-/dashboard/.vite/
 /.codex-*
 /.env
 /.env.*.local
+/.config.*.local.yaml
 /.idea/
 /.vscode/
 *.swp

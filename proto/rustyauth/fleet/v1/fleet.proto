@@ -2,10 +2,15 @@ syntax = "proto3";
 
 package rustyauth.fleet.v1;
 
+import "rustyauth/management/v1/management.proto";
+
 // Owns Fleet metadata and authorization. This service never exposes realm
 // database credentials or makes customer identity data authoritative centrally.
 service FleetService {
   rpc GetFleetOverview(GetFleetOverviewRequest) returns (FleetOverview);
+  rpc GetAnalyticsOverview(GetAnalyticsOverviewRequest) returns (FleetAnalyticsOverview);
+  rpc GetRealmOperations(GetRealmOperationsRequest) returns (FleetRealmOperations);
+  rpc ExecuteRealmMutation(ExecuteRealmMutationRequest) returns (FleetRealmMutationResult);
 
   rpc ListOrganizations(ListOrganizationsRequest) returns (ListOrganizationsResponse);
   rpc GetOrganization(GetOrganizationRequest) returns (Organization);
@@ -29,6 +34,7 @@ service FleetService {
   rpc GetConnection(GetConnectionRequest) returns (RealmConnection);
   rpc BeginConnection(BeginConnectionRequest) returns (ConnectionAttempt);
   rpc CompleteConnection(CompleteConnectionRequest) returns (RealmConnection);
+  rpc RotateConnection(RotateConnectionRequest) returns (RealmConnection);
   rpc RevokeConnection(RevokeConnectionRequest) returns (RealmConnection);
 
   rpc ListRoleBindings(ListRoleBindingsRequest) returns (ListRoleBindingsResponse);
@@ -205,6 +211,100 @@ message GetFleetOverviewRequest {
   string organization_id = 1;
 }
 
+message GetAnalyticsOverviewRequest {
+  // Organization is mandatory: Fleet-wide analytics requires a separate
+  // future platform permission and is never inferred from an empty scope.
+  string organization_id = 1;
+  string project_id = 2;
+  string environment_id = 3;
+  string realm_id = 4;
+  string starts_at = 5;
+  string ends_at = 6;
+}
+
+message GetRealmOperationsRequest {
+  string organization_id = 1;
+  string project_id = 2;
+  string environment_id = 3;
+  string connection_id = 4;
+  uint32 user_page_size = 5;
+  string user_page_token = 6;
+  uint64 event_after_sequence = 7;
+  uint32 event_page_size = 8;
+  string metrics_starts_at = 9;
+  string metrics_ends_at = 10;
+  uint32 service_account_page_size = 11;
+  string service_account_page_token = 12;
+  uint32 webhook_page_size = 13;
+  string webhook_page_token = 14;
+}
+
+message FleetRealmOperations {
+  rustyauth.management.v1.RealmOperationalSnapshot snapshot = 1;
+  string connection_id = 2;
+  ConnectionState connection_state = 3;
+  // `live-public-endpoint` or `live-outbound-connector`; cached data is never
+  // silently substituted for a failed live read.
+  string source = 4;
+  bool stale = 5;
+  string observed_at = 6;
+}
+
+message ExecuteRealmMutationRequest {
+  string organization_id = 1;
+  string project_id = 2;
+  string environment_id = 3;
+  string connection_id = 4;
+  MutationContext mutation = 5;
+  string expires_at = 6;
+  rustyauth.management.v1.RemoteMutationOperation operation = 7;
+  string target_id = 8;
+  string secondary_id = 9;
+  bool enabled = 10;
+}
+
+message FleetRealmMutationResult {
+  rustyauth.management.v1.RemoteMutationResult result = 1;
+  string source = 2;
+  string centrally_audited_at = 3;
+}
+
+message FleetAnalyticsPoint {
+  string starts_at = 1;
+  uint64 authentication_attempts = 2;
+  uint64 authentication_successes = 3;
+  uint64 authentication_failures = 4;
+  uint64 authentication_denials = 5;
+}
+
+message RealmAnalyticsCoverage {
+  string connection_id = 1;
+  string realm_id = 2;
+  ConnectionState connection_state = 3;
+  bool reporting = 4;
+  bool stale = 5;
+  string last_bucket_at = 6;
+}
+
+message FleetAnalyticsOverview {
+  uint64 authentication_attempts = 1;
+  uint64 authentication_successes = 2;
+  uint64 authentication_failures = 3;
+  uint64 authentication_denials = 4;
+  uint64 registrations_completed = 5;
+  uint64 sessions_created = 6;
+  uint64 service_account_calls = 7;
+  uint64 webhook_deliveries = 8;
+  uint64 webhook_failures = 9;
+  uint64 expected_realms = 10;
+  uint64 reporting_realms = 11;
+  uint64 stale_realms = 12;
+  repeated FleetAnalyticsPoint points = 13;
+  repeated RealmAnalyticsCoverage coverage = 14;
+  string source = 15;
+  string calculated_at = 16;
+}
+
 message ListOrganizationsRequest {
   uint32 page_size = 1;
   string page_token = 2;
@@ -352,6 +452,9 @@ message BeginConnectionRequest {
   ConnectionMode mode = 4;
   string management_endpoint = 5;
   MutationContext mutation = 6;
+  // Required only for outbound mode. Fleet stores only a SHA-256 digest and
+  // the private realm presents the same short-lived code over PairOutbound.
+  string pairing_code = 7;
 }
 
 message ConnectionAttempt {
@@ -370,6 +473,14 @@ message CompleteConnectionRequest {
 }
 
 message RevokeConnectionRequest {
+  string organization_id = 1;
+  string project_id = 2;
+  string environment_id = 3;
+  string connection_id = 4;
+  MutationContext mutation = 5;
+}
+
+message RotateConnectionRequest {
   string organization_id = 1;
   string project_id = 2;
   string environment_id = 3;

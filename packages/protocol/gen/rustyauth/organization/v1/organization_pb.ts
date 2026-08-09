@@ -10,7 +10,9 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file rustyauth/organization/v1/organization.proto.
  */
 export const file_rustyauth_organization_v1_organization: GenFile = /*@__PURE__*/
-  fileDesc("CixydXN0eWF1dGgvb3JnYW5pemF0aW9uL3YxL29yZ2FuaXphdGlvbi5wcm90bxIZcnVzdHlhdXRoLm9yZ2FuaXphdGlvbi52MSJKCgxPcmdhbml6YXRpb24SCgoCaWQYASABKAkSDAoEc2x1ZxgCIAEoCRIMCgRuYW1lGAMgASgJEhIKCmNyZWF0ZWRfYXQYBCABKAkipQEKCE9wZXJhdG9yEgoKAmlkGAEgASgJEg0KBWVtYWlsGAIgASgJEhQKDGRpc3BsYXlfbmFtZRgDIAEoCRI1CgRyb2xlGAQgASgOMicucnVzdHlhdXRoLm9yZ2FuaXphdGlvbi52MS5PcGVyYXRvclJvbGUSEgoKY3JlYXRlZF9hdBgFIAEoCRIdChVsYXN0X2F1dGhlbnRpY2F0ZWRfYXQYBiABKAkiGAoWR2V0T3JnYW5pemF0aW9uUmVxdWVzdCIbChlHZXRDdXJyZW50T3BlcmF0b3JSZXF1ZXN0IikKGVVwZGF0ZU9yZ2FuaXphdGlvblJlcXVlc3QSDAoEbmFtZRgBIAEoCSI9ChRMaXN0T3BlcmF0b3JzUmVxdWVzdBIRCglwYWdlX3NpemUYASABKA0SEgoKcGFnZV90b2tlbhgCIAEoCSJoChVMaXN0T3BlcmF0b3JzUmVzcG9uc2USNgoJb3BlcmF0b3JzGAEgAygLMiMucnVzdHlhdXRoLm9yZ2FuaXphdGlvbi52MS5PcGVyYXRvchIXCg9uZXh0X3BhZ2VfdG9rZW4YAiABKAkqnQEKDE9wZXJhdG9yUm9sZRIdChlPUEVSQVRPUl9ST0xFX1VOU1BFQ0lGSUVEEAASFwoTT1BFUkFUT1JfUk9MRV9PV05FUhABEh8KG09QRVJBVE9SX1JPTEVfQURNSU5JU1RSQVRPUhACEhkKFU9QRVJBVE9SX1JPTEVfU1VQUE9SVBADEhkKFU9QRVJBVE9SX1JPTEVfQVVESVRPUhAEMt4DChNPcmdhbml6YXRpb25TZXJ2aWNlEm0KD0dldE9yZ2FuaXphdGlvbhIxLnJ1c3R5YXV0aC5vcmdhbml6YXRpb24udjEuR2V0T3JnYW5pemF0aW9uUmVxdWVzdBonLnJ1c3R5YXV0aC5vcmdhbml6YXRpb24udjEuT3JnYW5pemF0aW9uEm8KEkdldEN1cnJlbnRPcGVyYXRvchI0LnJ1c3R5YXV0aC5vcmdhbml6YXRpb24udjEuR2V0Q3VycmVudE9wZXJhdG9yUmVxdWVzdBojLnJ1c3R5YXV0aC5vcmdhbml6YXRpb24udjEuT3BlcmF0b3IScwoSVXBkYXRlT3JnYW5pemF0aW9uEjQucnVzdHlhdXRoLm9yZ2FuaXphdGlvbi52MS5VcGRhdGVPcmdhbml6YXRpb25SZXF1ZXN0GicucnVzdHlhdXRoLm9yZ2FuaXphdGlvbi52MS5Pcmdhbml6YXRpb24ScgoNTGlzdE9wZXJhdG9ycxIvLnJ1c3R5YXV0aC5vcmdhbml6YXRpb24udjEuTGlzdE9wZXJhdG9yc1JlcXVlc3QaMC5ydXN0eWF1dGgub3JnYW5pemF0aW9uLnYxLkxpc3RPcGVyYXRvcnNSZXNwb25zZWIGcHJvdG8z");
+  fileDesc(
+    "CixydXN0eWF1dGgvb3JnYW5pemF0aW9uL3YxL29yZ2FuaXphdGlvbi5wcm90bxIZcnVzdHlhdXRoLm9yZ2FuaXphdGlvbi52MSJKCgxPcmdhbml6YXRpb24SCgoCaWQYASABKAkSDAoEc2x1ZxgCIAEoCRIMCgRuYW1lGAMgASgJEhIKCmNyZWF0ZWRfYXQYBCABKAkipQEKCE9wZXJhdG9yEgoKAmlkGAEgASgJEg0KBWVtYWlsGAIgASgJEhQKDGRpc3BsYXlfbmFtZRgDIAEoCRI1CgRyb2xlGAQgASgOMicucnVzdHlhdXRoLm9yZ2FuaXphdGlvbi52MS5PcGVyYXRvclJvbGUSEgoKY3JlYXRlZF9hdBgFIAEoCRIdChVsYXN0X2F1dGhlbnRpY2F0ZWRfYXQYBiABKAkiGAoWR2V0T3JnYW5pemF0aW9uUmVxdWVzdCIbChlHZXRDdXJyZW50T3BlcmF0b3JSZXF1ZXN0IikKGVVwZGF0ZU9yZ2FuaXphdGlvblJlcXVlc3QSDAoEbmFtZRgBIAEoCSI9ChRMaXN0T3BlcmF0b3JzUmVxdWVzdBIRCglwYWdlX3NpemUYASABKA0SEgoKcGFnZV90b2tlbhgCIAEoCSJoChVMaXN0T3BlcmF0b3JzUmVzcG9uc2USNgoJb3BlcmF0b3JzGAEgAygLMiMucnVzdHlhdXRoLm9yZ2FuaXphdGlvbi52MS5PcGVyYXRvchIXCg9uZXh0X3BhZ2VfdG9rZW4YAiABKAki+wEKEUFjY291bnRJbnZpdGF0aW9uEgoKAmlkGAEgASgJEhcKD2lkZW50aWZpZXJfdHlwZRgCIAEoCRIYChBpZGVudGlmaWVyX3ZhbHVlGAMgASgJEhIKCmNyZWF0ZWRfYnkYBCABKAkSEgoKY3JlYXRlZF9hdBgFIAEoCRISCgpleHBpcmVzX2F0GAYgASgJEhMKC2NvbnN1bWVkX2F0GAcgASgJEhIKCnJldm9rZWRfYXQYCCABKAkSQgoGc3RhdHVzGAkgASgOMjIucnVzdHlhdXRoLm9yZ2FuaXphdGlvbi52MS5BY2NvdW50SW52aXRhdGlvblN0YXR1cyJvCh5DcmVhdGVBY2NvdW50SW52aXRhdGlvblJlcXVlc3QSFwoPaWRlbnRpZmllcl90eXBlGAEgASgJEhgKEGlkZW50aWZpZXJfdmFsdWUYAiABKAkSGgoSZXhwaXJlc19pbl9zZWNvbmRzGAMgASgEInwKH0NyZWF0ZUFjY291bnRJbnZpdGF0aW9uUmVzcG9uc2USQAoKaW52aXRhdGlvbhgBIAEoCzIsLnJ1c3R5YXV0aC5vcmdhbml6YXRpb24udjEuQWNjb3VudEludml0YXRpb24SFwoPaW52aXRhdGlvbl9jb2RlGAIgASgJIkYKHUxpc3RBY2NvdW50SW52aXRhdGlvbnNSZXF1ZXN0EhEKCXBhZ2Vfc2l6ZRgBIAEoDRISCgpwYWdlX3Rva2VuGAIgASgJInwKHkxpc3RBY2NvdW50SW52aXRhdGlvbnNSZXNwb25zZRJBCgtpbnZpdGF0aW9ucxgBIAMoCzIsLnJ1c3R5YXV0aC5vcmdhbml6YXRpb24udjEuQWNjb3VudEludml0YXRpb24SFwoPbmV4dF9wYWdlX3Rva2VuGAIgASgJIjcKHlJldm9rZUFjY291bnRJbnZpdGF0aW9uUmVxdWVzdBIVCg1pbnZpdGF0aW9uX2lkGAEgASgJKp0BCgxPcGVyYXRvclJvbGUSHQoZT1BFUkFUT1JfUk9MRV9VTlNQRUNJRklFRBAAEhcKE09QRVJBVE9SX1JPTEVfT1dORVIQARIfChtPUEVSQVRPUl9ST0xFX0FETUlOSVNUUkFUT1IQAhIZChVPUEVSQVRPUl9ST0xFX1NVUFBPUlQQAxIZChVPUEVSQVRPUl9ST0xFX0FVRElUT1IQBCrhAQoXQWNjb3VudEludml0YXRpb25TdGF0dXMSKQolQUNDT1VOVF9JTlZJVEFUSU9OX1NUQVRVU19VTlNQRUNJRklFRBAAEiUKIUFDQ09VTlRfSU5WSVRBVElPTl9TVEFUVVNfUEVORElORxABEiYKIkFDQ09VTlRfSU5WSVRBVElPTl9TVEFUVVNfQ09OU1VNRUQQAhIlCiFBQ0NPVU5UX0lOVklUQVRJT05fU1RBVFVTX1JFVk9LRUQQAxIlCiFBQ0NPVU5UX0lOVklUQVRJT05fU1RBVFVTX0VYUElSRUQQBDKGBwoTT3JnYW5pemF0aW9uU2VydmljZRJtCg9HZXRPcmdhbml6YXRpb24SMS5ydXN0eWF1dGgub3JnYW5pemF0aW9uLnYxLkdldE9yZ2FuaXphdGlvblJlcXVlc3QaJy5ydXN0eWF1dGgub3JnYW5pemF0aW9uLnYxLk9yZ2FuaXphdGlvbhJvChJHZXRDdXJyZW50T3BlcmF0b3ISNC5ydXN0eWF1dGgub3JnYW5pemF0aW9uLnYxLkdldEN1cnJlbnRPcGVyYXRvclJlcXVlc3QaIy5ydXN0eWF1dGgub3JnYW5pemF0aW9uLnYxLk9wZXJhdG9yEnMKElVwZGF0ZU9yZ2FuaXphdGlvbhI0LnJ1c3R5YXV0aC5vcmdhbml6YXRpb24udjEuVXBkYXRlT3JnYW5pemF0aW9uUmVxdWVzdBonLnJ1c3R5YXV0aC5vcmdhbml6YXRpb24udjEuT3JnYW5pemF0aW9uEnIKDUxpc3RPcGVyYXRvcnMSLy5ydXN0eWF1dGgub3JnYW5pemF0aW9uLnYxLkxpc3RPcGVyYXRvcnNSZXF1ZXN0GjAucnVzdHlhdXRoLm9yZ2FuaXphdGlvbi52MS5MaXN0T3BlcmF0b3JzUmVzcG9uc2USkAEKF0NyZWF0ZUFjY291bnRJbnZpdGF0aW9uEjkucnVzdHlhdXRoLm9yZ2FuaXphdGlvbi52MS5DcmVhdGVBY2NvdW50SW52aXRhdGlvblJlcXVlc3QaOi5ydXN0eWF1dGgub3JnYW5pemF0aW9uLnYxLkNyZWF0ZUFjY291bnRJbnZpdGF0aW9uUmVzcG9uc2USjQEKFkxpc3RBY2NvdW50SW52aXRhdGlvbnMSOC5ydXN0eWF1dGgub3JnYW5pemF0aW9uLnYxLkxpc3RBY2NvdW50SW52aXRhdGlvbnNSZXF1ZXN0GjkucnVzdHlhdXRoLm9yZ2FuaXphdGlvbi52MS5MaXN0QWNjb3VudEludml0YXRpb25zUmVzcG9uc2USggEKF1Jldm9rZUFjY291bnRJbnZpdGF0aW9uEjkucnVzdHlhdXRoLm9yZ2FuaXphdGlvbi52MS5SZXZva2VBY2NvdW50SW52aXRhdGlvblJlcXVlc3QaLC5ydXN0eWF1dGgub3JnYW5pemF0aW9uLnYxLkFjY291bnRJbnZpdGF0aW9uYgZwcm90bzM",
+  );
 
 /**
  * @generated from message rustyauth.organization.v1.Organization
@@ -89,8 +91,7 @@ export const OperatorSchema: GenMessage<Operator> = /*@__PURE__*/
 /**
  * @generated from message rustyauth.organization.v1.GetOrganizationRequest
  */
-export type GetOrganizationRequest = Message<"rustyauth.organization.v1.GetOrganizationRequest"> & {
-};
+export type GetOrganizationRequest = Message<"rustyauth.organization.v1.GetOrganizationRequest"> & {};
 
 /**
  * Describes the message rustyauth.organization.v1.GetOrganizationRequest.
@@ -102,8 +103,7 @@ export const GetOrganizationRequestSchema: GenMessage<GetOrganizationRequest> = 
 /**
  * @generated from message rustyauth.organization.v1.GetCurrentOperatorRequest
  */
-export type GetCurrentOperatorRequest = Message<"rustyauth.organization.v1.GetCurrentOperatorRequest"> & {
-};
+export type GetCurrentOperatorRequest = Message<"rustyauth.organization.v1.GetCurrentOperatorRequest"> & {};
 
 /**
  * Describes the message rustyauth.organization.v1.GetCurrentOperatorRequest.
@@ -174,6 +174,187 @@ export const ListOperatorsResponseSchema: GenMessage<ListOperatorsResponse> = /*
   messageDesc(file_rustyauth_organization_v1_organization, 6);
 
 /**
+ * @generated from message rustyauth.organization.v1.AccountInvitation
+ */
+export type AccountInvitation = Message<"rustyauth.organization.v1.AccountInvitation"> & {
+  /**
+   * @generated from field: string id = 1;
+   */
+  id: string;
+
+  /**
+   * @generated from field: string identifier_type = 2;
+   */
+  identifierType: string;
+
+  /**
+   * @generated from field: string identifier_value = 3;
+   */
+  identifierValue: string;
+
+  /**
+   * @generated from field: string created_by = 4;
+   */
+  createdBy: string;
+
+  /**
+   * @generated from field: string created_at = 5;
+   */
+  createdAt: string;
+
+  /**
+   * @generated from field: string expires_at = 6;
+   */
+  expiresAt: string;
+
+  /**
+   * @generated from field: string consumed_at = 7;
+   */
+  consumedAt: string;
+
+  /**
+   * @generated from field: string revoked_at = 8;
+   */
+  revokedAt: string;
+
+  /**
+   * @generated from field: rustyauth.organization.v1.AccountInvitationStatus status = 9;
+   */
+  status: AccountInvitationStatus;
+};
+
+/**
+ * Describes the message rustyauth.organization.v1.AccountInvitation.
+ * Use `create(AccountInvitationSchema)` to create a new message.
+ */
+export const AccountInvitationSchema: GenMessage<AccountInvitation> = /*@__PURE__*/
+  messageDesc(file_rustyauth_organization_v1_organization, 7);
+
+/**
+ * @generated from message rustyauth.organization.v1.CreateAccountInvitationRequest
+ */
+export type CreateAccountInvitationRequest =
+  & Message<"rustyauth.organization.v1.CreateAccountInvitationRequest">
+  & {
+    /**
+     * @generated from field: string identifier_type = 1;
+     */
+    identifierType: string;
+
+    /**
+     * @generated from field: string identifier_value = 2;
+     */
+    identifierValue: string;
+
+    /**
+     * @generated from field: uint64 expires_in_seconds = 3;
+     */
+    expiresInSeconds: bigint;
+  };
+
+/**
+ * Describes the message rustyauth.organization.v1.CreateAccountInvitationRequest.
+ * Use `create(CreateAccountInvitationRequestSchema)` to create a new message.
+ */
+export const CreateAccountInvitationRequestSchema: GenMessage<CreateAccountInvitationRequest> = /*@__PURE__*/
+  messageDesc(file_rustyauth_organization_v1_organization, 8);
+
+/**
+ * @generated from message rustyauth.organization.v1.CreateAccountInvitationResponse
+ */
+export type CreateAccountInvitationResponse =
+  & Message<"rustyauth.organization.v1.CreateAccountInvitationResponse">
+  & {
+    /**
+     * @generated from field: rustyauth.organization.v1.AccountInvitation invitation = 1;
+     */
+    invitation?: AccountInvitation | undefined;
+
+    /**
+     * Returned once. Only a digest is persisted by the service.
+     *
+     * @generated from field: string invitation_code = 2;
+     */
+    invitationCode: string;
+  };
+
+/**
+ * Describes the message rustyauth.organization.v1.CreateAccountInvitationResponse.
+ * Use `create(CreateAccountInvitationResponseSchema)` to create a new message.
+ */
+export const CreateAccountInvitationResponseSchema: GenMessage<
+  CreateAccountInvitationResponse
+> = /*@__PURE__*/
+  messageDesc(file_rustyauth_organization_v1_organization, 9);
+
+/**
+ * @generated from message rustyauth.organization.v1.ListAccountInvitationsRequest
+ */
+export type ListAccountInvitationsRequest =
+  & Message<"rustyauth.organization.v1.ListAccountInvitationsRequest">
+  & {
+    /**
+     * @generated from field: uint32 page_size = 1;
+     */
+    pageSize: number;
+
+    /**
+     * @generated from field: string page_token = 2;
+     */
+    pageToken: string;
+  };
+
+/**
+ * Describes the message rustyauth.organization.v1.ListAccountInvitationsRequest.
+ * Use `create(ListAccountInvitationsRequestSchema)` to create a new message.
+ */
+export const ListAccountInvitationsRequestSchema: GenMessage<ListAccountInvitationsRequest> = /*@__PURE__*/
+  messageDesc(file_rustyauth_organization_v1_organization, 10);
+
+/**
+ * @generated from message rustyauth.organization.v1.ListAccountInvitationsResponse
+ */
+export type ListAccountInvitationsResponse =
+  & Message<"rustyauth.organization.v1.ListAccountInvitationsResponse">
+  & {
+    /**
+     * @generated from field: repeated rustyauth.organization.v1.AccountInvitation invitations = 1;
+     */
+    invitations: AccountInvitation[];
+
+    /**
+     * @generated from field: string next_page_token = 2;
+     */
+    nextPageToken: string;
+  };
+
+/**
+ * Describes the message rustyauth.organization.v1.ListAccountInvitationsResponse.
+ * Use `create(ListAccountInvitationsResponseSchema)` to create a new message.
+ */
+export const ListAccountInvitationsResponseSchema: GenMessage<ListAccountInvitationsResponse> = /*@__PURE__*/
+  messageDesc(file_rustyauth_organization_v1_organization, 11);
+
+/**
+ * @generated from message rustyauth.organization.v1.RevokeAccountInvitationRequest
+ */
+export type RevokeAccountInvitationRequest =
+  & Message<"rustyauth.organization.v1.RevokeAccountInvitationRequest">
+  & {
+    /**
+     * @generated from field: string invitation_id = 1;
+     */
+    invitationId: string;
+  };
+
+/**
+ * Describes the message rustyauth.organization.v1.RevokeAccountInvitationRequest.
+ * Use `create(RevokeAccountInvitationRequestSchema)` to create a new message.
+ */
+export const RevokeAccountInvitationRequestSchema: GenMessage<RevokeAccountInvitationRequest> = /*@__PURE__*/
+  messageDesc(file_rustyauth_organization_v1_organization, 12);
+
+/**
  * @generated from enum rustyauth.organization.v1.OperatorRole
  */
 export enum OperatorRole {
@@ -210,6 +391,42 @@ export const OperatorRoleSchema: GenEnum<OperatorRole> = /*@__PURE__*/
   enumDesc(file_rustyauth_organization_v1_organization, 0);
 
 /**
+ * @generated from enum rustyauth.organization.v1.AccountInvitationStatus
+ */
+export enum AccountInvitationStatus {
+  /**
+   * @generated from enum value: ACCOUNT_INVITATION_STATUS_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * @generated from enum value: ACCOUNT_INVITATION_STATUS_PENDING = 1;
+   */
+  PENDING = 1,
+
+  /**
+   * @generated from enum value: ACCOUNT_INVITATION_STATUS_CONSUMED = 2;
+   */
+  CONSUMED = 2,
+
+  /**
+   * @generated from enum value: ACCOUNT_INVITATION_STATUS_REVOKED = 3;
+   */
+  REVOKED = 3,
+
+  /**
+   * @generated from enum value: ACCOUNT_INVITATION_STATUS_EXPIRED = 4;
+   */
+  EXPIRED = 4,
+}
+
+/**
+ * Describes the enum rustyauth.organization.v1.AccountInvitationStatus.
+ */
+export const AccountInvitationStatusSchema: GenEnum<AccountInvitationStatus> = /*@__PURE__*/
+  enumDesc(file_rustyauth_organization_v1_organization, 1);
+
+/**
  * Manages the single organization owned by a RustyAuth deployment. The
  * explicit resource leaves room for future multi-organization hosting without
  * pretending the current storage namespace is multi-tenant.
@@ -224,7 +441,7 @@ export const OrganizationService: GenService<{
     methodKind: "unary";
     input: typeof GetOrganizationRequestSchema;
     output: typeof OrganizationSchema;
-  },
+  };
   /**
    * @generated from rpc rustyauth.organization.v1.OrganizationService.GetCurrentOperator
    */
@@ -232,7 +449,7 @@ export const OrganizationService: GenService<{
     methodKind: "unary";
     input: typeof GetCurrentOperatorRequestSchema;
     output: typeof OperatorSchema;
-  },
+  };
   /**
    * @generated from rpc rustyauth.organization.v1.OrganizationService.UpdateOrganization
    */
@@ -240,7 +457,7 @@ export const OrganizationService: GenService<{
     methodKind: "unary";
     input: typeof UpdateOrganizationRequestSchema;
     output: typeof OrganizationSchema;
-  },
+  };
   /**
    * @generated from rpc rustyauth.organization.v1.OrganizationService.ListOperators
    */
@@ -248,6 +465,30 @@ export const OrganizationService: GenService<{
     methodKind: "unary";
     input: typeof ListOperatorsRequestSchema;
     output: typeof ListOperatorsResponseSchema;
-  },
+  };
+  /**
+   * @generated from rpc rustyauth.organization.v1.OrganizationService.CreateAccountInvitation
+   */
+  createAccountInvitation: {
+    methodKind: "unary";
+    input: typeof CreateAccountInvitationRequestSchema;
+    output: typeof CreateAccountInvitationResponseSchema;
+  };
+  /**
+   * @generated from rpc rustyauth.organization.v1.OrganizationService.ListAccountInvitations
+   */
+  listAccountInvitations: {
+    methodKind: "unary";
+    input: typeof ListAccountInvitationsRequestSchema;
+    output: typeof ListAccountInvitationsResponseSchema;
+  };
+  /**
+   * @generated from rpc rustyauth.organization.v1.OrganizationService.RevokeAccountInvitation
+   */
+  revokeAccountInvitation: {
+    methodKind: "unary";
+    input: typeof RevokeAccountInvitationRequestSchema;
+    output: typeof AccountInvitationSchema;
+  };
 }> = /*@__PURE__*/
   serviceDesc(file_rustyauth_organization_v1_organization, 0);

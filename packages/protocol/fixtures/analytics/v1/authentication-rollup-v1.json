@@ -1,0 +1,14 @@
+{
+  "attempts": 40,
+  "successes": 29,
+  "failures": 7,
+  "denials": 4,
+  "successRateNumerator": 29,
+  "successRateDenominator": 40,
+  "activeAccountObservations": 27,
+  "latencyProfile": 1,
+  "latencyCount": 40,
+  "latencySumMilliseconds": 7200,
+  "latencyCumulativeCounts": [0, 1, 4, 8, 14, 25, 34, 38, 40, 40, 40, 40],
+  "latencyP95UpperBoundMilliseconds": 1000
+}

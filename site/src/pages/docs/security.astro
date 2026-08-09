@@ -14,7 +14,7 @@ const controls = [
 <DocsLayout title="Security" eyebrow="Trust model and hardening" intro="The Rust and Dioxus implementation reduces classes of defects; the security boundary still comes from explicit authentication, authorization and isolation.">
   <div class="doc-callout warning">
     <strong>Pre-release security posture</strong>
-    <p>RustyAuth is not yet qualified as the sole identity system for production. Account recovery, abuse controls, multi-writer review, broader authenticator coverage and an independent assessment remain release gates.</p>
+    <p>RustyAuth is not yet qualified as the sole identity system for production. Published-image drills, the supported web browser/authenticator matrix, full Analytics production qualification, an organization Analytics canary and independent assessments remain release gates. Native applications are unsupported previews outside 1.0.</p>
   </div>
 
   <h2>Core assumptions</h2>
@@ -40,12 +40,12 @@ const controls = [
 
   <h2>Release gate</h2>
   <ol>
-    <li>Complete recovery and abuse-control design.</li>
-    <li>Qualify cross-process mutation safety and supported replica counts.</li>
-    <li>Expand browser, authenticator, protocol-negative and authorization tests.</li>
-    <li>Generate and verify SBOM, provenance, signatures and dependency policy.</li>
-    <li>Complete an independent threat-model and implementation review.</li>
-    <li>Run disaster recovery with escrowed keys and a real post-restore passkey sign-in.</li>
+    <li>Keep the supported single-writer topology explicit until cross-process coordination is qualified.</li>
+    <li>Pass the real browser, authenticator, desktop, iOS and Android matrix.</li>
+    <li>Verify published SBOMs, provenance and signatures through clean install, upgrade and rollback.</li>
+    <li>Complete independent application, deployment, pinned-SableDB and Analytics assessments.</li>
+    <li>Run a real organization-policy Analytics canary.</li>
+    <li>Witness disaster recovery with escrowed keys and a real post-restore passkey sign-in.</li>
   </ol>
   <p>Use the normative <a href="https://github.com/rusty-auth/rustyauth/blob/main/SECURITY.md">security policy and threat model</a> and the <a href="https://github.com/rusty-auth/rustyauth/blob/main/docs/SECURITY_HARDENING.md">hardening checklist</a>. Report vulnerabilities through the private channel described there—not a public issue.</p>
 </DocsLayout>

@@ -2,14 +2,23 @@ syntax = "proto3";
 
 package rustyauth.management.v1;
 
+import "rustyauth/events/v1/events.proto";
+import "rustyauth/identity/v1/identity.proto";
+import "rustyauth/metrics/v1/metrics.proto";
+import "rustyauth/service_accounts/v1/service_accounts.proto";
+import "rustyauth/webhooks/v1/webhooks.proto";
+
 // Exposes one realm's versioned management boundary. Every authenticated
 // connection is permanently bound to one realm by the server.
 service RealmManagementService {
   rpc GetDiscovery(GetDiscoveryRequest) returns (RealmDiscovery);
   rpc GetHealth(GetHealthRequest) returns (RealmHealth);
   rpc GetSummary(GetSummaryRequest) returns (RealmSummary);
+  rpc GetOperationalSnapshot(GetOperationalSnapshotRequest) returns (RealmOperationalSnapshot);
+  rpc ExecuteRemoteMutation(RemoteMutationRequest) returns (RemoteMutationResult);
   rpc CreatePairingCode(CreatePairingCodeRequest) returns (PairingCode);
   rpc ExchangePairingCode(ExchangePairingCodeRequest) returns (PairingGrant);
+  rpc RotateFleetCredential(RotateFleetCredentialRequest) returns (PairingGrant);
   rpc RevokeFleetConnection(RevokeFleetConnectionRequest) returns (FleetConnectionState);
 }
 
@@ -36,6 +45,17 @@ enum ConnectorFrameKind {
   CONNECTOR_FRAME_KIND_RESULT = 4;
   CONNECTOR_FRAME_KIND_ERROR = 5;
   CONNECTOR_FRAME_KIND_GOODBYE = 6;
+  CONNECTOR_FRAME_KIND_TELEMETRY_BATCH = 7;
+  CONNECTOR_FRAME_KIND_TELEMETRY_ACK = 8;
+}
+
+enum RemoteMutationOperation {
+  REMOTE_MUTATION_OPERATION_UNSPECIFIED = 0;
+  REMOTE_MUTATION_OPERATION_REVOKE_USER_PASSKEY = 1;
+  REMOTE_MUTATION_OPERATION_SET_SERVICE_ACCOUNT_ENABLED = 2;
+  REMOTE_MUTATION_OPERATION_REVOKE_SERVICE_ACCOUNT_CREDENTIAL = 3;
+  REMOTE_MUTATION_OPERATION_PAUSE_WEBHOOK = 4;
+  REMOTE_MUTATION_OPERATION_DELETE_WEBHOOK = 5;
 }
 
 message ManagementCapability {
@@ -79,6 +99,61 @@ message GetHealthRequest {}
 
 message GetSummaryRequest {}
 
+message GetOperationalSnapshotRequest {
+  // Must match the authenticated grant. Including it prevents a credential
+  // from becoming a confused-deputy oracle if a request is routed incorrectly.
+  string connection_id = 1;
+  uint32 user_page_size = 2;
+  string user_page_token = 3;
+  uint64 event_after_sequence = 4;
+  uint32 event_page_size = 5;
+  string metrics_starts_at = 6;
+  string metrics_ends_at = 7;
+  uint32 service_account_page_size = 8;
+  string service_account_page_token = 9;
+  uint32 webhook_page_size = 10;
+  string webhook_page_token = 11;
+}
+
+// One bounded, live, source-tagged realm read. It contains only the safe
+// projections already exposed by the realm's operator RPCs; no passkey,
+// session, signing-key, database or webhook-secret material is included.
+message RealmOperationalSnapshot {
+  string realm_id = 1;
+  RealmSummary summary = 2;
+  rustyauth.identity.v1.ListUsersResponse users = 3;
+  repeated rustyauth.events.v1.AuthEvent events = 4;
+  uint64 latest_event_sequence = 5;
+  rustyauth.service_accounts.v1.ListServiceAccountsResponse service_accounts = 6;
+  rustyauth.webhooks.v1.ListWebhooksResponse webhooks = 7;
+  rustyauth.metrics.v1.MetricsOverview metrics = 8;
+  string source = 9;
+  string calculated_at = 10;
+}
+
+message RemoteMutationRequest {
+  string connection_id = 1;
+  string request_id = 2;
+  string reason = 3;
+  // RFC 3339 deadline chosen by Fleet. Realm rejects expired requests and
+  // deadlines more than five minutes ahead.
+  string expires_at = 4;
+  RemoteMutationOperation operation = 5;
+  string target_id = 6;
+  string secondary_id = 7;
+  bool enabled = 8;
+}
+
+message RemoteMutationResult {
+  string connection_id = 1;
+  string request_id = 2;
+  RemoteMutationOperation operation = 3;
+  bool applied = 4;
+  bool replayed = 5;
+  string completed_at = 6;
+  string summary = 7;
+}
+
 message CreatePairingCodeRequest {
   string control_plane_origin = 1;
   repeated string requested_scopes = 2;
@@ -101,6 +176,9 @@ message ExchangePairingCodeRequest {
   string control_plane_origin = 2;
   string control_plane_instance_id = 3;
   string request_id = 4;
+  // Monotonic epoch chosen by Fleet for this realm assignment. Re-pairing the
+  // same stable realm increments it so historical telemetry cannot collide.
+  uint64 assignment_epoch = 5;
 }
 
 message PairingGrant {
@@ -112,12 +190,24 @@ message PairingGrant {
   repeated string granted_scopes = 5;
   string created_at = 6;
   string expires_at = 7;
+  uint64 assignment_epoch = 8;
+  string control_plane_instance_id = 9;
 }
 
 message RevokeFleetConnectionRequest {
   string connection_id = 1;
   string request_id = 2;
   string reason = 3;
+}
+
+message RotateFleetCredentialRequest {
+  string connection_id = 1;
+  string request_id = 2;
+  string reason = 3;
+  // Generated and encrypted by Fleet before this request. Realm stores only
+  // its digest; retries use the same request ID and exact credential.
+  string new_credential = 4;
+  string new_credential_hint = 5;
 }
 
 message FleetConnectionState {

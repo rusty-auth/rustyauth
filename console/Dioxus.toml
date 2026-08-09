@@ -1,8 +1,26 @@
 [application]
 name = "RustyAuth Console"
 
+[bundle]
+identifier = "dev.rustyauth.console"
+publisher = "RustyAuth"
+icon = ["../site/public/brand/rustyauth-mark-transparent.png"]
+category = "DeveloperTool"
+short_description = "Operate RustyAuth realms and Fleet deployments"
+long_description = "Cross-platform RustyAuth control plane for realm, identity, Fleet, backup, and analytics operations."
+copyright = "Copyright 2026 RustyAuth contributors"
+
+[bundle.macos]
+minimum_system_version = "12.0"
+hardened_runtime = true
+
+[bundle.windows]
+digest_algorithm = "sha-256"
+timestamp_url = "http://timestamp.digicert.com"
+tsp = true
+
 [web.app]
 title = "Control plane · RustyAuth"
 
 [web.watcher]
-watch_path = ["src", "../dashboard/src/styles.css"]
+watch_path = ["src", "assets/styles.css"]

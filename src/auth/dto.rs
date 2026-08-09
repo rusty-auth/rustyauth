@@ -18,6 +18,8 @@ pub(super) struct IdentifierRequest {
 #[serde(rename_all = "camelCase")]
 pub(super) struct RegistrationOptionsInput {
     #[serde(default)]
+    pub(super) invitation_code: Option<String>,
+    #[serde(default)]
     pub(super) identifier: Option<IdentifierRequest>,
     #[serde(default)]
     pub(super) email: Option<String>,
@@ -118,6 +120,45 @@ pub(super) struct IdentifierOutput {
 pub(super) struct AuthenticationVerifyInput {
     pub(super) ceremony_id: Uuid,
     pub(super) response: PublicKeyCredential,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(super) struct StepUpVerifyInput {
+    pub(super) ceremony_id: Uuid,
+    pub(super) response: PublicKeyCredential,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(super) struct RecoveryOptionsInput {
+    #[serde(default)]
+    pub(super) identifier: Option<IdentifierRequest>,
+    #[serde(default)]
+    pub(super) email: Option<String>,
+    #[serde(default)]
+    pub(super) phone: Option<String>,
+    pub(super) recovery_code: String,
+    pub(super) label: String,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(super) struct RecoveryCodesOutput {
+    pub(super) recovery_codes: Vec<String>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(super) struct RequestIdentifierVerificationInput {
+    pub(super) identifier: IdentifierRequest,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(super) struct CompleteIdentifierVerificationInput {
+    pub(super) challenge_id: Uuid,
+    pub(super) code: String,
 }
 
 #[derive(Deserialize)]

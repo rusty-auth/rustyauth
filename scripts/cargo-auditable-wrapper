@@ -1,0 +1,7 @@
+#!/bin/sh
+set -eu
+
+# Build tools such as Dioxus invoke `cargo` internally. Calling the real Cargo
+# with the auditable subcommand preserves their arguments while embedding the
+# precise runtime dependency graph into every produced executable or WASM file.
+exec /usr/local/cargo/bin/cargo auditable "$@"

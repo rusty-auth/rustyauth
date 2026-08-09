@@ -1,0 +1,19 @@
+{
+  "version": "X.Y.Z",
+  "scope": "server-container-web-ga",
+  "decision": "no-go",
+  "reviewedBy": ["replace-with-independent-reviewer", "replace-with-release-owner"],
+  "completedAt": "YYYY-MM-DDTHH:MM:SSZ",
+  "gates": {
+    "application_security_review": { "passed": false, "evidence": "" },
+    "deployment_security_review": { "passed": false, "evidence": "" },
+    "sabledb_assumption_review": { "passed": false, "evidence": "" },
+    "analytics_threat_privacy_review": { "passed": false, "evidence": "" },
+    "analytics_production_qualification": { "passed": false, "evidence": "" },
+    "organization_analytics_canary": { "passed": false, "evidence": "" },
+    "published_image_install_upgrade": { "passed": false, "evidence": "" },
+    "browser_authenticator_matrix": { "passed": false, "evidence": "" },
+    "witnessed_recovery_drill": { "passed": false, "evidence": "" },
+    "release_owner_approval": { "passed": false, "evidence": "" }
+  }
+}

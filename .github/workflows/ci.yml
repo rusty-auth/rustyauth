@@ -9,6 +9,33 @@ permissions:
   contents: read
 
 jobs:
+  workflow-lint:
+    name: GitHub Actions syntax and semantics
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5
+        with:
+          go-version-file: infra/cloudflare/go.mod
+          cache: false
+      - run: go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.12 .github/workflows/*.yml
+
+  protocol:
+    name: Protocol compatibility
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+      - uses: bufbuild/buf-action@8c6a16e16f12ba20b6470afa9c2ba9b5ba8c97c3 # v1.5.0
+        with:
+          version: 1.72.0
+          lint: true
+          format: true
+          breaking: ${{ github.event_name == 'pull_request' }}
+          breaking_against: ${{ github.event.repository.clone_url }}#format=git,branch=${{ github.base_ref }}
+          push: false
+
   site:
     name: Site checks
     runs-on: ubuntu-latest
@@ -20,6 +47,10 @@ jobs:
       - run: deno install --frozen
       - run: deno task connect:check
       - run: deno task connect:test
+      - run: deno task docs:check
+      - run: deno task gateway:check
+      - run: deno task native:check
+      - run: deno task release:test
       - run: deno task site:check
       - run: deno task site:test
 
@@ -45,7 +76,7 @@ jobs:
       # actually reach.
       - name: Go vulnerabilities
         run: |
-          go install golang.org/x/vuln/cmd/govulncheck@latest
+          go install golang.org/x/vuln/cmd/govulncheck@v1.6.0
           "$(go env GOPATH)/bin/govulncheck" ./...
 
   # Lint and test are independent lanes: neither waits on the other, and each keeps
@@ -92,6 +123,15 @@ jobs:
       - run: >-
           cargo clippy --manifest-path console/Cargo.toml --locked
           --target wasm32-unknown-unknown --no-default-features --features web -- -D warnings
+      - run: >-
+          cargo check --manifest-path console/Cargo.toml --locked
+          --no-default-features --features desktop
+      - run: >-
+          cargo test --manifest-path console/Cargo.toml --locked
+          --no-default-features --features desktop
+      - run: >-
+          cargo check --manifest-path console/Cargo.toml --locked
+          --no-default-features --features mobile
 
   supply-chain:
     name: Dependency policy
@@ -126,6 +166,11 @@ jobs:
           # --locked, or the job audits a graph it resolved itself rather than the
           # Cargo.lock that actually ships.
           arguments: --all-features --locked
+      - name: Audit independently locked Rust dependency graphs
+        run: |
+          cargo install cargo-audit --version 0.22.2 --locked
+          cargo audit --file console/Cargo.lock
+          cargo audit --file sabledb/Cargo.lock
 
   recovery-integration:
     name: Backup and recovery integration
@@ -143,15 +188,22 @@ jobs:
       - name: Build the SableDB image through the layer cache
         uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
         with:
-          context: ./sabledb
+          context: .
+          file: ./sabledb/Dockerfile
           load: true
           tags: rustyauth-sabledb:ci
           cache-from: type=gha,scope=sabledb-image
           cache-to: type=gha,scope=sabledb-image,mode=max
+      - name: Install checksum-pinned image scanner
+        run: ./scripts/install-trivy.sh "${RUNNER_TEMP}/trivy"
+      - name: Reject HIGH or CRITICAL SableDB image findings
+        run: >-
+          "${RUNNER_TEMP}/trivy/trivy" image --quiet --scanners vuln
+          --severity HIGH,CRITICAL --exit-code 1 rustyauth-sabledb:ci
       - name: Start real SableDB and S3-compatible services
         run: >-
           docker compose -f compose.integration.yaml up -d --wait
-          source-sabledb destination-sabledb minio
+          source-sabledb destination-sabledb minio greptimedb
       - name: Create the private integration bucket
         run: docker compose -f compose.integration.yaml run --rm minio-init
       - name: Run clean-room recovery drill
@@ -164,6 +216,79 @@ jobs:
           RUSTYAUTH_TEST_S3_SECRET_KEY: rustyauth-test-secret
         run: >-
           cargo test --locked --test integration_tests clean_room_backup_restore_and_rotation
+          -- --ignored --exact --nocapture
+      - name: Run Fleet telemetry outage and replay qualification
+        env:
+          RUSTYAUTH_TEST_SOURCE_SABLEDB_URL: redis://127.0.0.1:16379
+        run: >-
+          cargo test --locked --test integration_tests
+          telemetry_survives_24_hour_outage_restart_and_exact_replay
+          -- --ignored --exact --nocapture
+      - name: Run authenticated gRPC telemetry connector qualification
+        env:
+          RUSTYAUTH_TEST_SOURCE_SABLEDB_URL: redis://127.0.0.1:16379
+          RUSTYAUTH_TEST_GREPTIME_URL: http://127.0.0.1:14000
+        run: >-
+          cargo test --locked --lib
+          telemetry::live_tests::grpc_connector_authenticates_persists_and_exactly_acknowledges
+          -- --ignored --exact --nocapture
+      - name: Run canonical, materialized correction and isolation-purge qualification
+        env:
+          RUSTYAUTH_TEST_GREPTIME_URL: http://127.0.0.1:14000
+        run: >-
+          cargo test --locked --lib
+          analytics_store::tests::live_greptime_reduces_wide_metrics_and_replaces_corrections
+          -- --ignored --exact --nocapture
+      - name: Run signed Parquet recovery convergence qualification
+        env:
+          RUSTYAUTH_TEST_SOURCE_SABLEDB_URL: redis://127.0.0.1:16379
+          RUSTYAUTH_TEST_GREPTIME_URL: http://127.0.0.1:14000
+        run: >-
+          cargo test --locked --lib
+          analytics_archive::tests::signed_archive_import_is_idempotent_and_product_queryable
+          -- --ignored --exact --nocapture
+      - name: Run medium Fleet Analytics performance gate
+        env:
+          RUSTYAUTH_TEST_GREPTIME_URL: http://127.0.0.1:14000
+          RUSTYAUTH_RUN_MEDIUM_ANALYTICS_QUALIFICATION: "1"
+        run: >-
+          cargo test --locked --lib
+          analytics_store::tests::medium_tier_organization_query_meets_the_two_second_p95_target
+          -- --ignored --exact --nocapture
+      - name: Run Fleet hierarchy isolation qualification
+        env:
+          RUSTYAUTH_TEST_SOURCE_SABLEDB_URL: redis://127.0.0.1:16379
+        run: >-
+          cargo test --locked --test integration_tests
+          fleet_hierarchy_rejects_cross_organization_and_project_access
+          -- --ignored --exact --nocapture
+      - name: Run pinned-SableDB writer-lease renewal qualification
+        env:
+          RUSTYAUTH_TEST_SOURCE_SABLEDB_URL: redis://127.0.0.1:16379
+        run: >-
+          cargo test --locked --lib
+          store::live_store_tests::writer_lease_renews_on_pinned_sabledb_and_fences_a_replaced_owner
+          -- --ignored --exact --nocapture
+      - name: Run shared SableDB rate-limit qualification
+        env:
+          RUSTYAUTH_TEST_SOURCE_SABLEDB_URL: redis://127.0.0.1:16379
+        run: >-
+          cargo test --locked --lib
+          rate_limit::tests::sabledb_counter_survives_process_replacement_and_is_shared
+          -- --ignored --exact --nocapture
+      - name: Run remote-mutation replay qualification
+        env:
+          RUSTYAUTH_TEST_SOURCE_SABLEDB_URL: redis://127.0.0.1:16379
+        run: >-
+          cargo test --locked --test integration_tests
+          remote_mutation_replay_fencing_survives_restart
+          -- --ignored --exact --nocapture
+      - name: Run remote management boundary qualification
+        env:
+          RUSTYAUTH_TEST_SOURCE_SABLEDB_URL: redis://127.0.0.1:16379
+        run: >-
+          cargo test --locked --lib
+          management_rpc::live_tests::remote_management_rpc_is_dual_bound_and_restart_safe
           -- --ignored --exact --nocapture
       - name: Show service logs after failure
         if: failure()
@@ -181,10 +306,17 @@ jobs:
       - uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
         with:
           context: .
+          load: true
           push: false
           tags: rustyauth:ci
           cache-from: type=gha,scope=rustyauth-image
           cache-to: type=gha,scope=rustyauth-image,mode=max
+      - name: Install checksum-pinned image scanner
+        run: ./scripts/install-trivy.sh "${RUNNER_TEMP}/trivy"
+      - name: Reject HIGH or CRITICAL API image findings
+        run: >-
+          "${RUNNER_TEMP}/trivy/trivy" image --quiet --scanners vuln
+          --severity HIGH,CRITICAL --exit-code 1 rustyauth:ci
 
   dashboard-container:
     name: Dioxus dashboard container build
@@ -196,10 +328,17 @@ jobs:
         with:
           context: .
           file: Dockerfile.dashboard
+          load: true
           push: false
           tags: rustyauth-dashboard:ci
           cache-from: type=gha,scope=dashboard-image
           cache-to: type=gha,scope=dashboard-image,mode=max
+      - name: Install checksum-pinned image scanner
+        run: ./scripts/install-trivy.sh "${RUNNER_TEMP}/trivy"
+      - name: Reject HIGH or CRITICAL dashboard image findings
+        run: >-
+          "${RUNNER_TEMP}/trivy/trivy" image --quiet --scanners vuln
+          --severity HIGH,CRITICAL --exit-code 1 rustyauth-dashboard:ci
       - name: Validate three-service Compose templates
         env:
           AUTH_MASTER_KEY_HEX: compose-validation-only

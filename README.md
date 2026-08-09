@@ -11,17 +11,17 @@ ES256 access tokens.
 [![Status: pre-release](https://img.shields.io/badge/status-pre--release-e2a84a.svg)](#project-status)
 [![Storage: SableDB](https://img.shields.io/badge/storage-SableDB-303030.svg)](https://github.com/sabledb-io/sabledb)
 
-[Website](https://rustyauth.dev) · [Documentation](https://rustyauth.dev/docs) ·
-[Source](https://github.com/rusty-auth/rustyauth)
+[Website](https://rustyauth.dev) · [Developer docs](https://rustyauth.dev/docs) ·
+[Repository docs](docs/README.md) · [Source](https://github.com/rusty-auth/rustyauth)
 
 [![Deploy on Railway](https://railway.com/button.svg)](https://railway.com/new/template/rustyauth?utm_medium=integration&utm_source=button&utm_campaign=rustyauth)
 
 </div>
 
 > [!WARNING]
-> RustyAuth is pre-release software. Account recovery, abuse controls, multi-writer qualification and an
-> independent security assessment are not complete. Do not make it the sole identity system for a production
-> service yet.
+> RustyAuth is pre-release software. Independent security assessment, published-artifact qualification and the
+> full Fleet Analytics qualification program are not complete. Do not make it the sole identity system for a
+> production service yet. Desktop and mobile applications are previews outside the `1.0.0` GA contract.
 
 ## What RustyAuth is
 
@@ -49,8 +49,9 @@ resource ownership.
 - OpenID-style discovery and a public JWKS endpoint;
 - ordered, cursor-based authentication-event polling and gRPC streaming;
 - private Connect/gRPC identity reads, exact search and controlled mutations;
-- a separately deployable Dioxus dashboard with passkey registration, authentication, server-side sign-out,
-  binary Connect/Protobuf, responsive web and shared desktop/mobile feature builds;
+- a separately deployable Dioxus web dashboard with passkey registration, authentication, server-side
+  sign-out, binary Connect/Protobuf and responsive layouts, plus shared preview-only desktop/mobile feature
+  builds;
 - a durable Fleet control-plane slice for organizations, projects, environments, scoped role bindings, central
   audit, realm discovery and single-use pairing without direct access to realm databases;
 - durable single-organization settings and role-gated operator access;
@@ -97,9 +98,10 @@ scripts/local-stack standalone up
 ```
 
 The standalone command creates private secrets in the ignored `.env.standalone.local`, then starts the
-separate Dioxus dashboard, realm backend and private SableDB. Open `http://localhost:8081`. Use the first-run
-setup screen and the generated bootstrap token to create the allowlisted local owner passkey, or use
-`?preview=1` without mutating SableDB.
+separate Dioxus dashboard, realm backend and private SableDB. It also derives an ignored local configuration
+from [`rustyauth.example.yaml`](rustyauth.example.yaml), keeping the public origin aligned when the local port
+is overridden. Open `http://localhost:8081`. Use the first-run setup screen and the generated bootstrap token
+to create the allowlisted local owner passkey, or use `?preview=1` without mutating SableDB.
 
 If a port is occupied, set `STANDALONE_DASHBOARD_PORT` or `FLEET_DASHBOARD_PORT` before running the launcher;
 the local issuer and WebAuthn origin follow the selected port automatically.
@@ -126,11 +128,31 @@ The `sabledb_data` volume survives container replacement. Add `--volumes` only w
 erase the local identity store.
 
 > [!IMPORTANT]
-> No secret ships with a value. `.env.example` leaves every one blank and `compose.yaml` refuses to substitute
-> a default, so an unpopulated `.env` stops the stack by name rather than starting on something readable in
-> this repository. Generate each secret independently, including for local work. RustyAuth additionally
-> refuses a 32-byte key whose bytes are all identical, which catches an unedited `0000…` placeholder — but
-> that check cannot tell a generated key from a published one, which is why there are no defaults to inherit.
+> The checked-in YAML contains only non-secret policy. No secret ships with a value: `.env.example` leaves
+> every secret blank and `compose.yaml` refuses to substitute a default, so an unpopulated `.env` stops the
+> stack by name rather than starting on something readable in this repository. Generate each secret
+> independently, including for local work. RustyAuth additionally refuses a 32-byte key whose bytes are all
+> identical, which catches an unedited `0000…` placeholder — but that check cannot tell a generated key from a
+> published one, which is why there are no defaults to inherit.
+
+## Configuration as code
+
+Each RustyAuth container can load one versioned YAML document describing its issuer, WebAuthn relying party,
+private service endpoint, token and session lifetimes, signing-key lifecycle, operator bootstrap allowlist and
+backup policy. Realm documents can also declare webhook destinations as deployment-owned desired state.
+Secrets remain separate environment variables or Docker secret files.
+
+```sh
+rustyauth config example realm > rustyauth.yaml
+rustyauth config validate rustyauth.yaml
+rustyauth --config rustyauth.yaml
+```
+
+Containers automatically read `/etc/rustyauth/config.yaml`. Platforms without file mounts, including Railway,
+can supply the identical document as the multiline `RUSTYAUTH_CONFIG_YAML` variable. Existing environment-only
+deployments continue to work. See [Configuration](docs/CONFIGURATION.md) for precedence, secret inputs,
+Compose, Railway, webhook ownership and the production backup example. Values declared as IaC remain
+deployment-owned: the dashboard identifies them as managed by YAML instead of presenting a second writer.
 
 ## Backup, key and operator operations
 
@@ -141,6 +163,7 @@ verified logical backup after startup and every six hours by default; signing-ke
 rustyauth doctor
 rustyauth backup create
 rustyauth backup list
+rustyauth backup status
 rustyauth backup verify <object-key>
 rustyauth keys status
 rustyauth keys rotate
@@ -152,8 +175,9 @@ rustyauth operator demote <user-id>
 
 `operator promote` is the supported way to create the first Owner. Dashboard bootstrap requires an operator
 email the account has already **verified**, and verifying an identifier is itself an operator action — so on a
-fresh deployment neither can happen first. The CLI breaks that cycle, and deliberately costs shell access to
-the deployment rather than control of an inbox. Setting `AUTH_OPERATOR_EMAILS` alone is no longer enough to
+fresh deployment neither can happen first. The CLI breaks that cycle, and deliberately costs privileged
+container-command access to the deployment (the production image has no shell) rather than control of an
+inbox. Setting `AUTH_OPERATOR_EMAILS` alone is no longer enough to
 become an operator.
 
 Run restore as an offline operation against an empty RustyAuth namespace:
@@ -166,7 +190,8 @@ rustyauth doctor
 Restore invalidates sessions by default, creates fresh signing-key material and fails closed if its final
 security steps do not complete. `--preserve-sessions` exists only for an explicitly reviewed incident
 response. See [Configuration](docs/CONFIGURATION.md) for key-overlap settings and
-[Deployment](docs/DEPLOYMENT.md) for the clean-room recovery runbook.
+[Backups and disaster recovery](docs/BACKUPS.md) for the format, complete recovery boundary and clean-room
+runbook.
 
 ## How integration works
 
@@ -177,13 +202,15 @@ WebAuthn JSON encoding.
 
 ### Registration
 
-1. A trusted enrolment controller authorizes a new account with `x-bootstrap-token`.
+1. A production operator issues an identifier-bound, one-time invitation; local development may instead use
+   `x-bootstrap-token`.
 2. RustyAuth creates WebAuthn registration options and stores the ceremony for five minutes.
 3. The browser calls `navigator.credentials.create()` and returns the credential.
 4. RustyAuth atomically consumes the ceremony, verifies the credential, creates the user and starts a session.
 
-The bootstrap token is an administrative enrolment credential. Never ship it in a production browser bundle.
-Replace bootstrap enrolment with your reviewed invitation or provisioning boundary before production use.
+The bootstrap token is a development administrative credential and production registration rejects it.
+Production invitation codes are returned once, stored only as digests and consumed atomically with account
+creation.
 
 ### Sign-in and token exchange
 
@@ -223,7 +250,7 @@ stored only as SHA-256-derived SableDB keys; the raw bearer value lives in the H
 | `POST /v1/credentials/rename`              | Passkey session + origin | Rename a passkey                                      |
 | `POST /v1/credentials/revoke`              | Recent passkey + origin  | Remove a non-final passkey                            |
 | `GET /v1/events?after=N`                   | Bootstrap                | Poll up to 500 ordered events                         |
-| `POST /v1/email-links`                     | Origin                   | Record a sign-in request; delivery is not implemented |
+| `POST /v1/email-links`                     | Origin                   | Append a privacy-preserving sign-in request event; no token or email by design |
 
 The complete HTTP and private RPC contracts are documented in [API](docs/API.md). The private
 `rustyauth.identity.v1` service reads/searches profile, identifier and passkey metadata and applies controlled
@@ -242,39 +269,44 @@ tokens and plaintext production SableDB addresses outside private networking.
 - [Docker and Railway deployment](docs/DEPLOYMENT.md)
 - [Security policy and threat model](SECURITY.md)
 
-The intended production topology is one public RustyAuth container, one private persistent SableDB container
-and an optional private S3-compatible bucket. Railway is the first packaging target, not a runtime dependency.
+The intended realm topology is a public Dioxus dashboard, a private RustyAuth backend and a private persistent
+SableDB, with an optional private S3-compatible bucket. A separate Fleet project uses the same three-way
+separation for its dashboard, control-plane API and central datastore. Railway is the first packaging target,
+not a runtime dependency.
 
 ## Project status
 
 RustyAuth is currently `0.1.0` pre-release software.
 
-| Capability                                                  | Status                                                                                                                                                                                |
-| ----------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Passkey registration and authentication                     | Implemented                                                                                                                                                                           |
-| Multiple email/phone identifiers and basic account profiles | Implemented; external verification delivery required                                                                                                                                  |
-| Durable sessions and credential management                  | Implemented                                                                                                                                                                           |
-| ES256 JWT, JWKS and automatic rotation                      | Implemented with prepublication and retired-key overlap                                                                                                                               |
-| Ordered HTTP event polling and gRPC event streaming         | Implemented                                                                                                                                                                           |
-| Private identity gRPC reads, exact search and mutations     | Implemented                                                                                                                                                                           |
-| Passkey-authenticated operator dashboard                    | Implemented; first owner created with `operator promote`, browser bootstrap requires a verified allowlisted email                                                                     |
-| Organization and operator control plane                     | Implemented for one organization per instance                                                                                                                                         |
-| Service accounts and credential exchange                    | Implemented with scoped, one-time credentials                                                                                                                                         |
-| Email sign-in and verification delivery                     | Event recording only                                                                                                                                                                  |
-| Account recovery                                            | Not implemented                                                                                                                                                                       |
-| Scheduled encrypted logical backups                         | Implemented with manifests and read-after-write verification                                                                                                                          |
-| Snapshot restore                                            | Implemented for an empty target; sessions invalidated by default                                                                                                                      |
-| Webhook event delivery                                      | Not implemented                                                                                                                                                                       |
-| Webhook and metrics control plane                           | Dashboard preview and protobuf contracts only; durable handlers not implemented                                                                                                       |
-| Multi-tenant runtime isolation                              | Claims/events are tenant-tagged; one configured tenant per instance                                                                                                                   |
-| Fleet management across isolated deployments                | First functional slice implemented: hierarchy, scoped role bindings, audit, discovery, public-endpoint pairing and revocation; outbound connector and production qualification remain |
-| Cross-platform Dioxus fleet console                         | Live web passkeys, binary Connect, hierarchy and pairing implemented; web and desktop builds pass, while native credential transport and mobile packaging remain                      |
-| Independent security review                                 | Not completed                                                                                                                                                                         |
+| Capability                                                  | Status                                                                                                                                                                              |
+| ----------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Passkey registration and authentication                     | Implemented                                                                                                                                                                         |
+| Multiple email/phone identifiers and basic account profiles | Implemented; external verification delivery required                                                                                                                                |
+| Durable sessions and credential management                  | Implemented                                                                                                                                                                         |
+| ES256 JWT, JWKS and automatic rotation                      | Implemented with prepublication and retired-key overlap                                                                                                                             |
+| Ordered HTTP event polling and gRPC event streaming         | Implemented                                                                                                                                                                         |
+| Private identity gRPC reads, exact search and mutations     | Implemented                                                                                                                                                                         |
+| Passkey-authenticated operator dashboard                    | Implemented; first owner created with `operator promote`, browser bootstrap requires a verified allowlisted email                                                                   |
+| Organization and operator control plane                     | Implemented for one organization per instance                                                                                                                                       |
+| Service accounts and credential exchange                    | Implemented with scoped, one-time credentials                                                                                                                                       |
+| Email sign-in and verification delivery                     | Sign-in-link delivery remains event-only; one-time email/phone verification challenges are delivered through exact signed-webhook subscriptions                                   |
+| Account recovery                                            | Implemented with one-use recovery codes, passkey re-enrolment, session revocation and audit events                                                                                  |
+| Scheduled encrypted logical backups                         | Implemented with authenticated v3 envelopes, WORM/SSE posture verification, leases, health and read-after-write verification                                                       |
+| Snapshot restore                                            | Implemented for an empty target with clean-room validation, key recovery/rotation and sessions invalidated by default                                                              |
+| Webhook event delivery                                      | Implemented on current main with encrypted HMAC secrets, durable history, bounded retry, replay and per-destination cursors                                                         |
+| Webhook and standalone metrics control plane                | Implemented on current main; local five-minute analytics projection backs bounded per-realm metrics                                                                                 |
+| Multi-tenant runtime isolation                              | Claims/events are tenant-tagged; one configured tenant per instance                                                                                                                 |
+| Fleet management across isolated deployments                | Implemented hierarchy/RBAC, public and outbound pairing, step-up remote administration, source-tagged partial operations, rotation/revocation and dual audit                        |
+| Federated Fleet Analytics V1                                | Implemented trusted export/ingestion, private canonical and materialized serving, delegated API/Dioxus, residency policy and signed Parquet recovery; production qualification pending |
+| Dioxus operator console                                    | Web is the supported `1.0.0` client; shared desktop/mobile builds, device tokens and OS-vault adapters remain preview-only                                                         |
+| Independent security review                                 | Not completed                                                                                                                                                                       |
 
-Production `1.0` still requires account recovery and abuse controls, event retention/webhook policy,
-cross-instance concurrency review, dependency and protocol audits, authenticator coverage and an independent
-security assessment. The detailed gate is documented in [Architecture](docs/ARCHITECTURE.md) and the
-[Security policy](SECURITY.md).
+Production `1.0` still requires published-image and clean deployment/upgrade evidence, the supported web
+browser/authenticator matrix, the full Analytics production qualification matrix, independent
+application/deployment/SableDB/Analytics assessments and a successful organization-policy Analytics canary.
+Desktop, iOS and Android distribution is separately gated post-1.0 work. The detailed gate is documented in
+[Security hardening](docs/SECURITY_HARDENING.md), the [roadmap](docs/ROADMAP.md) and the machine-gated
+[1.0.0 release-readiness record](docs/RELEASE_READINESS.md).
 
 The [roadmap](docs/ROADMAP.md) keeps the single-tenant foundation intact while delivering the
 [Fleet control plane](docs/FLEET_CONTROL_PLANE.md) as a separate management plane for isolated deployments.
@@ -291,9 +323,11 @@ cargo build --locked --release
 ```
 
 Tests cover configuration validation, browser-handoff confinement, credential input validation, signing-key
-lifecycle and authenticated backup envelopes. CI also performs a clean-room recovery drill against real
-SableDB and S3-compatible MinIO services. Concurrency, authenticator and broader protocol-negative coverage
-must expand before production readiness.
+lifecycle, authenticated backup envelopes, protocol skew/fuzzing and pinned-service fault/recovery drills. CI
+also performs a clean-room recovery drill against real SableDB and S3-compatible MinIO services. The remaining
+production gates are the real web browser/authenticator matrix, published-artifact drills, the organization
+Analytics canary and independent assessments listed above. Native distribution remains preview-only post-1.0
+work.
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for the development workflow and security-sensitive change
 requirements.
@@ -311,8 +345,8 @@ deno task console:build:web
 ```
 
 ConnectRPC contracts live in `proto/` and `packages/protocol`; the public HTTP client lives in
-`packages/client`. The legacy Solid adapter remains source-only during migration and is no longer shipped or
-published. Regenerate and verify the active contracts with:
+`packages/client`. The retired Solid product adapter is absent from product sources and release artifacts.
+Regenerate and verify the active contracts with:
 
 ```sh
 deno task gen
@@ -326,32 +360,37 @@ never committed or stored in plain Pulumi configuration.
 
 ## Documentation
 
-| Document                                                                                          | Contents                                                                                                  |
-| ------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
-| [Roadmap](docs/ROADMAP.md)                                                                        | Current single-tenant priorities and later product directions                                             |
-| [Architecture](docs/ARCHITECTURE.md)                                                              | Components, flows, state and trust boundaries                                                             |
-| [Fleet control-plane direction](docs/FLEET_CONTROL_PLANE.md)                                      | Active standalone and cross-cloud fleet-management architecture                                           |
-| [Federated Fleet Analytics program](docs/FLEET_ANALYTICS.md)                                      | Post-Fleet metric semantics, cross-cloud delivery, GreptimeDB serving, Parquet recovery and gated roadmap |
-| [Unified Fleet control-plane decision](docs/decisions/0003-unified-dioxus-fleet-control-plane.md) | Dioxus, service, transport, hierarchy and datastore boundaries for Fleet                                  |
-| [Federated Fleet Analytics decision](docs/decisions/0004-federated-fleet-analytics.md)            | Proposed trusted rollup, GreptimeDB and Parquet architecture after Fleet ships                            |
-| [Cross-platform console decision](docs/decisions/0002-cross-platform-fleet-console.md)            | Dioxus client targets, embedded-dashboard coexistence and trust boundaries                                |
-| [Identity data model](docs/IDENTITY_DATA_MODEL.md)                                                | Every persisted identity field, invariant, index and API projection                                       |
-| [Dashboard control-plane decision](docs/decisions/0001-dashboard-control-plane.md)                | SolidJS, ConnectRPC, Rust, Railway and SableDB trust boundaries                                           |
-| [Engineering](docs/ENGINEERING.md)                                                                | Module ownership, coding standards and quality gates                                                      |
-| [HTTP API](docs/API.md)                                                                           | Endpoints, inputs, responses and access requirements                                                      |
-| [OpenAPI specification](docs/openapi.yaml)                                                        | Machine-readable contract for the public HTTP endpoints                                                   |
-| [Examples](examples/README.md)                                                                    | Runnable relying-party and JWT-verification integrations                                                  |
-| [Releasing](RELEASING.md)                                                                         | Tagged releases, container image, JSR and BSR publishing                                                  |
-| [Configuration](docs/CONFIGURATION.md)                                                            | Every environment variable and validation rule                                                            |
-| [Deployment](docs/DEPLOYMENT.md)                                                                  | Docker, Railway, persistence and operations                                                               |
-| [Security hardening](docs/SECURITY_HARDENING.md)                                                  | Container, supply-chain and qualification controls plus remaining production gates                        |
-| [Security policy](SECURITY.md)                                                                    | Reporting, threat model and known limitations                                                             |
-| [Contributing](CONTRIBUTING.md)                                                                   | Build, review and pull-request expectations                                                               |
-| [Code of conduct](CODE_OF_CONDUCT.md)                                                             | Community expectations and enforcement                                                                    |
-| [Brand guide](docs/BRAND.md)                                                                      | Naming, voice, logo and attribution usage                                                                 |
-| [Changelog](CHANGELOG.md)                                                                         | Release-facing changes and migration notes                                                                |
-| [Third-party notices](THIRD_PARTY_NOTICES.md)                                                     | SableDB and dependency licensing                                                                          |
-| [Third-party licence inventory](THIRD_PARTY_LICENSES.html)                                        | Generated licence texts for the locked Cargo graph                                                        |
+Start at the [documentation index](docs/README.md). It separates guided journeys from normative contracts and
+records which document must change with each API, schema, configuration or deployment change.
+
+### Learn and integrate
+
+- [Standalone quick start](docs/QUICKSTART.md)
+- [Application integration](docs/INTEGRATION.md)
+- [HTTP and RPC API](docs/API.md) and [OpenAPI](docs/openapi.yaml)
+- [Identity data model](docs/IDENTITY_DATA_MODEL.md)
+- [Runnable examples](examples/README.md)
+
+### Deploy and operate
+
+- [Configuration](docs/CONFIGURATION.md)
+- [Docker and Railway deployment](docs/DEPLOYMENT.md)
+- [Railway service topologies](docs/RAILWAY_TEMPLATE.md)
+- [Security hardening](docs/SECURITY_HARDENING.md) and [security policy](SECURITY.md)
+- [Releasing](RELEASING.md)
+
+### Build Fleet
+
+- [Fleet quick start](docs/FLEET_QUICKSTART.md)
+- [Fleet control-plane architecture](docs/FLEET_CONTROL_PLANE.md)
+- [Fleet Analytics program](docs/FLEET_ANALYTICS.md) and [V1 semantics](docs/FLEET_ANALYTICS_V1.md)
+- [Roadmap](docs/ROADMAP.md) and [architecture decisions](docs/README.md#architecture-decisions)
+
+### Contribute
+
+- [Contributing](CONTRIBUTING.md) and [engineering standards](docs/ENGINEERING.md)
+- [Code of conduct](CODE_OF_CONDUCT.md)
+- [Brand](docs/BRAND.md), [changelog](CHANGELOG.md) and [third-party notices](THIRD_PARTY_NOTICES.md)
 
 ## Brand and independence
 

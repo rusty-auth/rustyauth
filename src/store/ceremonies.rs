@@ -24,6 +24,10 @@ pub struct RegistrationCeremony {
     #[serde(default)]
     pub initiating_session_id: Option<Uuid>,
     #[serde(default)]
+    pub invitation_id: Option<Uuid>,
+    #[serde(default)]
+    pub invitation_digest: Option<String>,
+    #[serde(default)]
     pub label: Option<String>,
     pub expires_at: u64,
     pub state: PasskeyRegistration,
@@ -35,6 +39,7 @@ pub enum RegistrationPurpose {
     #[default]
     Initial,
     AddCredential,
+    RecoverAccount,
 }
 
 impl RegistrationCeremony {
@@ -53,8 +58,20 @@ impl RegistrationCeremony {
 pub struct AuthenticationCeremony {
     pub id: Uuid,
     pub user_id: Uuid,
+    #[serde(default)]
+    pub purpose: AuthenticationPurpose,
+    #[serde(default)]
+    pub initiating_session_id: Option<Uuid>,
     pub expires_at: u64,
     pub state: PasskeyAuthentication,
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum AuthenticationPurpose {
+    #[default]
+    SignIn,
+    StepUp,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

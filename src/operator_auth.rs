@@ -8,8 +8,10 @@ use uuid::Uuid;
 
 use crate::store::{
     FleetResourceKindRecord, FleetRoleRecord, IdentifierKind, OperatorRecord, OperatorRoleRecord,
-    Store, User,
+    Session, Store, User, now,
 };
+
+const STEP_UP_SECONDS: u64 = 300;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum OperatorCapability {
@@ -22,6 +24,7 @@ pub(crate) enum OperatorCapability {
 pub(crate) struct OperatorActor {
     pub(crate) user: User,
     pub(crate) operator: OperatorRecord,
+    pub(crate) session: Session,
 }
 
 #[derive(Clone)]
@@ -62,6 +65,7 @@ impl OperatorAuthorizer {
                 OperatorDenial::RoleLacksCapability(actor.operator.role, capability),
             ));
         }
+        require_step_up_for(capability, &actor.session)?;
         Ok(actor)
     }
 
@@ -74,6 +78,7 @@ impl OperatorAuthorizer {
     ) -> Result<OperatorActor, ConnectError> {
         let actor = self.authenticate(headers).await?;
         if allows(actor.operator.role, capability) {
+            require_step_up_for(capability, &actor.session)?;
             return Ok(actor);
         }
         let delegated = self
@@ -82,6 +87,7 @@ impl OperatorAuthorizer {
             .await
             .map_err(internal)?;
         if delegated.is_some_and(|role| fleet_allows(role, capability)) {
+            require_step_up_for(capability, &actor.session)?;
             return Ok(actor);
         }
         Err(operator_denied(
@@ -94,18 +100,36 @@ impl OperatorAuthorizer {
         let origin = headers
             .get(header::ORIGIN)
             .and_then(|value| value.to_str().ok());
-        if origin != Some(self.origin.as_str()) {
-            return Err(permission_denied("request origin is not allowed"));
-        }
-        let raw = session_cookie(headers, self.secure_cookie)
-            .ok_or_else(|| unauthenticated("passkey operator session required"))?;
+        let device = device_bearer(headers);
+        let (raw, expected_method) = match device {
+            Some(raw) => {
+                // Browser JavaScript must stay on the HttpOnly cookie path. A
+                // bearer carrying Origin is either leaked or an integration
+                // mistake; accepting it would turn the native handoff into a
+                // browser-readable long-lived credential pattern.
+                if origin.is_some() {
+                    return Err(permission_denied(
+                        "device sessions are not accepted by browsers",
+                    ));
+                }
+                (raw, "device")
+            }
+            None => {
+                if origin != Some(self.origin.as_str()) {
+                    return Err(permission_denied("request origin is not allowed"));
+                }
+                let raw = session_cookie(headers, self.secure_cookie)
+                    .ok_or_else(|| unauthenticated("passkey operator session required"))?;
+                (raw, "passkey")
+            }
+        };
         let (session, user) = self
             .store
             .session(raw, self.session_idle_seconds)
             .await
             .map_err(internal)?
             .ok_or_else(|| unauthenticated("passkey operator session required"))?;
-        if session.auth_method != "passkey" {
+        if session.auth_method != expected_method {
             return Err(unauthenticated("passkey operator session required"));
         }
         let allowed = bootstrap_allowed(&user, &self.bootstrap_emails);
@@ -117,7 +141,98 @@ impl OperatorAuthorizer {
         else {
             return Err(operator_denied(user.id, OperatorDenial::NotAnOperator));
         };
-        Ok(OperatorActor { user, operator })
+        Ok(OperatorActor {
+            user,
+            operator,
+            session,
+        })
+    }
+
+    /// Rejects mutations against an operator whose global role outranks the
+    /// actor. Non-operator accounts have no privileged role to dominate.
+    pub(crate) async fn require_target_dominance(
+        &self,
+        actor: &OperatorActor,
+        target_user_id: Uuid,
+    ) -> Result<(), ConnectError> {
+        if actor.user.id == target_user_id {
+            return Ok(());
+        }
+        let target = self
+            .store
+            .operator(target_user_id)
+            .await
+            .map_err(internal)?;
+        if target.is_some_and(|target| {
+            operator_role_rank(actor.operator.role) > operator_role_rank(target.role)
+        }) {
+            return Err(permission_denied(
+                "operator role does not dominate the target account",
+            ));
+        }
+        Ok(())
+    }
+
+    /// Returns whether this actor may create, update, or revoke a scoped Fleet
+    /// role. Global and delegated roles use the same dominance ordering.
+    pub(crate) async fn require_fleet_role_dominance(
+        &self,
+        actor: &OperatorActor,
+        resource_kind: FleetResourceKindRecord,
+        resource_id: Uuid,
+        target_role: FleetRoleRecord,
+    ) -> Result<(), ConnectError> {
+        let actor_role = match actor.operator.role {
+            OperatorRoleRecord::Owner => FleetRoleRecord::Owner,
+            OperatorRoleRecord::Administrator => FleetRoleRecord::Administrator,
+            OperatorRoleRecord::Support | OperatorRoleRecord::Auditor => self
+                .store
+                .fleet_effective_role(actor.user.id, resource_kind, resource_id)
+                .await
+                .map_err(internal)?
+                .ok_or_else(|| permission_denied("operator access denied"))?,
+        };
+        if fleet_role_rank(actor_role) > fleet_role_rank(target_role) {
+            return Err(permission_denied(
+                "operator role does not dominate the requested Fleet role",
+            ));
+        }
+        Ok(())
+    }
+}
+
+fn require_step_up_for(
+    capability: OperatorCapability,
+    session: &Session,
+) -> Result<(), ConnectError> {
+    if capability != OperatorCapability::Administer {
+        return Ok(());
+    }
+    let current = now();
+    if session.step_up_at.is_some_and(|step_up_at| {
+        step_up_at <= current && current.saturating_sub(step_up_at) <= STEP_UP_SECONDS
+    }) {
+        return Ok(());
+    }
+    Err(unauthenticated("recent passkey step-up required"))
+}
+
+const fn operator_role_rank(role: OperatorRoleRecord) -> u8 {
+    match role {
+        OperatorRoleRecord::Owner => 0,
+        OperatorRoleRecord::Administrator => 1,
+        OperatorRoleRecord::Support => 2,
+        OperatorRoleRecord::Auditor => 3,
+    }
+}
+
+const fn fleet_role_rank(role: FleetRoleRecord) -> u8 {
+    match role {
+        FleetRoleRecord::Owner => 0,
+        FleetRoleRecord::Administrator => 1,
+        FleetRoleRecord::Operator => 2,
+        FleetRoleRecord::Support => 3,
+        FleetRoleRecord::Auditor => 4,
     }
 }
 
@@ -183,6 +298,23 @@ fn session_cookie(headers: &HeaderMap, secure: bool) -> Option<&str> {
         .split(';')
         .map(str::trim)
         .find_map(|part| part.strip_prefix(&format!("{name}=")))
+}
+
+/// Extracts only RustyAuth's native-device bearer namespace. Machine tokens and
+/// arbitrary bearer values deliberately fall through to their existing policy.
+fn device_bearer(headers: &HeaderMap) -> Option<&str> {
+    let mut values = headers.get_all(header::AUTHORIZATION).iter();
+    let value = values.next()?.to_str().ok()?;
+    if values.next().is_some() {
+        return None;
+    }
+    let (scheme, token) = value.split_once(' ')?;
+    (scheme.eq_ignore_ascii_case("bearer")
+        && token.starts_with("rdt_")
+        && token.len() >= 36
+        && token.len() <= 256
+        && !token.chars().any(char::is_whitespace))
+    .then_some(token)
 }
 
 fn unauthenticated(message: &'static str) -> ConnectError {
@@ -251,6 +383,7 @@ mod tests {
             profile: AccountProfile::default(),
             identifiers,
             session_version: 1,
+            recovery_codes: Vec::new(),
             created_at: 100,
             passkeys: Vec::new(),
         }
@@ -428,5 +561,43 @@ mod tests {
                 .unwrap(),
         );
         assert_eq!(session_cookie(&production, true), Some("secure"));
+    }
+
+    #[test]
+    fn native_device_bearers_are_strictly_namespaced_and_unambiguous() {
+        let token = format!("rdt_{}", "a".repeat(43));
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            header::AUTHORIZATION,
+            format!("Bearer {token}").parse().unwrap(),
+        );
+        assert_eq!(device_bearer(&headers), Some(token.as_str()));
+
+        headers.insert(
+            header::AUTHORIZATION,
+            "Bearer machine-token".parse().unwrap(),
+        );
+        assert_eq!(device_bearer(&headers), None);
+        headers.insert(
+            header::AUTHORIZATION,
+            format!("Basic {token}").parse().unwrap(),
+        );
+        assert_eq!(device_bearer(&headers), None);
+        headers.insert(
+            header::AUTHORIZATION,
+            format!("Bearer {token} trailing").parse().unwrap(),
+        );
+        assert_eq!(device_bearer(&headers), None);
+
+        let mut duplicate = HeaderMap::new();
+        duplicate.append(
+            header::AUTHORIZATION,
+            format!("Bearer {token}").parse().unwrap(),
+        );
+        duplicate.append(
+            header::AUTHORIZATION,
+            format!("Bearer {token}").parse().unwrap(),
+        );
+        assert_eq!(device_bearer(&duplicate), None);
     }
 }

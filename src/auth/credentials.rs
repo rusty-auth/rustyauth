@@ -69,6 +69,8 @@ pub(super) async fn add_registration_options(
         profile: AccountProfile::default(),
         purpose: RegistrationPurpose::AddCredential,
         initiating_session_id: Some(session.id),
+        invitation_id: None,
+        invitation_digest: None,
         label: Some(label),
         expires_at: now().saturating_add(CEREMONY_SECONDS),
         state: ceremony_state,
@@ -170,7 +172,7 @@ pub(super) async fn revoke_credential(
     Ok(StatusCode::NO_CONTENT)
 }
 
-fn credential_label(value: &str) -> Result<String, ApiError> {
+pub(super) fn credential_label(value: &str) -> Result<String, ApiError> {
     let label = value.trim();
     if label.is_empty()
         || label.chars().count() > 80

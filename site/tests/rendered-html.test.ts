@@ -39,6 +39,8 @@ Deno.test("renders the RustyAuth landing page", async () => {
   assertNotMatch(html, /Deploy on Railway/);
   assertNotMatch(html, /railway\.com\/new\/template\/rustyauth/);
   assertMatch(html, /scheduled backups and clean-room restore/i);
+  assertMatch(html, /Native applications remain post-1.0 previews/);
+  assertNotMatch(html, /Signed native packages/);
   assertMatch(html, /illustrative—not customer case studies/);
   assertMatch(html, /capability-grid/);
   assertNotMatch(html, /agent-thesis-compact|capability-editorial|pathway-list/);
@@ -60,7 +62,8 @@ Deno.test("renders the Fleet flagship page honestly", async () => {
   assertMatch(html, /Fleet Analytics/);
   assertMatch(html, /Illustrative Fleet view/);
   assertMatch(html, /Analytics V1 contract shipped/);
-  assertMatch(html, /staged M11–M14 work/);
+  assertMatch(html, /full production qualification matrix, independent assessment/);
+  assertMatch(html, /organization-policy canary remain before production support/);
   assertMatch(html, /railway\.com\/new\/template\/rustyauth/);
   assertMatch(html, /standalone evaluation realm, not the complete/);
   assertMatch(html, /Fleet never receives a realm SableDB URL/);
@@ -198,7 +201,7 @@ Deno.test("renders every documentation route", async () => {
   assertMatch(fleet, /Dioxus Fleet dashboard/);
 
   const fleetAnalytics = await Deno.readTextFile(outputFor("/docs/fleet-analytics"));
-  assertMatch(fleetAnalytics, /Realm projection and reliable export are shipped/);
+  assertMatch(fleetAnalytics, /Fleet Analytics V1 is implemented in source/);
   assertMatch(fleetAnalytics, /Fleet does not continuously introspect arbitrary customer buckets/);
   assertMatch(fleetAnalytics, /GreptimeDB is an internal adapter/);
 
@@ -210,6 +213,11 @@ Deno.test("renders every documentation route", async () => {
   const docsHome = await Deno.readTextFile(outputFor("/docs"));
   assertMatch(docsHome, /Search documentation/);
   assertMatch(docsHome, /Choose your path/);
+  assertMatch(docsHome, /Native applications are post-1.0 previews/);
+
+  const projectStatus = await Deno.readTextFile(outputFor("/docs/project-status"));
+  assertMatch(projectStatus, /Native clients<\/td><td>Preview/);
+  assertMatch(projectStatus, /does not block the server, container and web GA/);
 
   const configuration = await Deno.readTextFile(outputFor("/docs/configuration"));
   assertMatch(configuration, /One contract for every environment/);

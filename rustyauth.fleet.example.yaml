@@ -1,0 +1,51 @@
+# yaml-language-server: $schema=./schemas/rustyauth-config-v1alpha1.schema.json
+apiVersion: rustyauth.dev/v1alpha1
+kind: FleetControlPlane
+
+metadata:
+  tenantId: fleet-development
+
+spec:
+  environment: development
+
+  server:
+    bind: 0.0.0.0
+    port: 8080
+    publicIssuer: http://localhost:5196
+    trustedProxyHops: 1
+
+  datastore:
+    endpoint: redis://fleet-sabledb:6379
+
+  relyingParty:
+    id: localhost
+    origin: http://localhost:5196
+    name: RustyAuth Fleet Local
+
+  tokens:
+    accessTtl: 5m
+
+  sessions:
+    idleTimeout: 30m
+    absoluteTimeout: 7d
+
+  events:
+    retention: 90d
+
+  signingKeys:
+    rotateEvery: 30d
+    prepublishFor: 10m
+    overlapFor: 10m
+    maintenanceInterval: 30s
+
+  operators:
+    bootstrapEmails:
+      - admin@rustyauth.local
+
+  backups:
+    enabled: false
+
+  # Enable with a private GreptimeDB origin. Inject
+  # AUTH_ANALYTICS_USERNAME/PASSWORD through the platform secret manager.
+  analytics:
+    enabled: false

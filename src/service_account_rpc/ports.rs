@@ -62,6 +62,12 @@ pub(crate) trait ServiceAccountSource: Send + Sync + 'static {
         raw: &str,
         requested_scopes: &[String],
     ) -> impl Future<Output = Result<ServiceAccountGrant>> + Send;
+
+    fn record_token_exchange_outcome(
+        &self,
+        event_type: &'static str,
+        service_account_id: Option<Uuid>,
+    ) -> impl Future<Output = Result<()>> + Send;
 }
 
 impl ServiceAccountSource for Store {
@@ -117,6 +123,15 @@ impl ServiceAccountSource for Store {
         requested_scopes: &[String],
     ) -> Result<ServiceAccountGrant> {
         Store::exchange_service_credential(self, raw, requested_scopes).await
+    }
+
+    async fn record_token_exchange_outcome(
+        &self,
+        event_type: &'static str,
+        service_account_id: Option<Uuid>,
+    ) -> Result<()> {
+        Store::append_event(self, event_type, service_account_id).await?;
+        Ok(())
     }
 }
 

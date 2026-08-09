@@ -31,6 +31,15 @@ enum DeliveryStatus {
   DELIVERY_STATUS_FAILED = 4;
 }
 
+// Identifies the authority that owns a destination's desired state. Clients
+// must render configuration-managed destinations read-only and direct the
+// operator back to the deployment configuration for changes.
+enum WebhookManagementSource {
+  WEBHOOK_MANAGEMENT_SOURCE_UNSPECIFIED = 0;
+  WEBHOOK_MANAGEMENT_SOURCE_DASHBOARD = 1;
+  WEBHOOK_MANAGEMENT_SOURCE_CONFIGURATION = 2;
+}
+
 message Webhook {
   string id = 1;
   string name = 2;
@@ -41,6 +50,7 @@ message Webhook {
   string created_at = 7;
   string updated_at = 8;
   string last_delivery_at = 9;
+  WebhookManagementSource management_source = 10;
 }
 
 message WebhookDelivery {
@@ -86,6 +96,8 @@ message CreateWebhookResponse {
 }
 
 message UpdateWebhookRequest {
+  // Configuration-managed webhooks reject updates. Change spec.webhooks and
+  // redeploy so the declared source remains authoritative.
   string webhook_id = 1;
   string name = 2;
   string url = 3;
@@ -126,6 +138,8 @@ message ReplayDeliveryRequest {
 }
 
 message DeleteWebhookRequest {
+  // Configuration-managed webhooks reject deletion. Remove the resource from
+  // spec.webhooks and redeploy instead.
   string webhook_id = 1;
   string reason = 2;
 }

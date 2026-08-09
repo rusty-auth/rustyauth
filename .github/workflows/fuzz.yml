@@ -1,0 +1,34 @@
+name: Protocol fuzzing
+
+on:
+  pull_request:
+    paths:
+      - "fuzz/**"
+      - "proto/**"
+      - "src/analytics.rs"
+      - "src/telemetry.rs"
+      - "build.rs"
+      - "Cargo.toml"
+      - "Cargo.lock"
+  schedule:
+    - cron: "17 3 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  protocol-fuzz:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: dtolnay/rust-toolchain@75be91dd2711b583df57c31d0873b4145c89f1d9
+        with:
+          toolchain: nightly-2026-08-01
+      - uses: Swatinem/rust-cache@49a0bdc70d2e1b713ca9e2869b211fcce03d3c1c # v2
+        with:
+          workspaces: fuzz
+      - run: cargo install cargo-fuzz --version 0.13.2 --locked
+      - run: cargo fuzz run analytics_batch -- -max_total_time=30 -timeout=10
+      - run: cargo fuzz run management_wire -- -max_total_time=30 -timeout=10
+      - run: cargo fuzz run archive_manifest_json -- -max_total_time=30 -timeout=10

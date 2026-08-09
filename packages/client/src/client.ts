@@ -4,7 +4,7 @@
  *
  * Every request is sent with `credentials: "include"` because the durable
  * session is an HttpOnly cookie, and the browser supplies the exact `Origin`
- * header RustyAuth's access checks require. Registration endpoints
+ * header RustyAuth's access checks require. Development registration may
  * additionally carry the administrative `x-bootstrap-token` header.
  */
 
@@ -14,6 +14,7 @@ import type {
   AuthenticationCeremony,
   CredentialSummary,
   Identifier,
+  IdentifierVerificationChallenge,
   RegistrationCeremony,
   TokenResponse,
 } from "./types.ts";
@@ -41,11 +42,13 @@ export interface RustyAuthClientOptions {
   ceremonies?: CeremonyContainer;
 }
 
-/** Initial account enrolment. Requires the deployment's bootstrap token. */
+/** Initial account enrolment. Production uses an invitation; development may use bootstrap. */
 export interface RegisterInput {
   identifier: Identifier;
-  /** Sent as `x-bootstrap-token` on both registration requests. */
-  bootstrapToken: string;
+  /** Development-only enrolment token, sent as a header on both requests. */
+  bootstrapToken?: string;
+  /** One-time, identifier-bound production invitation code. */
+  invitationCode?: string;
   givenName?: string;
   familyName?: string;
   displayName?: string;
@@ -58,6 +61,8 @@ export interface RustyAuthClient {
    * the session cookie is set and the token response returned.
    */
   register(input: RegisterInput): Promise<TokenResponse>;
+  /** Confirms the current passkey again and marks the session as recently stepped up. */
+  stepUp(): Promise<void>;
   /**
    * Signs in an existing account by identifier: requests assertion options,
    * runs `navigator.credentials.get()` and verifies the assertion. On success
@@ -69,10 +74,24 @@ export interface RustyAuthClient {
    * created within the last five minutes.
    */
   addPasskey(input: { label: string }): Promise<void>;
+  /** Recovers an account with an offline code and registers a replacement passkey. */
+  recoverAccount(input: {
+    identifier: Identifier;
+    recoveryCode: string;
+    label: string;
+  }): Promise<TokenResponse>;
+  /** Replaces every offline recovery code and returns the raw codes exactly once. */
+  rotateRecoveryCodes(): Promise<string[]>;
+  /** Sends a one-time verification code to an account identifier. */
+  requestIdentifierVerification(identifier: Identifier): Promise<IdentifierVerificationChallenge>;
+  /** Completes a one-time email or phone verification challenge. */
+  completeIdentifierVerification(input: { challengeId: string; code: string }): Promise<void>;
   /** Mints a fresh short-lived access token for the existing session. */
   mintToken(): Promise<TokenResponse>;
   /** Ends the current session and expires the cookie. Idempotent. */
   signOut(): Promise<void>;
+  /** Revokes every session for the account, including the current one. */
+  revokeAllSessions(): Promise<void>;
   /** Reads the signed-in account: profile and linked identifiers. */
   getAccount(): Promise<Account>;
   /** Lists the account's passkeys. */
@@ -178,14 +197,20 @@ export function createRustyAuthClient(options: RustyAuthClientOptions): RustyAut
 
   return {
     async register(input: RegisterInput): Promise<TokenResponse> {
-      const bootstrap = { "x-bootstrap-token": input.bootstrapToken };
+      if (Boolean(input.bootstrapToken) === Boolean(input.invitationCode)) {
+        throw new Error("registration requires exactly one of bootstrapToken or invitationCode");
+      }
+      const enrolmentHeaders = input.bootstrapToken
+        ? { "x-bootstrap-token": input.bootstrapToken }
+        : undefined;
       const ceremony = await requestJSON<RegistrationCeremony>(
         "/v1/passkeys/registration/options",
         {
           method: "POST",
-          headers: bootstrap,
+          headers: enrolmentHeaders,
           body: {
             identifier: input.identifier,
+            invitationCode: input.invitationCode,
             givenName: input.givenName,
             familyName: input.familyName,
             displayName: input.displayName,
@@ -197,8 +222,22 @@ export function createRustyAuthClient(options: RustyAuthClientOptions): RustyAut
       );
       return await requestJSON<TokenResponse>("/v1/passkeys/registration/verify", {
         method: "POST",
-        headers: bootstrap,
+        headers: enrolmentHeaders,
         body: { ceremonyId: ceremony.ceremonyId, response: registrationResponseToJSON(created) },
+      });
+    },
+
+    async stepUp(): Promise<void> {
+      const ceremony = await requestJSON<AuthenticationCeremony>(
+        "/v1/passkeys/step-up/options",
+        { method: "POST" },
+      );
+      const asserted = asAuthenticationCredential(
+        await ceremonies().get(parseRequestOptions(ceremony.options)),
+      );
+      await request("/v1/passkeys/step-up/verify", {
+        method: "POST",
+        body: { ceremonyId: ceremony.ceremonyId, response: authenticationResponseToJSON(asserted) },
       });
     },
 
@@ -230,12 +269,58 @@ export function createRustyAuthClient(options: RustyAuthClientOptions): RustyAut
       });
     },
 
+    async recoverAccount(input): Promise<TokenResponse> {
+      const ceremony = await requestJSON<RegistrationCeremony>(
+        "/v1/passkeys/recovery/options",
+        {
+          method: "POST",
+          body: {
+            identifier: input.identifier,
+            recoveryCode: input.recoveryCode,
+            label: input.label,
+          },
+        },
+      );
+      const created = asRegistrationCredential(
+        await ceremonies().create(parseCreationOptions(ceremony.options)),
+      );
+      return await requestJSON<TokenResponse>("/v1/passkeys/recovery/verify", {
+        method: "POST",
+        body: { ceremonyId: ceremony.ceremonyId, response: registrationResponseToJSON(created) },
+      });
+    },
+
+    async rotateRecoveryCodes(): Promise<string[]> {
+      const body = await requestJSON<{ recoveryCodes: string[] }>("/v1/account/recovery-codes", {
+        method: "POST",
+      });
+      return body.recoveryCodes;
+    },
+
+    async requestIdentifierVerification(identifier): Promise<IdentifierVerificationChallenge> {
+      return await requestJSON<IdentifierVerificationChallenge>(
+        "/v1/account/identifiers/verification/request",
+        { method: "POST", body: { identifier } },
+      );
+    },
+
+    async completeIdentifierVerification(input): Promise<void> {
+      await request("/v1/account/identifiers/verification/verify", {
+        method: "POST",
+        body: input,
+      });
+    },
+
     async mintToken(): Promise<TokenResponse> {
       return await requestJSON<TokenResponse>("/v1/token", { method: "POST" });
     },
 
     async signOut(): Promise<void> {
       await request("/v1/sign-out", { method: "POST" });
+    },
+
+    async revokeAllSessions(): Promise<void> {
+      await request("/v1/sessions/revoke-all", { method: "POST" });
     },
 
     async getAccount(): Promise<Account> {

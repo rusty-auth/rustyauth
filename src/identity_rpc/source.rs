@@ -16,6 +16,12 @@ pub(crate) trait IdentitySource: Clone + Send + Sync + 'static {
         user_id: Uuid,
     ) -> impl Future<Output = Result<Option<IdentityRecord>>> + Send;
 
+    fn list_users(
+        &self,
+        after: Option<Uuid>,
+        page_size: usize,
+    ) -> impl Future<Output = Result<IdentitySearchPage>> + Send;
+
     fn search_users(
         &self,
         search: UserSearch,
@@ -72,6 +78,19 @@ pub(crate) trait IdentitySource: Clone + Send + Sync + 'static {
 impl IdentitySource for Store {
     async fn get_user(&self, user_id: Uuid) -> Result<Option<IdentityRecord>> {
         Ok(self.user(user_id).await?.map(Into::into))
+    }
+
+    async fn list_users(
+        &self,
+        after: Option<Uuid>,
+        page_size: usize,
+    ) -> Result<IdentitySearchPage> {
+        let UserSearchPage { users, next_after } =
+            Store::list_users(self, after, page_size).await?;
+        Ok(IdentitySearchPage {
+            records: users.into_iter().map(Into::into).collect(),
+            next_after,
+        })
     }
 
     async fn search_users(

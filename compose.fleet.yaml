@@ -24,7 +24,7 @@ services:
       control-plane:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://127.0.0.1:8080/healthz"]
+      test: ["CMD", "/usr/local/bin/container-healthcheck", "http", "127.0.0.1:8080", "/healthz"]
       interval: 5s
       timeout: 3s
       retries: 20
@@ -36,20 +36,12 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+    configs:
+      - source: rustyauth_config
+        target: /etc/rustyauth/config.yaml
     environment:
-      AUTH_ENV: development
-      AUTH_DEPLOYMENT_ROLE: fleet-control-plane
-      AUTH_TRUSTED_PROXY_HOPS: 1
-      AUTH_ISSUER: http://localhost:${FLEET_DASHBOARD_PORT:-5196}
-      WEBAUTHN_RP_ID: localhost
-      WEBAUTHN_RP_ORIGIN: http://localhost:${FLEET_DASHBOARD_PORT:-5196}
-      WEBAUTHN_RP_NAME: RustyAuth Fleet Local
-      SABLEDB_URL: redis://fleet-sabledb:6379
       AUTH_MASTER_KEY_HEX: ${FLEET_AUTH_MASTER_KEY_HEX:?set it in the Fleet env file; scripts/local-stack generates one}
       BOOTSTRAP_TOKEN: ${FLEET_BOOTSTRAP_TOKEN:?set it in the Fleet env file; scripts/local-stack generates one}
-      AUTH_OPERATOR_EMAILS: ${FLEET_OPERATOR_EMAILS:-admin@rustyauth.local}
-      AUTH_TENANT_ID: ${FLEET_TENANT_ID:-fleet-local}
-      PORT: 8080
       RUST_LOG: ${RUST_LOG:-rustyauth=info,tower_http=info}
     expose: ["8080"]
     depends_on:
@@ -66,12 +58,12 @@ services:
   fleet-sabledb:
     <<: *runtime-hardening
     build:
-      context: ./sabledb
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: sabledb/Dockerfile
     volumes:
       - fleet_sabledb_data:/var/lib/sabledb
     healthcheck:
-      test: ["CMD-SHELL", "timeout 2 bash -c '</dev/tcp/127.0.0.1/6379'"]
+      test: ["CMD", "/usr/local/bin/container-healthcheck", "redis", "127.0.0.1:6379"]
       interval: 3s
       timeout: 3s
       retries: 30
@@ -82,6 +74,10 @@ networks:
   private:
     internal: true
   edge:
+
+configs:
+  rustyauth_config:
+    file: ${RUSTYAUTH_CONFIG_FILE:-./rustyauth.fleet.example.yaml}
 
 volumes:
   fleet_sabledb_data:

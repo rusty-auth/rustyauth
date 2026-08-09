@@ -86,8 +86,9 @@ the requested type is returned. Consumers must always inspect the accompanying v
 
 Development mode marks browser-added identifiers verified so local work does not depend on a
 delivery provider. Production registration and browser-added identifiers are unverified and emit an
-`email.verification.requested` or `phone.verification.requested` event. RustyAuth `0.1.0` does not
-deliver or consume email/SMS challenges itself.
+`email.verification.requested` or `phone.verification.requested` event. One-time production challenges are
+delivered only to exact signed-webhook subscriptions, expire, are rate limited and are atomically consumed;
+codes are not retained in delivery metadata.
 
 The private `IdentityService` cannot create a verified identifier in one step. `AddIdentifier`
 rejects `verified: true` with `invalid_argument` and always stores the new identifier unverified;
@@ -252,4 +253,5 @@ do not hide application data inside passkey labels, profile names or event paylo
 - Validate JWT signature, issuer, audience, expiry, tenant and required authentication claims.
 - Keep the identity RPC token in a trusted service; browser clients use the HTTP account surface.
 - Persist event cursors only after downstream processing commits, because delivery is at least once.
-- Plan explicit account recovery and verified email/SMS delivery before production adoption.
+- Issue and escrow offline recovery codes, and qualify the exact signed verification-webhook path before
+  production adoption.

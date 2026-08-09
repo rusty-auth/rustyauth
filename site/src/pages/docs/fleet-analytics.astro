@@ -9,10 +9,10 @@ const deliveryPaths = [
 const rollout = [
   ["M9", "Complete", "V1 semantics, Protobuf, Parquet schema and compatibility fixtures"],
   ["M10", "Complete", "Local projection, durable SableDB outbox and authenticated outbound export"],
-  ["M11", "Ready", "Trusted ingestion coordination and canonical GreptimeDB storage"],
-  ["M12", "Gated by M11", "Role-authorized Analytics RPC and Dioxus drill-down"],
-  ["M13", "Gated by M12", "Hourly/daily materialization, archive import and residency modes"],
-  ["M14", "Gated by M13", "Scale, chaos, recovery, privacy and production qualification"],
+  ["M11", "Complete", "Trusted ingestion coordination and canonical GreptimeDB storage"],
+  ["M12", "Complete", "Role-authorized Analytics RPC and Dioxus drill-down"],
+  ["M13", "Complete", "Hourly/daily materialization, archive import and residency modes"],
+  ["M14", "In progress", "Independent assessment and organization-policy canary"],
   ["M15", "Later", "Separately reviewed anomaly detection, alerts and approved exports"],
 ];
 ---
@@ -21,17 +21,17 @@ const rollout = [
   <div class="docs-status-strip" aria-label="Fleet Analytics delivery status">
     <div><small>Semantic contract</small><strong>M9 complete</strong></div>
     <div><small>Realm telemetry</small><strong>M10 complete</strong></div>
-    <div><small>Next milestone</small><strong>M11 GreptimeDB</strong></div>
+    <div><small>Qualification</small><strong>M14 in progress</strong></div>
   </div>
 
   <div class="doc-callout success">
-    <strong>Realm projection and reliable export are shipped</strong>
-    <p>Paired realms project five-minute snapshots locally, retain 24 hours in a durable SableDB outbox and export complete revisions over the authenticated gRPC connector. Fleet commits a trusted hierarchy-stamped acceptance record before acknowledging. GreptimeDB serving and hierarchy-scoped dashboard queries remain M11–M12 work.</p>
+    <strong>Fleet Analytics V1 is implemented in source</strong>
+  <p>Paired realms project five-minute snapshots locally, retain 24 hours in a durable SableDB outbox and export complete revisions over the authenticated gRPC connector. Fleet persists canonical and materialized GreptimeDB facts, serves delegated hierarchy queries with explicit coverage, and supports signed Parquet recovery. The full production qualification matrix, independent assessment and a real organization-policy canary remain before production support.</p>
   </div>
 
-  <h2>What the feature delivers</h2>
-  <p>An authorized Fleet operator gets one drillable view of authentication health at realm, environment, project, organization and authorized fleet scope. Every result carries reporting coverage, so zero activity is never confused with a realm that is stale, disabled or unsupported.</p>
-  <p>The feature carries operational aggregates: authentication outcomes and latency, registration progress, session and token issuance, service-account activity, webhook delivery, platform health, backup age, signing-key age and connector lag. It does not copy user records, credentials, sessions, tokens or raw identity events into Fleet.</p>
+  <h2>What the program delivers</h2>
+  <p>An authorized Fleet operator can drill through realm, environment, project, organization and authorized fleet scope. Every result carries metric-family coverage, so zero activity is never confused with a realm that is stale, disabled or unsupported.</p>
+  <p>The V1 contract carries operational aggregates: authentication outcomes and latency, registration progress, session and token issuance, service-account activity, webhook delivery, platform health, backup age, signing-key age and connector lag. No supported path copies user records, credentials, sessions, tokens or raw identity events into Fleet.</p>
 
   <h2>Cross-cloud data path</h2>
   <div class="doc-architecture">
@@ -67,7 +67,7 @@ const rollout = [
   <p>A realm cannot claim that it belongs to a different environment or organization. Re-parenting creates a new assignment epoch; historical facts retain the attribution under which they were accepted.</p>
 
   <h2>GreptimeDB is an internal adapter</h2>
-  <p>GreptimeDB is the preferred central analytical store because this workload is time-series heavy and benefits from a Rust implementation. It remains private behind an <code>AnalyticsStore</code> port and must pass schema, deduplication, TTL, quota, repair, performance and recovery qualification. GreptimeDB SQL, tables and credentials are not public product contracts.</p>
+  <p>GreptimeDB is the private central analytical adapter because this workload is time-series heavy and benefits from a Rust implementation. The pinned adapter has passed schema, correction, TTL, isolation/purge, medium-performance and recovery gates. GreptimeDB SQL, tables and credentials are not public product contracts.</p>
   <p>Fleet SableDB remains authoritative for organizations, projects, environments, role bindings, realm connections, accepted revisions, ingestion cursors and archive coordination. Losing analytics storage may make charts stale or partial; it must never alter passkey sign-in, token issuance or realm recovery.</p>
 
   <h2>Coverage and failure isolation</h2>

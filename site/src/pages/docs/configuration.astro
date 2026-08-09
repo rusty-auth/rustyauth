@@ -17,13 +17,13 @@ const precedence = [
 ];
 
 const secrets = [
-  ["AUTH_MASTER_KEY_HEX", "Wraps persisted signing-key material"],
+  ["AUTH_MASTER_KEY_HEX or KMS ciphertext", "Wraps persisted signing-key material"],
   ["BOOTSTRAP_TOKEN", "Administrative initial-enrolment credential"],
   ["AUTH_EVENT_RPC_TOKEN", "Private realm event-stream credential"],
   ["AUTH_IDENTITY_RPC_TOKEN", "Private realm identity-control credential"],
   ["AUTH_BACKUP_ACCESS_KEY_ID", "Backup storage access identifier"],
   ["AUTH_BACKUP_SECRET_ACCESS_KEY", "Backup storage secret"],
-  ["AUTH_BACKUP_ENCRYPTION_KEY_HEX", "Portable application-level backup key"],
+  ["AUTH_BACKUP_ENCRYPTION_KEY_HEX or KMS ciphertext", "Portable application-level backup key"],
 ];
 ---
 

@@ -1,18 +1,19 @@
 # RustyAuth fleet control-plane direction
 
-**Status:** Accepted architecture; implementation in progress
+**Status:** Implemented architecture; external production qualification remains
 
 **Date:** 8 August 2026
 
-**Current priority:** Deliver the unified Dioxus dashboard and the first fully wired Fleet control-plane slice
+**Current priority:** Close published-artifact, supported-web, independent-review and production-canary gates
 
 **Current decision:**
 [Unified Dioxus dashboard and multi-protocol Fleet control plane](decisions/0003-unified-dioxus-fleet-control-plane.md)
 
 This document is the delivery architecture for managing many isolated RustyAuth deployments from one
-dashboard. The first live web slice is implemented, but Fleet remains pre-release until the production and
-security gates in this document pass. Existing data-plane releases still support one configured tenant and one
-organization per instance.
+dashboard. The hierarchy, pairing, operations, controlled administration, outbound connector and shared
+Dioxus journeys are implemented, but Fleet remains pre-release until the production and security gates in this
+document pass. Existing data-plane releases still support one configured tenant and one organization per
+instance.
 
 ## Executive decision
 
@@ -122,16 +123,19 @@ RustyAuth ships one Dioxus dashboard implementation with different deployment ro
 
 | Surface               | Location                                                                 | Purpose                                                         | Current state                                                           |
 | --------------------- | ------------------------------------------------------------------------ | --------------------------------------------------------------- | ----------------------------------------------------------------------- |
-| Standalone Dioxus web | Separate `rustyauth-dashboard` service targeting one realm backend       | Local administration and break-glass access for one realm       | Service split implemented; live local RPC parity pending                |
+| Standalone Dioxus web | Separate `rustyauth-dashboard` service targeting one realm backend       | Local administration and break-glass access for one realm       | Shared live RPC routes and bounded gateway implemented                  |
 | Fleet Dioxus web      | Separate `rustyauth-dashboard` service targeting the Fleet control plane | Central organization, project, environment and realm management | Live passkeys, hierarchy, audit and public-endpoint pairing implemented |
-| Dioxus desktop        | Signed package from `console/`                                           | Native Fleet operations with OS-protected device credentials    | Feature build implemented; live device flow pending                     |
-| Dioxus mobile         | Package from `console/`                                                  | Approvals, health and constrained administration                | Shared feature build implemented; platform qualification pending        |
+| Dioxus desktop preview | Ephemeral unsigned package from `console/`                              | Future native Fleet operations with OS-protected credentials    | Outside `1.0.0`; device sessions/vault adapter implemented              |
+| Dioxus mobile preview | Feature build from `console/`                                            | Future approvals, health and constrained administration         | Outside `1.0.0`; packaging and real-device qualification pending        |
 
 The Dioxus console is one Rust UI codebase with platform feature boundaries for web, desktop and mobile. The
 initial clone deliberately consumes the existing design stylesheet and real brand assets so the surfaces have
 the same typography, spacing, color, motion, charts and responsive behavior while the fleet information
 architecture is introduced. Platform-specific capabilities such as secure credential storage, deep links,
 notifications and window management belong behind adapters rather than inside shared screens.
+
+RustyAuth `1.0.0` supports the two web surfaces only. Native targets are explicitly unsupported previews and
+become products only through the separately gated post-1.0 distribution program.
 
 The surfaces share screens and protocol types, but they do not share authority:
 
@@ -519,11 +523,10 @@ Fleet management is now an active delivery program that preserves the single-ten
 
 ### Phase 0: single-tenant foundation
 
-- Complete account recovery and abuse controls.
-- Complete event retention and delivery policy.
-- Qualify concurrency and the supported writer topology.
-- Expand authenticator and protocol-negative coverage.
-- Complete an independent security assessment.
+- Maintain account recovery, verification delivery, abuse controls and event retention coverage.
+- Keep the supported single-writer topology explicit until distributed coordination is qualified.
+- Expand the real browser/authenticator and protocol-negative matrix.
+- Complete independent application, deployment and pinned-SableDB assessments.
 - Keep one organization and one tenant per instance.
 
 ### Phase 1: management contract foundations
@@ -567,11 +570,14 @@ Fleet management is now an active delivery program that preserves the single-ten
 
 ## Post-Fleet program: Federated Fleet Analytics
 
-Fleet Analytics begins only after the production Fleet program above is fully delivered and the main roadmap's
-M8 exit gate passes. It is not an excuse to expand the Phase 3 bounded read model into a shared raw event lake
-before the Fleet trust, recovery and residency boundaries are qualified.
+Fleet Analytics activated after the maintainer confirmed Fleet delivery and the main roadmap's M8 exit gate
+on 9 August 2026. M9 semantics and compatibility contracts and M10 realm projection/reliable outbound export
+are complete. M11–M13 provide trusted GreptimeDB storage, the hierarchical product API, materialized history
+and signed Parquet recovery; M14 independent assessment and organization-canary qualification remain open.
+This is not permission to expand the
+bounded read model into a shared raw event lake.
 
-The planned feature projects bounded metric buckets inside each realm, carries complete idempotent snapshots
+The feature architecture projects bounded metric buckets inside each realm, carries complete idempotent snapshots
 over the authenticated outbound management boundary, stamps hierarchy in the trusted Fleet gateway and serves
 realm, environment, project, organization and authorized fleet aggregates from a private central analytical
 store. Versioned Parquet provides optional customer-owned recovery and backfill; routine dashboard requests do
@@ -581,6 +587,10 @@ The controlling documents are:
 
 - [ADR 0004: Federated Fleet Analytics with trusted rollup ingestion](decisions/0004-federated-fleet-analytics.md)
 - [Federated Fleet Analytics delivery program](FLEET_ANALYTICS.md)
+- [Fleet Analytics V1 semantic contract](FLEET_ANALYTICS_V1.md)
+
+The developer site provides the guided [Fleet Analytics architecture and rollout](https://rustyauth.dev/docs/fleet-analytics)
+and [V1 contract reference](https://rustyauth.dev/docs/fleet-analytics-v1).
 
 The analytics program preserves every invariant in this document: realms remain authoritative, missing data is
 visibly partial, remote deployments never connect to central databases directly and analytics failure never

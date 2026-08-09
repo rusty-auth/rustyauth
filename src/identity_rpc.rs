@@ -5,7 +5,7 @@
 //! counters, session versions, and every other authentication secret.
 
 mod errors;
-mod projection;
+pub(crate) mod projection;
 mod service;
 mod source;
 mod validation;

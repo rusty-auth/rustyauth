@@ -4,19 +4,31 @@
 //! HTTP handlers do not issue database commands directly. Compound mutations
 //! use atomic pipelines and are serialized within the single supported writer.
 
+mod analytics_store;
 mod ceremonies;
 mod credentials;
 mod events;
 mod fleet;
+mod fleet_analytics;
+mod fleet_analytics_control;
+mod fleet_operations;
+mod invitations;
 mod management;
 mod organization;
+mod recovery;
+mod remote_mutations;
 mod service_accounts;
 mod sessions;
 mod snapshot;
 mod users;
+mod verification;
+mod webhooks;
+mod writer_lease;
 
+pub use self::analytics_store::{LocalMetricBucket, ProjectionResult, TelemetryOutboxRecord};
 pub use self::ceremonies::{
-    AuthenticationCeremony, LocalAgentHandoff, RegistrationCeremony, RegistrationPurpose,
+    AuthenticationCeremony, AuthenticationPurpose, LocalAgentHandoff, RegistrationCeremony,
+    RegistrationPurpose,
 };
 pub use self::credentials::StoredPasskey;
 pub use self::events::{AuthEvent, EventLogIntegrityError};
@@ -27,10 +39,20 @@ pub use self::fleet::{
     FleetProjectRecord, FleetResourceKindRecord, FleetResourceStateRecord, FleetRoleBindingRecord,
     FleetRoleRecord,
 };
+pub use self::fleet_analytics::{AcceptedFleetTelemetryBatch, FleetTelemetryBucketRecord};
+pub use self::fleet_analytics_control::{
+    FleetAnalyticsIngestionAuditRecord, FleetAnalyticsMaintenanceActionRecord,
+    FleetAnalyticsMaintenanceAuditRecord, FleetAnalyticsMaintenanceOutcomeRecord,
+    FleetAnalyticsManifestRecord, FleetAnalyticsManifestStateRecord, FleetAnalyticsPolicyRecord,
+    FleetAnalyticsQuarantineRecord, FleetAnalyticsResidencyRecord,
+};
+pub use self::fleet_operations::FleetOperationalCacheRecord;
+pub use self::invitations::AccountInvitationRecord;
 pub use self::management::{RealmFleetGrantRecord, RealmPairingRecord, RealmSummaryCounts};
 pub use self::organization::{
     OperatorListing, OperatorRecord, OperatorRoleRecord, OrganizationRecord,
 };
+pub use self::remote_mutations::RemoteMutationClaim;
 pub(crate) use self::service_accounts::ServiceCredentialLocator;
 pub use self::service_accounts::{
     ServiceAccountCredentialRecord, ServiceAccountGrant, ServiceAccountRecord,
@@ -41,8 +63,16 @@ pub use self::snapshot::StoreRecord;
 pub(crate) use self::users::forbidden_display_character;
 pub use self::users::{
     AccountIdentifier, AccountProfile, IdentifierKind, IdentifierValidationError, IdentifierValue,
-    ProfileValidationError, User, UserSearch, UserSearchPage,
+    ProfileValidationError, RecoveryCodeRecord, User, UserSearch, UserSearchPage,
 };
+pub use self::verification::IdentifierVerificationChallenge;
+pub use self::webhooks::{
+    EncryptedWebhookSecret, WebhookDeliveryRecord, WebhookDeliveryStatusRecord,
+    WebhookManagementSourceRecord, WebhookRecord, WebhookStatusRecord,
+};
+pub use self::writer_lease::WriterLease;
+#[cfg(test)]
+use self::writer_lease::{WRITER_LEASE_KEY, WRITER_LEASE_SECONDS};
 
 use std::{
     collections::BTreeSet,
@@ -103,10 +133,16 @@ pub(crate) enum StorePolicyError {
     FleetConnectionAttemptExpired,
     #[error("fleet connection already exists for this realm and environment")]
     FleetConnectionConflict,
+    #[error("analytics mutation request id was already used for another operation")]
+    FleetAnalyticsIdempotencyConflict,
     #[error("realm pairing code is invalid, expired or already consumed")]
     RealmPairingInvalid,
     #[error("realm Fleet grant is invalid or revoked")]
     RealmFleetGrantInvalid,
+    #[error("remote mutation request id was already used for another operation")]
+    RemoteMutationIdempotencyConflict,
+    #[error("remote mutation outcome is pending manual reconciliation")]
+    RemoteMutationPending,
 }
 
 const RESTORE_SENTINEL: &str = "auth:restore:in-progress";
@@ -345,6 +381,46 @@ mod live_store_tests {
 
     #[tokio::test]
     #[ignore = "requires the compose.integration.yaml SableDB service"]
+    async fn writer_lease_renews_on_pinned_sabledb_and_fences_a_replaced_owner() -> Result<()> {
+        let store = live_store().await?;
+        let lease = store.acquire_writer_lease().await?;
+        assert!(lease.renew().await?, "the live owner renews its lease");
+
+        let replacement = format!("replacement-owner-{}", Uuid::new_v4());
+        let mut connection = store.redis.clone();
+        redis::cmd("SET")
+            .arg(WRITER_LEASE_KEY)
+            .arg(&replacement)
+            .arg("EX")
+            .arg(WRITER_LEASE_SECONDS)
+            .query_async::<String>(&mut connection)
+            .await?;
+
+        assert!(
+            !lease.renew().await?,
+            "a process whose token was replaced must fence itself"
+        );
+        let current: Option<String> = redis::cmd("GET")
+            .arg(WRITER_LEASE_KEY)
+            .query_async(&mut connection)
+            .await?;
+        assert_eq!(current.as_deref(), Some(replacement.as_str()));
+        assert!(
+            !lease.release().await?,
+            "the stale process must not release the replacement owner's lease"
+        );
+
+        let removed: i64 = redis::cmd("DELIFEQ")
+            .arg(WRITER_LEASE_KEY)
+            .arg(&replacement)
+            .query_async(&mut connection)
+            .await?;
+        assert_eq!(removed, 1);
+        Ok(())
+    }
+
+    #[tokio::test]
+    #[ignore = "requires the compose.integration.yaml SableDB service"]
     async fn revoking_a_service_credential_removes_its_secret_lookup_key() -> Result<()> {
         let store = live_store().await?;
         let account = store
@@ -566,6 +642,7 @@ mod live_store_tests {
                     &wrong_origin_code,
                     "https://attacker.integration.example",
                     "fleet-attacker".into(),
+                    1,
                 )
                 .await
                 .is_err()
@@ -576,6 +653,7 @@ mod live_store_tests {
                     &wrong_origin_code,
                     control_plane_origin,
                     "fleet-integration".into(),
+                    1,
                 )
                 .await
                 .is_err(),
@@ -594,9 +672,10 @@ mod live_store_tests {
             )
             .await?;
         let (grant, credential) = store
-            .exchange_realm_pairing(&code, control_plane_origin, "fleet-integration".into())
+            .exchange_realm_pairing(&code, control_plane_origin, "fleet-integration".into(), 7)
             .await?;
         assert_eq!(grant.control_plane_origin, control_plane_origin);
+        assert_eq!(grant.assignment_epoch, 7);
         assert_eq!(
             store
                 .realm_fleet_grant_by_credential(&credential)
@@ -607,7 +686,7 @@ mod live_store_tests {
         );
         assert!(
             store
-                .exchange_realm_pairing(&code, control_plane_origin, "fleet-integration".into())
+                .exchange_realm_pairing(&code, control_plane_origin, "fleet-integration".into(), 7,)
                 .await
                 .is_err(),
             "a pairing code cannot be replayed"

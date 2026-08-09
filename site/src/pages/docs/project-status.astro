@@ -5,14 +5,16 @@ const capabilities = [
   ["Passkey registration and sign-in", "Implemented", "Server-side, single-use ceremonies and durable sessions"],
   ["Accounts and credentials", "Implemented", "Stable UUID, email/phone identifiers, profile and multiple passkeys"],
   ["JWT and signing keys", "Implemented", "ES256, JWKS, staged rotation and retired-key overlap"],
-  ["Dioxus dashboard", "Implemented", "Web console and shared desktop/mobile feature builds"],
+  ["Dioxus web dashboard", "Implemented", "Supported 1.0 client and separately deployable gateway"],
+  ["Native clients", "Preview", "Shared desktop/mobile feature builds; no 1.0 packages or support"],
   ["Fleet hierarchy and pairing", "Implemented", "Public-endpoint topology, scoped roles, audit and revocation"],
-  ["Fleet Analytics V1", "Contract shipped", "Semantics and compatibility fixtures; durable projection remains"],
+  ["Fleet Analytics V1", "Implemented", "Trusted export, canonical/materialized serving, delegated Dioxus and signed recovery"],
   ["Encrypted backup and restore", "Implemented", "Logical snapshot, verification and empty-target recovery"],
   ["Configuration as code", "Implemented", "Versioned YAML, schema, CLI validation and Docker/Railway inputs"],
   ["Signed webhook delivery", "Implemented on main", "IaC or dashboard ownership, durable retry, history and replay"],
-  ["Account recovery", "Not implemented", "Required before production 1.0"],
-  ["Email/SMS delivery", "Not implemented", "Events exist; challenge delivery and consumption remain"],
+  ["Account recovery", "Implemented", "One-use recovery codes, passkey re-enrolment, session revocation and audit"],
+  ["Verification delivery", "Implemented", "One-time challenges through exact signed-webhook subscriptions"],
+  ["Email sign-in delivery", "Event only", "A delivery provider/consumer remains an integration responsibility"],
   ["Independent security review", "Not completed", "Required before production 1.0"],
 ];
 ---
@@ -33,20 +35,20 @@ const capabilities = [
     <li><strong>Standalone:</strong> one project contains a Dioxus dashboard, one RustyAuth backend and one private SableDB for a single isolated realm.</li>
     <li><strong>Fleet:</strong> a separate central dashboard, control-plane API and datastore manage organizations, projects and environments while each realm keeps its own three-service boundary.</li>
   </ol>
-  <p>SolidJS is retired from the shipped product path. Dioxus is the shared web, desktop and mobile presentation architecture; the Rust control-plane services remain the authority.</p>
+  <p>SolidJS is retired from the shipped product path. Dioxus is the supported web presentation architecture and the shared basis for post-1.0 native previews; the Rust control-plane services remain the authority.</p>
 
   <h2>Before 1.0</h2>
   <ul>
-    <li>Ship account recovery and abuse/rate-limit controls.</li>
-    <li>Complete durable Fleet analytics projection and private outbound telemetry.</li>
-    <li>Qualify multi-writer behavior and cross-instance concurrency.</li>
-    <li>Finish native credential transport, signed desktop updates and mobile packaging.</li>
-    <li>Expand authenticator, browser and protocol-negative coverage.</li>
-    <li>Complete an independent security assessment.</li>
+    <li>Publish and verify signed images through clean install, upgrade and rollback.</li>
+    <li>Pass the supported web browser, OS and authenticator matrix.</li>
+    <li>Complete the Analytics production qualification matrix.</li>
+    <li>Run a real organization-policy Analytics canary and witnessed recovery drill.</li>
+    <li>Complete independent application, deployment, pinned-SableDB and Analytics assessments.</li>
   </ul>
+  <p>Desktop, iOS and Android distribution is separately gated post-1.0 work and does not block the server, container and web GA.</p>
 
   <h2>How to read status</h2>
-  <p><strong>Implemented</strong> means code and automated coverage exist in this repository. It does not by itself mean production-qualified. <strong>Contract shipped</strong> means the typed semantic boundary is reviewable and tested while a runtime projection may remain. <strong>Direction</strong> is not a product claim.</p>
+  <p><strong>Implemented</strong> means code and automated coverage exist in this repository. It does not by itself mean production-qualified. <strong>Event only</strong> means RustyAuth records the request but an external delivery integration remains responsible for transport. <strong>Direction</strong> is not a product claim.</p>
   <p>For the post-Fleet sequence, see the guided <a href="/docs/fleet-analytics">Fleet Analytics roadmap</a> and its <a href="/docs/fleet-analytics-v1">V1 semantic contract</a>.</p>
   <p>The <a href="https://github.com/rusty-auth/rustyauth/blob/main/docs/ROADMAP.md">normative roadmap</a>, <a href="https://github.com/rusty-auth/rustyauth/blob/main/CHANGELOG.md">changelog</a> and <a href="https://github.com/rusty-auth/rustyauth/blob/main/docs/FLEET_CONTROL_PLANE.md">Fleet architecture</a> preserve the detailed program.</p>
 </DocsLayout>

@@ -38,9 +38,10 @@ info:
       origin.
     - **Passkey session** — a session created by WebAuthn, rather than a local
       agent handoff.
-    - **Recent passkey** — the valid session was created by a passkey no more than
-      five minutes ago. Version `0.1.0` measures recency from session creation; it
-      does not run a separate step-up ceremony.
+    - **Recent passkey** — the valid session completed a user-verifying passkey
+      sign-in or a dedicated, session-bound step-up ceremony no more than five
+      minutes ago. Refreshing or merely using the session does not extend that
+      window.
 
     ## Response headers
 
@@ -513,8 +514,9 @@ paths:
       operationId: addIdentifier
       summary: Add a contact identifier
       description: |
-        Access: Recent passkey (the valid session was created by a passkey no
-        more than five minutes ago, plus the exact origin).
+        Access: Recent passkey (the valid session completed a user-verifying
+        passkey sign-in or session-bound step-up no more than five minutes ago,
+        plus the exact origin).
 
         Adds a globally unique identifier and returns `201` with the account
         response. An account may hold at most 20 identifiers. Development marks
@@ -787,8 +789,8 @@ paths:
         more than five minutes ago, plus the exact origin).
 
         Returns `204`. RustyAuth rejects removal of the final passkey with `409`.
-        Version `0.1.0` measures recency from session creation; it does not run a
-        separate step-up ceremony.
+        Refreshing or merely using the session does not extend the five-minute
+        assurance window.
 
         Revoking a passkey also ends every session that passkey created. The next
         request presenting such a session finds that its credential is no longer
@@ -884,8 +886,9 @@ paths:
         `WEBAUTHN_RP_ORIGIN`.
 
         Always returns `202` after appending `email.sign_in.requested`; the event
-        may have no subject for an unknown email. No token is created and no
-        email is delivered in version `0.1.0`.
+        may have no subject for an unknown email. This privacy-preserving
+        application hook deliberately creates no authentication token and
+        RustyAuth does not send email. It is not an authentication factor.
       security: []
       requestBody:
         required: true
@@ -897,7 +900,7 @@ paths:
               email: person@example.com
       responses:
         "202":
-          description: Email request event accepted; delivery not promised.
+          description: Privacy-preserving request event accepted; no token or email is created.
         "400":
           $ref: "#/components/responses/BadRequest"
         "401":

@@ -9,8 +9,11 @@ use uuid::Uuid;
 use webauthn_rs::prelude::Passkey;
 
 use crate::store::{
-    MAX_IDENTIFIERS, Store, StorePolicyError, StoredPasskey, credential_id, events::queue_events,
-    identifier_key, now, require_canonical_identifier,
+    MAX_IDENTIFIERS, Store, StorePolicyError, StoredPasskey, credential_id,
+    events::queue_events,
+    identifier_key,
+    invitations::{invitation_code_key, invitation_key, validate_invitation_record},
+    now, require_canonical_identifier,
 };
 
 use super::{
@@ -33,8 +36,19 @@ pub struct User {
     #[serde(default)]
     pub identifiers: Vec<AccountIdentifier>,
     pub session_version: u64,
+    #[serde(default)]
+    pub recovery_codes: Vec<RecoveryCodeRecord>,
     pub created_at: u64,
     pub passkeys: Vec<StoredPasskey>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RecoveryCodeRecord {
+    /// Domain-separated SHA-256 digest encoded as lowercase hexadecimal.
+    /// The raw recovery code is returned once and never persisted.
+    pub digest: String,
+    pub created_at: u64,
 }
 
 impl User {
@@ -83,6 +97,15 @@ impl User {
         }
 
         validate_account_profile(&self.profile)?;
+        let mut recovery_digests = BTreeSet::new();
+        for code in &self.recovery_codes {
+            if code.digest.len() != 64
+                || !code.digest.bytes().all(|byte| byte.is_ascii_hexdigit())
+                || !recovery_digests.insert(code.digest.as_str())
+            {
+                bail!("stored user has invalid or duplicate recovery-code state");
+            }
+        }
         self.sync_legacy_email();
         Ok(())
     }
@@ -201,6 +224,7 @@ impl Store {
         profile: AccountProfile,
         passkey: Passkey,
         identifier_verified: bool,
+        invitation_claim: Option<(Uuid, String)>,
     ) -> Result<User> {
         require_canonical_identifier(&identifier)?;
         validate_account_profile(&profile)?;
@@ -217,6 +241,27 @@ impl Store {
         {
             return Err(StorePolicyError::CredentialAlreadyExists.into());
         }
+        let invitation = match invitation_claim {
+            Some((invitation_id, digest)) => {
+                let mut invitation = self
+                    .account_invitation(invitation_id)
+                    .await?
+                    .context("invitation is invalid or already used")?;
+                let indexed_id = self
+                    .get::<String>(&invitation_code_key(&digest))
+                    .await?
+                    .context("invitation is invalid or already used")?;
+                if Uuid::parse_str(&indexed_id).context("stored invitation id is invalid")?
+                    != invitation_id
+                {
+                    bail!("invitation is invalid or already used");
+                }
+                validate_invitation_record(&invitation, &identifier, &digest)?;
+                invitation.consumed_at = Some(now());
+                Some((invitation, digest))
+            }
+            None => None,
+        };
         let credential: webauthn_rs::prelude::Credential = passkey.clone().into();
         let created_at = now();
         let user = User {
@@ -237,6 +282,7 @@ impl Store {
                 created_at,
             }],
             session_version: 1,
+            recovery_codes: Vec::new(),
             created_at,
             passkeys: vec![StoredPasskey {
                 id: id.clone(),
@@ -254,6 +300,9 @@ impl Store {
                 Some(user_id),
             ));
         }
+        if invitation.is_some() {
+            event_inputs.push(("account.invitation.consumed".to_owned(), Some(user_id)));
+        }
         let events = self.pending_events(event_inputs).await?;
         let mut connection = self.redis.clone();
         let serialized = serde_json::to_string(&user)?;
@@ -270,6 +319,14 @@ impl Store {
             );
         }
         queue_events(&mut pipeline, &events)?;
+        if let Some((invitation, digest)) = invitation {
+            pipeline
+                .set(
+                    invitation_key(invitation.id),
+                    serde_json::to_string(&invitation)?,
+                )
+                .del(invitation_code_key(&digest));
+        }
         let _: () = pipeline
             .query_async(&mut connection)
             .await
@@ -292,6 +349,7 @@ mod tests {
             profile: AccountProfile::default(),
             identifiers: Vec::new(),
             session_version: 1,
+            recovery_codes: Vec::new(),
             created_at: 100,
             passkeys: Vec::new(),
         };
@@ -325,6 +383,7 @@ mod tests {
                 created_at: 100,
             }],
             session_version: 1,
+            recovery_codes: Vec::new(),
             created_at: 100,
             passkeys: Vec::new(),
         };
@@ -351,6 +410,7 @@ mod tests {
             profile: AccountProfile::default(),
             identifiers,
             session_version: 1,
+            recovery_codes: Vec::new(),
             created_at: 100,
             passkeys: Vec::new(),
         };
@@ -389,6 +449,7 @@ mod tests {
             profile: AccountProfile::default(),
             identifiers: Vec::new(),
             session_version: 1,
+            recovery_codes: Vec::new(),
             created_at: 100,
             passkeys: Vec::new(),
         };
@@ -408,6 +469,7 @@ mod tests {
             profile: AccountProfile::default(),
             identifiers: vec![identifier],
             session_version: 1,
+            recovery_codes: Vec::new(),
             created_at: 100,
             passkeys: Vec::new(),
         };

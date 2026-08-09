@@ -16,6 +16,10 @@ Parameters:
     MinValue: 1
     MaxValue: 3650
     Description: WORM retention and lifecycle horizon for each backup version.
+  RustyAuthTenantId:
+    Type: String
+    AllowedPattern: "[A-Za-z0-9_-]{1,64}"
+    Description: Exact RustyAuth tenant bound into application envelope-key encryption contexts.
 
 Resources:
   BackupKey:
@@ -56,6 +60,44 @@ Resources:
     Properties:
       AliasName: !Sub alias/rustyauth-backups-${AWS::StackName}
       TargetKeyId: !Ref BackupKey
+
+  ApplicationEnvelopeKey:
+    Type: AWS::KMS::Key
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      Description: RustyAuth master and portable-backup envelope key
+      EnableKeyRotation: true
+      PendingWindowInDays: 30
+      KeyPolicy:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: EnableAccountAdministration
+            Effect: Allow
+            Principal:
+              AWS: !Sub arn:${AWS::Partition}:iam::${AWS::AccountId}:root
+            Action: kms:*
+            Resource: "*"
+          - Sid: AllowContextBoundRustyAuthDecrypt
+            Effect: Allow
+            Principal:
+              AWS: !Ref BackupApplicationPrincipalArn
+            Action:
+              - kms:Decrypt
+              - kms:DescribeKey
+            Resource: "*"
+            Condition:
+              StringEquals:
+                kms:EncryptionContext:rustyauth-tenant: !Ref RustyAuthTenantId
+                kms:EncryptionContext:rustyauth-purpose:
+                  - master
+                  - backup
+
+  ApplicationEnvelopeKeyAlias:
+    Type: AWS::KMS::Alias
+    Properties:
+      AliasName: !Sub alias/rustyauth-envelope-${AWS::StackName}
+      TargetKeyId: !Ref ApplicationEnvelopeKey
 
   BackupBucket:
     Type: AWS::S3::Bucket
@@ -147,5 +189,7 @@ Outputs:
     Value: !Ref AWS::Region
   KmsKeyArn:
     Value: !GetAtt BackupKey.Arn
+  ApplicationEnvelopeKmsKeyArn:
+    Value: !GetAtt ApplicationEnvelopeKey.Arn
   RustyAuthBackupEndpoint:
     Value: !Sub https://s3.${AWS::Region}.${AWS::URLSuffix}

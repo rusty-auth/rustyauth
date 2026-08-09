@@ -10,11 +10,16 @@ use uuid::Uuid;
 use crate::{
     operator_auth::{OperatorActor, OperatorAuthorizer, OperatorCapability},
     proto::rustyauth::organization::v1::{
-        GetCurrentOperatorRequest, GetOrganizationRequest, ListOperatorsRequest,
+        AccountInvitation, AccountInvitationStatus, CreateAccountInvitationRequest,
+        CreateAccountInvitationResponse, GetCurrentOperatorRequest, GetOrganizationRequest,
+        ListAccountInvitationsRequest, ListAccountInvitationsResponse, ListOperatorsRequest,
         ListOperatorsResponse, Operator as ProtoOperator, OperatorRole, Organization,
-        OrganizationService, UpdateOrganizationRequest,
+        OrganizationService, RevokeAccountInvitationRequest, UpdateOrganizationRequest,
     },
-    store::{OperatorRecord, OperatorRoleRecord, OrganizationRecord, Store, User, now},
+    store::{
+        AccountInvitationRecord, IdentifierKind, IdentifierValue, OperatorRecord,
+        OperatorRoleRecord, OrganizationRecord, Store, User, now,
+    },
 };
 
 const DEFAULT_PAGE_SIZE: usize = 25;
@@ -116,6 +121,133 @@ impl OrganizationService for OrganizationRpc {
             ..Default::default()
         })
     }
+
+    async fn create_account_invitation(
+        &self,
+        ctx: RequestContext,
+        request: ServiceRequest<'_, CreateAccountInvitationRequest>,
+    ) -> ServiceResult<CreateAccountInvitationResponse> {
+        let actor = self
+            .authorizer
+            .authorize(ctx.headers(), OperatorCapability::Administer)
+            .await?;
+        let identifier = invitation_identifier(request.identifier_type, request.identifier_value)?;
+        let lifetime = if request.expires_in_seconds == 0 {
+            86_400
+        } else {
+            request.expires_in_seconds
+        };
+        let (invitation, invitation_code) = self
+            .store
+            .create_account_invitation(identifier, actor.user.id, lifetime)
+            .await
+            .map_err(source_error)?;
+        Response::ok(CreateAccountInvitationResponse {
+            invitation: Some(invitation_to_proto(invitation)?).into(),
+            invitation_code,
+            ..Default::default()
+        })
+    }
+
+    async fn list_account_invitations(
+        &self,
+        ctx: RequestContext,
+        request: ServiceRequest<'_, ListAccountInvitationsRequest>,
+    ) -> ServiceResult<ListAccountInvitationsResponse> {
+        self.authorizer
+            .authorize(ctx.headers(), OperatorCapability::Read)
+            .await?;
+        let after = decode_page_token(request.page_token)?;
+        let page_size = page_size(request.page_size)?;
+        let mut invitations = self
+            .store
+            .account_invitations()
+            .await
+            .map_err(source_error)?;
+        invitations.retain(|invitation| after.is_none_or(|after| invitation.id > after));
+        invitations.sort_unstable_by_key(|invitation| invitation.id);
+        let next_page_token = (invitations.len() > page_size)
+            .then(|| encode_page_token(invitations[page_size - 1].id));
+        invitations.truncate(page_size);
+        Response::ok(ListAccountInvitationsResponse {
+            invitations: invitations
+                .into_iter()
+                .map(invitation_to_proto)
+                .collect::<Result<Vec<_>, _>>()?,
+            next_page_token: next_page_token.unwrap_or_default(),
+            ..Default::default()
+        })
+    }
+
+    async fn revoke_account_invitation(
+        &self,
+        ctx: RequestContext,
+        request: ServiceRequest<'_, RevokeAccountInvitationRequest>,
+    ) -> ServiceResult<AccountInvitation> {
+        self.authorizer
+            .authorize(ctx.headers(), OperatorCapability::Administer)
+            .await?;
+        let id = Uuid::parse_str(request.invitation_id.trim()).map_err(|_| {
+            ConnectError::new(ErrorCode::InvalidArgument, "invitation_id must be a UUID")
+        })?;
+        let invitation = self
+            .store
+            .revoke_account_invitation(id)
+            .await
+            .map_err(source_error)?;
+        Response::ok(invitation_to_proto(invitation)?)
+    }
+}
+
+fn invitation_identifier(kind: &str, value: &str) -> Result<IdentifierValue, ConnectError> {
+    let kind = match kind.trim().to_ascii_lowercase().as_str() {
+        "email" => IdentifierKind::Email,
+        "phone" => IdentifierKind::Phone,
+        _ => {
+            return Err(ConnectError::new(
+                ErrorCode::InvalidArgument,
+                "identifier_type must be email or phone",
+            ));
+        }
+    };
+    IdentifierValue::canonical(kind, value).map_err(|_| {
+        ConnectError::new(
+            ErrorCode::InvalidArgument,
+            "identifier_value is not valid for identifier_type",
+        )
+    })
+}
+
+fn invitation_to_proto(record: AccountInvitationRecord) -> Result<AccountInvitation, ConnectError> {
+    let current = now();
+    let status = if record.revoked_at.is_some() {
+        AccountInvitationStatus::Revoked
+    } else if record.consumed_at.is_some() {
+        AccountInvitationStatus::Consumed
+    } else if record.expires_at <= current {
+        AccountInvitationStatus::Expired
+    } else {
+        AccountInvitationStatus::Pending
+    };
+    Ok(AccountInvitation {
+        id: record.id.to_string(),
+        identifier_type: record.identifier.kind.as_str().to_owned(),
+        identifier_value: record.identifier.value,
+        created_by: record.created_by.to_string(),
+        created_at: format_timestamp(record.created_at)?,
+        expires_at: format_timestamp(record.expires_at)?,
+        consumed_at: optional_timestamp(record.consumed_at)?,
+        revoked_at: optional_timestamp(record.revoked_at)?,
+        status: status.into(),
+        ..Default::default()
+    })
+}
+
+fn optional_timestamp(value: Option<u64>) -> Result<String, ConnectError> {
+    value
+        .map(format_timestamp)
+        .transpose()
+        .map(Option::unwrap_or_default)
 }
 
 fn actor_to_proto(actor: OperatorActor) -> Result<ProtoOperator, ConnectError> {

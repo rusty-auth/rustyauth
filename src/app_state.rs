@@ -9,7 +9,10 @@ use std::sync::Arc;
 use secrecy::SecretString;
 use webauthn_rs::Webauthn;
 
-use crate::{backup::BackupStore, jwt::JwtIssuer, rate_limit::RateLimiter, store::Store};
+use crate::{
+    backup::BackupStore, config::DeploymentRole, jwt::JwtIssuer, rate_limit::RateLimiter,
+    store::Store, webhook::WebhookRuntime,
+};
 
 #[derive(Clone)]
 pub struct AppState {
@@ -20,6 +23,7 @@ pub struct AppState {
     pub webauthn: Arc<Webauthn>,
     pub jwt: JwtIssuer,
     pub issuer: String,
+    pub deployment_role: DeploymentRole,
     pub rp_origin: String,
     pub bootstrap_token: SecretString,
     pub session_idle_seconds: u64,
@@ -28,4 +32,5 @@ pub struct AppState {
     pub identity_verification_required: bool,
     pub local_agent_handoffs_enabled: bool,
     pub backup: Option<BackupStore>,
+    pub webhook_runtime: Option<WebhookRuntime>,
 }

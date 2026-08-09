@@ -10,7 +10,9 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file rustyauth/service_accounts/v1/service_accounts.proto.
  */
 export const file_rustyauth_service_accounts_v1_service_accounts: GenFile = /*@__PURE__*/
-  fileDesc("CjRydXN0eWF1dGgvc2VydmljZV9hY2NvdW50cy92MS9zZXJ2aWNlX2FjY291bnRzLnByb3RvEh1ydXN0eWF1dGguc2VydmljZV9hY2NvdW50cy52MSKbAQoYU2VydmljZUFjY291bnRDcmVkZW50aWFsEgoKAmlkGAEgASgJEgwKBG5hbWUYAiABKAkSEwoLc2VjcmV0X2hpbnQYAyABKAkSEgoKY3JlYXRlZF9hdBgEIAEoCRISCgpleHBpcmVzX2F0GAUgASgJEhQKDGxhc3RfdXNlZF9hdBgGIAEoCRISCgpyZXZva2VkX2F0GAcgASgJIqACCg5TZXJ2aWNlQWNjb3VudBIKCgJpZBgBIAEoCRIMCgRuYW1lGAIgASgJEhMKC2Rlc2NyaXB0aW9uGAMgASgJEkMKBnN0YXR1cxgEIAEoDjIzLnJ1c3R5YXV0aC5zZXJ2aWNlX2FjY291bnRzLnYxLlNlcnZpY2VBY2NvdW50U3RhdHVzEg4KBnNjb3BlcxgFIAMoCRJMCgtjcmVkZW50aWFscxgGIAMoCzI3LnJ1c3R5YXV0aC5zZXJ2aWNlX2FjY291bnRzLnYxLlNlcnZpY2VBY2NvdW50Q3JlZGVudGlhbBISCgpjcmVhdGVkX2F0GAcgASgJEhIKCmNyZWF0ZWRfYnkYCCABKAkSFAoMbGFzdF91c2VkX2F0GAkgASgJIpcBChpMaXN0U2VydmljZUFjY291bnRzUmVxdWVzdBINCgVxdWVyeRgBIAEoCRJDCgZzdGF0dXMYAiABKA4yMy5ydXN0eWF1dGguc2VydmljZV9hY2NvdW50cy52MS5TZXJ2aWNlQWNjb3VudFN0YXR1cxIRCglwYWdlX3NpemUYAyABKA0SEgoKcGFnZV90b2tlbhgEIAEoCSJ/ChtMaXN0U2VydmljZUFjY291bnRzUmVzcG9uc2USRwoQc2VydmljZV9hY2NvdW50cxgBIAMoCzItLnJ1c3R5YXV0aC5zZXJ2aWNlX2FjY291bnRzLnYxLlNlcnZpY2VBY2NvdW50EhcKD25leHRfcGFnZV90b2tlbhgCIAEoCSI2ChhHZXRTZXJ2aWNlQWNjb3VudFJlcXVlc3QSGgoSc2VydmljZV9hY2NvdW50X2lkGAEgASgJIlAKG0NyZWF0ZVNlcnZpY2VBY2NvdW50UmVxdWVzdBIMCgRuYW1lGAEgASgJEhMKC2Rlc2NyaXB0aW9uGAIgASgJEg4KBnNjb3BlcxgDIAMoCSLBAQobVXBkYXRlU2VydmljZUFjY291bnRSZXF1ZXN0EhoKEnNlcnZpY2VfYWNjb3VudF9pZBgBIAEoCRIMCgRuYW1lGAIgASgJEhMKC2Rlc2NyaXB0aW9uGAMgASgJEkMKBnN0YXR1cxgEIAEoDjIzLnJ1c3R5YXV0aC5zZXJ2aWNlX2FjY291bnRzLnYxLlNlcnZpY2VBY2NvdW50U3RhdHVzEg4KBnNjb3BlcxgFIAMoCRIOCgZyZWFzb24YBiABKAkiVwoXQ3JlYXRlQ3JlZGVudGlhbFJlcXVlc3QSGgoSc2VydmljZV9hY2NvdW50X2lkGAEgASgJEgwKBG5hbWUYAiABKAkSEgoKZXhwaXJlc19hdBgDIAEoCSJ3ChhDcmVhdGVDcmVkZW50aWFsUmVzcG9uc2USSwoKY3JlZGVudGlhbBgBIAEoCzI3LnJ1c3R5YXV0aC5zZXJ2aWNlX2FjY291bnRzLnYxLlNlcnZpY2VBY2NvdW50Q3JlZGVudGlhbBIOCgZzZWNyZXQYAiABKAkiXAoXUmV2b2tlQ3JlZGVudGlhbFJlcXVlc3QSGgoSc2VydmljZV9hY2NvdW50X2lkGAEgASgJEhUKDWNyZWRlbnRpYWxfaWQYAiABKAkSDgoGcmVhc29uGAMgASgJIhoKGFJldm9rZUNyZWRlbnRpYWxSZXNwb25zZSJJChlFeGNoYW5nZUNyZWRlbnRpYWxSZXF1ZXN0EhIKCmNyZWRlbnRpYWwYASABKAkSGAoQcmVxdWVzdGVkX3Njb3BlcxgCIAMoCSJyChpFeGNoYW5nZUNyZWRlbnRpYWxSZXNwb25zZRIUCgxhY2Nlc3NfdG9rZW4YASABKAkSEgoKdG9rZW5fdHlwZRgCIAEoCRIaChJleHBpcmVzX2luX3NlY29uZHMYAyABKA0SDgoGc2NvcGVzGAQgAygJKoYBChRTZXJ2aWNlQWNjb3VudFN0YXR1cxImCiJTRVJWSUNFX0FDQ09VTlRfU1RBVFVTX1VOU1BFQ0lGSUVEEAASIQodU0VSVklDRV9BQ0NPVU5UX1NUQVRVU19BQ1RJVkUQARIjCh9TRVJWSUNFX0FDQ09VTlRfU1RBVFVTX0RJU0FCTEVEEAIywwcKFVNlcnZpY2VBY2NvdW50U2VydmljZRKMAQoTTGlzdFNlcnZpY2VBY2NvdW50cxI5LnJ1c3R5YXV0aC5zZXJ2aWNlX2FjY291bnRzLnYxLkxpc3RTZXJ2aWNlQWNjb3VudHNSZXF1ZXN0GjoucnVzdHlhdXRoLnNlcnZpY2VfYWNjb3VudHMudjEuTGlzdFNlcnZpY2VBY2NvdW50c1Jlc3BvbnNlEnsKEUdldFNlcnZpY2VBY2NvdW50EjcucnVzdHlhdXRoLnNlcnZpY2VfYWNjb3VudHMudjEuR2V0U2VydmljZUFjY291bnRSZXF1ZXN0Gi0ucnVzdHlhdXRoLnNlcnZpY2VfYWNjb3VudHMudjEuU2VydmljZUFjY291bnQSgQEKFENyZWF0ZVNlcnZpY2VBY2NvdW50EjoucnVzdHlhdXRoLnNlcnZpY2VfYWNjb3VudHMudjEuQ3JlYXRlU2VydmljZUFjY291bnRSZXF1ZXN0Gi0ucnVzdHlhdXRoLnNlcnZpY2VfYWNjb3VudHMudjEuU2VydmljZUFjY291bnQSgQEKFFVwZGF0ZVNlcnZpY2VBY2NvdW50EjoucnVzdHlhdXRoLnNlcnZpY2VfYWNjb3VudHMudjEuVXBkYXRlU2VydmljZUFjY291bnRSZXF1ZXN0Gi0ucnVzdHlhdXRoLnNlcnZpY2VfYWNjb3VudHMudjEuU2VydmljZUFjY291bnQSgwEKEENyZWF0ZUNyZWRlbnRpYWwSNi5ydXN0eWF1dGguc2VydmljZV9hY2NvdW50cy52MS5DcmVhdGVDcmVkZW50aWFsUmVxdWVzdBo3LnJ1c3R5YXV0aC5zZXJ2aWNlX2FjY291bnRzLnYxLkNyZWF0ZUNyZWRlbnRpYWxSZXNwb25zZRKDAQoQUmV2b2tlQ3JlZGVudGlhbBI2LnJ1c3R5YXV0aC5zZXJ2aWNlX2FjY291bnRzLnYxLlJldm9rZUNyZWRlbnRpYWxSZXF1ZXN0GjcucnVzdHlhdXRoLnNlcnZpY2VfYWNjb3VudHMudjEuUmV2b2tlQ3JlZGVudGlhbFJlc3BvbnNlEokBChJFeGNoYW5nZUNyZWRlbnRpYWwSOC5ydXN0eWF1dGguc2VydmljZV9hY2NvdW50cy52MS5FeGNoYW5nZUNyZWRlbnRpYWxSZXF1ZXN0GjkucnVzdHlhdXRoLnNlcnZpY2VfYWNjb3VudHMudjEuRXhjaGFuZ2VDcmVkZW50aWFsUmVzcG9uc2ViBnByb3RvMw");
+  fileDesc(
+    "CjRydXN0eWF1dGgvc2VydmljZV9hY2NvdW50cy92MS9zZXJ2aWNlX2FjY291bnRzLnByb3RvEh1ydXN0eWF1dGguc2VydmljZV9hY2NvdW50cy52MSKbAQoYU2VydmljZUFjY291bnRDcmVkZW50aWFsEgoKAmlkGAEgASgJEgwKBG5hbWUYAiABKAkSEwoLc2VjcmV0X2hpbnQYAyABKAkSEgoKY3JlYXRlZF9hdBgEIAEoCRISCgpleHBpcmVzX2F0GAUgASgJEhQKDGxhc3RfdXNlZF9hdBgGIAEoCRISCgpyZXZva2VkX2F0GAcgASgJIqACCg5TZXJ2aWNlQWNjb3VudBIKCgJpZBgBIAEoCRIMCgRuYW1lGAIgASgJEhMKC2Rlc2NyaXB0aW9uGAMgASgJEkMKBnN0YXR1cxgEIAEoDjIzLnJ1c3R5YXV0aC5zZXJ2aWNlX2FjY291bnRzLnYxLlNlcnZpY2VBY2NvdW50U3RhdHVzEg4KBnNjb3BlcxgFIAMoCRJMCgtjcmVkZW50aWFscxgGIAMoCzI3LnJ1c3R5YXV0aC5zZXJ2aWNlX2FjY291bnRzLnYxLlNlcnZpY2VBY2NvdW50Q3JlZGVudGlhbBISCgpjcmVhdGVkX2F0GAcgASgJEhIKCmNyZWF0ZWRfYnkYCCABKAkSFAoMbGFzdF91c2VkX2F0GAkgASgJIpcBChpMaXN0U2VydmljZUFjY291bnRzUmVxdWVzdBINCgVxdWVyeRgBIAEoCRJDCgZzdGF0dXMYAiABKA4yMy5ydXN0eWF1dGguc2VydmljZV9hY2NvdW50cy52MS5TZXJ2aWNlQWNjb3VudFN0YXR1cxIRCglwYWdlX3NpemUYAyABKA0SEgoKcGFnZV90b2tlbhgEIAEoCSJ/ChtMaXN0U2VydmljZUFjY291bnRzUmVzcG9uc2USRwoQc2VydmljZV9hY2NvdW50cxgBIAMoCzItLnJ1c3R5YXV0aC5zZXJ2aWNlX2FjY291bnRzLnYxLlNlcnZpY2VBY2NvdW50EhcKD25leHRfcGFnZV90b2tlbhgCIAEoCSI2ChhHZXRTZXJ2aWNlQWNjb3VudFJlcXVlc3QSGgoSc2VydmljZV9hY2NvdW50X2lkGAEgASgJIlAKG0NyZWF0ZVNlcnZpY2VBY2NvdW50UmVxdWVzdBIMCgRuYW1lGAEgASgJEhMKC2Rlc2NyaXB0aW9uGAIgASgJEg4KBnNjb3BlcxgDIAMoCSLBAQobVXBkYXRlU2VydmljZUFjY291bnRSZXF1ZXN0EhoKEnNlcnZpY2VfYWNjb3VudF9pZBgBIAEoCRIMCgRuYW1lGAIgASgJEhMKC2Rlc2NyaXB0aW9uGAMgASgJEkMKBnN0YXR1cxgEIAEoDjIzLnJ1c3R5YXV0aC5zZXJ2aWNlX2FjY291bnRzLnYxLlNlcnZpY2VBY2NvdW50U3RhdHVzEg4KBnNjb3BlcxgFIAMoCRIOCgZyZWFzb24YBiABKAkiVwoXQ3JlYXRlQ3JlZGVudGlhbFJlcXVlc3QSGgoSc2VydmljZV9hY2NvdW50X2lkGAEgASgJEgwKBG5hbWUYAiABKAkSEgoKZXhwaXJlc19hdBgDIAEoCSJ3ChhDcmVhdGVDcmVkZW50aWFsUmVzcG9uc2USSwoKY3JlZGVudGlhbBgBIAEoCzI3LnJ1c3R5YXV0aC5zZXJ2aWNlX2FjY291bnRzLnYxLlNlcnZpY2VBY2NvdW50Q3JlZGVudGlhbBIOCgZzZWNyZXQYAiABKAkiXAoXUmV2b2tlQ3JlZGVudGlhbFJlcXVlc3QSGgoSc2VydmljZV9hY2NvdW50X2lkGAEgASgJEhUKDWNyZWRlbnRpYWxfaWQYAiABKAkSDgoGcmVhc29uGAMgASgJIhoKGFJldm9rZUNyZWRlbnRpYWxSZXNwb25zZSJJChlFeGNoYW5nZUNyZWRlbnRpYWxSZXF1ZXN0EhIKCmNyZWRlbnRpYWwYASABKAkSGAoQcmVxdWVzdGVkX3Njb3BlcxgCIAMoCSJyChpFeGNoYW5nZUNyZWRlbnRpYWxSZXNwb25zZRIUCgxhY2Nlc3NfdG9rZW4YASABKAkSEgoKdG9rZW5fdHlwZRgCIAEoCRIaChJleHBpcmVzX2luX3NlY29uZHMYAyABKA0SDgoGc2NvcGVzGAQgAygJKoYBChRTZXJ2aWNlQWNjb3VudFN0YXR1cxImCiJTRVJWSUNFX0FDQ09VTlRfU1RBVFVTX1VOU1BFQ0lGSUVEEAASIQodU0VSVklDRV9BQ0NPVU5UX1NUQVRVU19BQ1RJVkUQARIjCh9TRVJWSUNFX0FDQ09VTlRfU1RBVFVTX0RJU0FCTEVEEAIywwcKFVNlcnZpY2VBY2NvdW50U2VydmljZRKMAQoTTGlzdFNlcnZpY2VBY2NvdW50cxI5LnJ1c3R5YXV0aC5zZXJ2aWNlX2FjY291bnRzLnYxLkxpc3RTZXJ2aWNlQWNjb3VudHNSZXF1ZXN0GjoucnVzdHlhdXRoLnNlcnZpY2VfYWNjb3VudHMudjEuTGlzdFNlcnZpY2VBY2NvdW50c1Jlc3BvbnNlEnsKEUdldFNlcnZpY2VBY2NvdW50EjcucnVzdHlhdXRoLnNlcnZpY2VfYWNjb3VudHMudjEuR2V0U2VydmljZUFjY291bnRSZXF1ZXN0Gi0ucnVzdHlhdXRoLnNlcnZpY2VfYWNjb3VudHMudjEuU2VydmljZUFjY291bnQSgQEKFENyZWF0ZVNlcnZpY2VBY2NvdW50EjoucnVzdHlhdXRoLnNlcnZpY2VfYWNjb3VudHMudjEuQ3JlYXRlU2VydmljZUFjY291bnRSZXF1ZXN0Gi0ucnVzdHlhdXRoLnNlcnZpY2VfYWNjb3VudHMudjEuU2VydmljZUFjY291bnQSgQEKFFVwZGF0ZVNlcnZpY2VBY2NvdW50EjoucnVzdHlhdXRoLnNlcnZpY2VfYWNjb3VudHMudjEuVXBkYXRlU2VydmljZUFjY291bnRSZXF1ZXN0Gi0ucnVzdHlhdXRoLnNlcnZpY2VfYWNjb3VudHMudjEuU2VydmljZUFjY291bnQSgwEKEENyZWF0ZUNyZWRlbnRpYWwSNi5ydXN0eWF1dGguc2VydmljZV9hY2NvdW50cy52MS5DcmVhdGVDcmVkZW50aWFsUmVxdWVzdBo3LnJ1c3R5YXV0aC5zZXJ2aWNlX2FjY291bnRzLnYxLkNyZWF0ZUNyZWRlbnRpYWxSZXNwb25zZRKDAQoQUmV2b2tlQ3JlZGVudGlhbBI2LnJ1c3R5YXV0aC5zZXJ2aWNlX2FjY291bnRzLnYxLlJldm9rZUNyZWRlbnRpYWxSZXF1ZXN0GjcucnVzdHlhdXRoLnNlcnZpY2VfYWNjb3VudHMudjEuUmV2b2tlQ3JlZGVudGlhbFJlc3BvbnNlEokBChJFeGNoYW5nZUNyZWRlbnRpYWwSOC5ydXN0eWF1dGguc2VydmljZV9hY2NvdW50cy52MS5FeGNoYW5nZUNyZWRlbnRpYWxSZXF1ZXN0GjkucnVzdHlhdXRoLnNlcnZpY2VfYWNjb3VudHMudjEuRXhjaGFuZ2VDcmVkZW50aWFsUmVzcG9uc2ViBnByb3RvMw",
+  );
 
 /**
  * @generated from message rustyauth.service_accounts.v1.ServiceAccountCredential
@@ -119,27 +121,29 @@ export const ServiceAccountSchema: GenMessage<ServiceAccount> = /*@__PURE__*/
 /**
  * @generated from message rustyauth.service_accounts.v1.ListServiceAccountsRequest
  */
-export type ListServiceAccountsRequest = Message<"rustyauth.service_accounts.v1.ListServiceAccountsRequest"> & {
-  /**
-   * @generated from field: string query = 1;
-   */
-  query: string;
+export type ListServiceAccountsRequest =
+  & Message<"rustyauth.service_accounts.v1.ListServiceAccountsRequest">
+  & {
+    /**
+     * @generated from field: string query = 1;
+     */
+    query: string;
 
-  /**
-   * @generated from field: rustyauth.service_accounts.v1.ServiceAccountStatus status = 2;
-   */
-  status: ServiceAccountStatus;
+    /**
+     * @generated from field: rustyauth.service_accounts.v1.ServiceAccountStatus status = 2;
+     */
+    status: ServiceAccountStatus;
 
-  /**
-   * @generated from field: uint32 page_size = 3;
-   */
-  pageSize: number;
+    /**
+     * @generated from field: uint32 page_size = 3;
+     */
+    pageSize: number;
 
-  /**
-   * @generated from field: string page_token = 4;
-   */
-  pageToken: string;
-};
+    /**
+     * @generated from field: string page_token = 4;
+     */
+    pageToken: string;
+  };
 
 /**
  * Describes the message rustyauth.service_accounts.v1.ListServiceAccountsRequest.
@@ -151,17 +155,19 @@ export const ListServiceAccountsRequestSchema: GenMessage<ListServiceAccountsReq
 /**
  * @generated from message rustyauth.service_accounts.v1.ListServiceAccountsResponse
  */
-export type ListServiceAccountsResponse = Message<"rustyauth.service_accounts.v1.ListServiceAccountsResponse"> & {
-  /**
-   * @generated from field: repeated rustyauth.service_accounts.v1.ServiceAccount service_accounts = 1;
-   */
-  serviceAccounts: ServiceAccount[];
+export type ListServiceAccountsResponse =
+  & Message<"rustyauth.service_accounts.v1.ListServiceAccountsResponse">
+  & {
+    /**
+     * @generated from field: repeated rustyauth.service_accounts.v1.ServiceAccount service_accounts = 1;
+     */
+    serviceAccounts: ServiceAccount[];
 
-  /**
-   * @generated from field: string next_page_token = 2;
-   */
-  nextPageToken: string;
-};
+    /**
+     * @generated from field: string next_page_token = 2;
+     */
+    nextPageToken: string;
+  };
 
 /**
  * Describes the message rustyauth.service_accounts.v1.ListServiceAccountsResponse.
@@ -190,22 +196,24 @@ export const GetServiceAccountRequestSchema: GenMessage<GetServiceAccountRequest
 /**
  * @generated from message rustyauth.service_accounts.v1.CreateServiceAccountRequest
  */
-export type CreateServiceAccountRequest = Message<"rustyauth.service_accounts.v1.CreateServiceAccountRequest"> & {
-  /**
-   * @generated from field: string name = 1;
-   */
-  name: string;
+export type CreateServiceAccountRequest =
+  & Message<"rustyauth.service_accounts.v1.CreateServiceAccountRequest">
+  & {
+    /**
+     * @generated from field: string name = 1;
+     */
+    name: string;
 
-  /**
-   * @generated from field: string description = 2;
-   */
-  description: string;
+    /**
+     * @generated from field: string description = 2;
+     */
+    description: string;
 
-  /**
-   * @generated from field: repeated string scopes = 3;
-   */
-  scopes: string[];
-};
+    /**
+     * @generated from field: repeated string scopes = 3;
+     */
+    scopes: string[];
+  };
 
 /**
  * Describes the message rustyauth.service_accounts.v1.CreateServiceAccountRequest.
@@ -217,37 +225,39 @@ export const CreateServiceAccountRequestSchema: GenMessage<CreateServiceAccountR
 /**
  * @generated from message rustyauth.service_accounts.v1.UpdateServiceAccountRequest
  */
-export type UpdateServiceAccountRequest = Message<"rustyauth.service_accounts.v1.UpdateServiceAccountRequest"> & {
-  /**
-   * @generated from field: string service_account_id = 1;
-   */
-  serviceAccountId: string;
+export type UpdateServiceAccountRequest =
+  & Message<"rustyauth.service_accounts.v1.UpdateServiceAccountRequest">
+  & {
+    /**
+     * @generated from field: string service_account_id = 1;
+     */
+    serviceAccountId: string;
 
-  /**
-   * @generated from field: string name = 2;
-   */
-  name: string;
+    /**
+     * @generated from field: string name = 2;
+     */
+    name: string;
 
-  /**
-   * @generated from field: string description = 3;
-   */
-  description: string;
+    /**
+     * @generated from field: string description = 3;
+     */
+    description: string;
 
-  /**
-   * @generated from field: rustyauth.service_accounts.v1.ServiceAccountStatus status = 4;
-   */
-  status: ServiceAccountStatus;
+    /**
+     * @generated from field: rustyauth.service_accounts.v1.ServiceAccountStatus status = 4;
+     */
+    status: ServiceAccountStatus;
 
-  /**
-   * @generated from field: repeated string scopes = 5;
-   */
-  scopes: string[];
+    /**
+     * @generated from field: repeated string scopes = 5;
+     */
+    scopes: string[];
 
-  /**
-   * @generated from field: string reason = 6;
-   */
-  reason: string;
-};
+    /**
+     * @generated from field: string reason = 6;
+     */
+    reason: string;
+  };
 
 /**
  * Describes the message rustyauth.service_accounts.v1.UpdateServiceAccountRequest.
@@ -337,8 +347,7 @@ export const RevokeCredentialRequestSchema: GenMessage<RevokeCredentialRequest> 
 /**
  * @generated from message rustyauth.service_accounts.v1.RevokeCredentialResponse
  */
-export type RevokeCredentialResponse = Message<"rustyauth.service_accounts.v1.RevokeCredentialResponse"> & {
-};
+export type RevokeCredentialResponse = Message<"rustyauth.service_accounts.v1.RevokeCredentialResponse"> & {};
 
 /**
  * Describes the message rustyauth.service_accounts.v1.RevokeCredentialResponse.
@@ -372,27 +381,29 @@ export const ExchangeCredentialRequestSchema: GenMessage<ExchangeCredentialReque
 /**
  * @generated from message rustyauth.service_accounts.v1.ExchangeCredentialResponse
  */
-export type ExchangeCredentialResponse = Message<"rustyauth.service_accounts.v1.ExchangeCredentialResponse"> & {
-  /**
-   * @generated from field: string access_token = 1;
-   */
-  accessToken: string;
+export type ExchangeCredentialResponse =
+  & Message<"rustyauth.service_accounts.v1.ExchangeCredentialResponse">
+  & {
+    /**
+     * @generated from field: string access_token = 1;
+     */
+    accessToken: string;
 
-  /**
-   * @generated from field: string token_type = 2;
-   */
-  tokenType: string;
+    /**
+     * @generated from field: string token_type = 2;
+     */
+    tokenType: string;
 
-  /**
-   * @generated from field: uint32 expires_in_seconds = 3;
-   */
-  expiresInSeconds: number;
+    /**
+     * @generated from field: uint32 expires_in_seconds = 3;
+     */
+    expiresInSeconds: number;
 
-  /**
-   * @generated from field: repeated string scopes = 4;
-   */
-  scopes: string[];
-};
+    /**
+     * @generated from field: repeated string scopes = 4;
+     */
+    scopes: string[];
+  };
 
 /**
  * Describes the message rustyauth.service_accounts.v1.ExchangeCredentialResponse.
@@ -441,7 +452,7 @@ export const ServiceAccountService: GenService<{
     methodKind: "unary";
     input: typeof ListServiceAccountsRequestSchema;
     output: typeof ListServiceAccountsResponseSchema;
-  },
+  };
   /**
    * @generated from rpc rustyauth.service_accounts.v1.ServiceAccountService.GetServiceAccount
    */
@@ -449,7 +460,7 @@ export const ServiceAccountService: GenService<{
     methodKind: "unary";
     input: typeof GetServiceAccountRequestSchema;
     output: typeof ServiceAccountSchema;
-  },
+  };
   /**
    * @generated from rpc rustyauth.service_accounts.v1.ServiceAccountService.CreateServiceAccount
    */
@@ -457,7 +468,7 @@ export const ServiceAccountService: GenService<{
     methodKind: "unary";
     input: typeof CreateServiceAccountRequestSchema;
     output: typeof ServiceAccountSchema;
-  },
+  };
   /**
    * @generated from rpc rustyauth.service_accounts.v1.ServiceAccountService.UpdateServiceAccount
    */
@@ -465,7 +476,7 @@ export const ServiceAccountService: GenService<{
     methodKind: "unary";
     input: typeof UpdateServiceAccountRequestSchema;
     output: typeof ServiceAccountSchema;
-  },
+  };
   /**
    * @generated from rpc rustyauth.service_accounts.v1.ServiceAccountService.CreateCredential
    */
@@ -473,7 +484,7 @@ export const ServiceAccountService: GenService<{
     methodKind: "unary";
     input: typeof CreateCredentialRequestSchema;
     output: typeof CreateCredentialResponseSchema;
-  },
+  };
   /**
    * @generated from rpc rustyauth.service_accounts.v1.ServiceAccountService.RevokeCredential
    */
@@ -481,7 +492,7 @@ export const ServiceAccountService: GenService<{
     methodKind: "unary";
     input: typeof RevokeCredentialRequestSchema;
     output: typeof RevokeCredentialResponseSchema;
-  },
+  };
   /**
    * @generated from rpc rustyauth.service_accounts.v1.ServiceAccountService.ExchangeCredential
    */
@@ -489,6 +500,6 @@ export const ServiceAccountService: GenService<{
     methodKind: "unary";
     input: typeof ExchangeCredentialRequestSchema;
     output: typeof ExchangeCredentialResponseSchema;
-  },
+  };
 }> = /*@__PURE__*/
   serviceDesc(file_rustyauth_service_accounts_v1_service_accounts, 0);

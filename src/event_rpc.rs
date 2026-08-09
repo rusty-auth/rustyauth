@@ -164,24 +164,27 @@ fn event_stream<S: EventSource>(
 }
 
 fn event_response(event: AuthEvent) -> Result<SubscribeResponse, ConnectError> {
+    Ok(SubscribeResponse {
+        payload: event_to_proto(event)?.into(),
+        ..Default::default()
+    })
+}
+
+pub(crate) fn event_to_proto(event: AuthEvent) -> Result<ProtoAuthEvent, ConnectError> {
     let occurred_at = format_timestamp(event.occurred_at)?;
     let data_json = serde_json::to_vec(&event.data)
         .map_err(|_| ConnectError::new(ErrorCode::DataLoss, "auth event data is invalid"))?;
-    Ok(SubscribeResponse {
-        payload: ProtoAuthEvent {
-            sequence: event.sequence,
-            id: event.id.to_string(),
-            r#type: event.event_type,
-            subject: event
-                .subject
-                .map(|value| value.to_string())
-                .unwrap_or_default(),
-            occurred_at,
-            data_json,
-            tenant_id: event.tenant_id,
-            ..Default::default()
-        }
-        .into(),
+    Ok(ProtoAuthEvent {
+        sequence: event.sequence,
+        id: event.id.to_string(),
+        r#type: event.event_type,
+        subject: event
+            .subject
+            .map(|value| value.to_string())
+            .unwrap_or_default(),
+        occurred_at,
+        data_json,
+        tenant_id: event.tenant_id,
         ..Default::default()
     })
 }
@@ -284,6 +287,15 @@ fn checkpoint_interval(value: u32) -> Result<Duration, ConnectError> {
 }
 
 fn source_error(error: anyhow::Error) -> ConnectError {
+    if matches!(
+        error.downcast_ref::<EventLogIntegrityError>(),
+        Some(EventLogIntegrityError::CursorExpired { .. })
+    ) {
+        return ConnectError::new(
+            ErrorCode::OutOfRange,
+            "event cursor is older than the retained window",
+        );
+    }
     if error.downcast_ref::<EventLogIntegrityError>().is_some() {
         tracing::error!("auth event log integrity failure");
         ConnectError::new(ErrorCode::DataLoss, "auth event log integrity failure")

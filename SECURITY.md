@@ -126,48 +126,52 @@ identity projections.
   escalation.
 - Production Fleet management endpoints reject literal private, local and metadata targets; production
   infrastructure must additionally deny those destinations at egress to close DNS-rebinding paths.
+- Webhook endpoints require HTTPS, reject URL credentials and fragments, and never follow redirects. Deployments
+  must constrain webhook egress with an allowlist or proxy when untrusted operators can manage destinations;
+  URL validation alone cannot close DNS-rebinding paths or express private-network exceptions safely.
 - Missing state or invalid configuration fails closed.
 - Logs and events must never contain bearer or credential payloads.
 
 ## Known limitations
 
-These are explicit reasons RustyAuth is pre-release:
+These are explicit boundaries or reasons RustyAuth remains pre-release:
 
-- Production email verification has no delivery/consumption implementation. Because operator
-  bootstrap now requires a verified address, the first Owner must be created with the host CLI.
-- Account recovery is absent.
-- There is no public revoke-all-sessions operation. Revoking a passkey ends the sessions that
-  passkey created, not every session on the account.
+- Email sign-in-link delivery remains event-only. Identifier verification challenges are implemented through
+  exact signed-webhook subscriptions, and the first Owner can be created with the host CLI.
+- Recovery is based on one-time offline recovery codes and passkey re-enrolment. Deployments remain responsible
+  for secure code issuance/custody and a witnessed recovery drill.
 - Passkey-revocation session invalidation is evaluated when a session is next used. A request
   already in flight when the credential is revoked completes.
 - Anyone who can execute a shell in the deployed container can grant themselves the Owner role with
   `operator promote`. Container exec is an operator-equivalent privilege and must be restricted as
   such. `operator demote` withdraws a grant; removing an address from `AUTH_OPERATOR_EMAILS` does
   not, because a stored operator record is honoured before the allowlist is consulted.
-- Credential removal uses session-creation recency rather than a dedicated fresh step-up ceremony.
-- HTTP event polling still uses the bootstrap credential; private event streaming and identity RPCs
-  use separate static bearer credentials rather than workload identity or mTLS.
+- HTTP event polling still uses the bootstrap credential. Private event, identity, metrics and webhook RPCs
+  accept short-lived, exact-scope service-account JWTs; legacy static event and identity bearers remain for
+  compatibility. Workload identity and mTLS are still deployment responsibilities.
 - Stored keys are one configured tenant per instance rather than tenant-prefixed.
 - Compound-mutation coordination is process-local; multiple writer replicas are unqualified.
-- Fleet rate limits are process-local, so horizontally scaled control planes do not yet share one budget.
+- Authentication, recovery, service-account and Fleet pairing limits use expiring SableDB counters shared
+  across process replacement and replicas in the namespace, reinforced by a bounded process-local guard.
+  Datastore failure rejects the request instead of falling back to an unmetered path.
 - Fleet management endpoint validation cannot by itself prevent DNS rebinding. Production must enforce the
   same private, link-local and metadata denial at the network egress boundary.
-- Sensitive Fleet mutations do not yet have a dedicated recent-passkey step-up and human-reason flow.
-- Protocol fuzzing and an independent assessment are not complete. Dependency auditing is automated
-  for the two ecosystems that carry code: `cargo-deny` gates the Rust service on every push and every
-  tagged release, over advisories, licences, bans and sources, with an enforced expiry date on each
-  advisory ignore; `govulncheck` gates the Pulumi module, and reports only advisories this code can
-  actually reach. The TypeScript packages have no automated advisory gate.
+- Seeded protocol fuzzing covers Analytics batches, management wire messages and archive manifests locally
+  and in the tagged-release workflow. Independent assessment remains incomplete. Dependency auditing is
+  automated across the shipped Rust graphs and Go infrastructure: `cargo-deny` gates the root Rust service
+  on every push and tagged release over advisories, licences, bans and sources, while pinned `cargo-audit`
+  checks the root, Dioxus console and repository-owned SableDB lockfiles and `govulncheck` checks the Pulumi
+  module. The JSR client and generated protocol packages retain pinned dependency resolution in `deno.lock`;
+  release publication still requires registry-side provenance and advisory evidence.
 - The rate limiter tracks a bounded number of distinct callers and refuses rather than forgets when
   that bound is reached, so a flood from more distinct addresses than it holds degrades to a
   service-wide `429`. Failing closed is deliberate on an authentication surface, but it makes a wide
   distributed flood a denial of service rather than merely an unmetered one.
-- An operator can act on another operator. `RevokePasskey`, `RemoveIdentifier` and
-  `SetPrimaryIdentifier` take a target account and are gated at Support, with no comparison
-  between the actor's role and the target's, so a Support operator can disrupt an Owner's
-  access. The final passkey and final identifier are both protected, so this is disruption
-  rather than permanent lockout, but operator-on-operator action is not a boundary this
-  version expresses.
+- Desktop, iOS and Android clients are unsupported previews outside the `1.0.0` artifact and GA support
+  contract. Their signing, platform-trust and real-device gates belong to a later native release.
+- The supported web browser/OS/authenticator matrix, published-image install/upgrade/rollback, the full
+  Analytics production qualification matrix, an organization-policy Analytics canary and independent
+  application/deployment/pinned-SableDB/Analytics assessments are not complete.
 
 ## Safe verification
 
@@ -193,4 +197,6 @@ docker compose -f compose.integration.yaml down --volumes
 ```
 
 The production gate additionally requires dependency audit/deny checks, authenticator coverage,
-negative protocol tests, deployment isolation verification and regular operator recovery drills.
+negative protocol tests, deployment isolation verification and regular operator recovery drills. The exact
+`1.0.0` decision and externally owned evidence are tracked in
+[Release readiness](docs/RELEASE_READINESS.md).

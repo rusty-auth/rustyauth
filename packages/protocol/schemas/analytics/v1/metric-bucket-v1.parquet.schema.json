@@ -1,0 +1,504 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "schemaName": "rustyauth-metric-bucket-v1",
+  "schemaVersion": 1,
+  "parquetFormatVersion": "2.6",
+  "compression": "ZSTD",
+  "rowSemantics": "One closed TelemetryBucket snapshot at one exact revision",
+  "unknownFieldPolicy": "reject",
+  "fields": [
+    {
+      "id": 1,
+      "path": "realm_id",
+      "repetition": "REQUIRED",
+      "physicalType": "BYTE_ARRAY",
+      "logicalType": "STRING"
+    },
+    {
+      "id": 2,
+      "path": "assignment_epoch",
+      "repetition": "REQUIRED",
+      "physicalType": "INT64",
+      "logicalType": "UINT_64"
+    },
+    {
+      "id": 3,
+      "path": "bucket_start_unix_milliseconds",
+      "repetition": "REQUIRED",
+      "physicalType": "INT64",
+      "logicalType": "TIMESTAMP_MILLIS_UTC"
+    },
+    {
+      "id": 4,
+      "path": "bucket_width_seconds",
+      "repetition": "REQUIRED",
+      "physicalType": "INT32",
+      "logicalType": "UINT_32"
+    },
+    {
+      "id": 5,
+      "path": "revision",
+      "repetition": "REQUIRED",
+      "physicalType": "INT64",
+      "logicalType": "UINT_64"
+    },
+    {
+      "id": 6,
+      "path": "first_event_sequence",
+      "repetition": "REQUIRED",
+      "physicalType": "INT64",
+      "logicalType": "UINT_64"
+    },
+    {
+      "id": 7,
+      "path": "last_event_sequence",
+      "repetition": "REQUIRED",
+      "physicalType": "INT64",
+      "logicalType": "UINT_64"
+    },
+    {
+      "id": 8,
+      "path": "metric_schema_version",
+      "repetition": "REQUIRED",
+      "physicalType": "INT32",
+      "logicalType": "ENUM_NUMBER"
+    },
+    { "id": 9, "path": "closed", "repetition": "REQUIRED", "physicalType": "BOOLEAN", "logicalType": null },
+
+    {
+      "id": 10,
+      "path": "authentication",
+      "repetition": "OPTIONAL",
+      "physicalType": "GROUP",
+      "logicalType": null
+    },
+    {
+      "id": 11,
+      "path": "authentication.attempts",
+      "repetition": "REQUIRED",
+      "physicalType": "INT64",
+      "logicalType": "UINT_64"
+    },
+    {
+      "id": 12,
+      "path": "authentication.successes",
+      "repetition": "REQUIRED",
+      "physicalType": "INT64",
+      "logicalType": "UINT_64"
+    },
+    {
+      "id": 13,
+      "path": "authentication.failures",
+      "repetition": "REQUIRED",
+      "physicalType": "INT64",
+      "logicalType": "UINT_64"
+    },
+    {
+      "id": 14,
+      "path": "authentication.denials",
+      "repetition": "REQUIRED",
+      "physicalType": "INT64",
+      "logicalType": "UINT_64"
+    },
+    {
+      "id": 15,
+      "path": "authentication.active_account_observations",
+      "repetition": "REQUIRED",
+      "physicalType": "INT64",
+      "logicalType": "UINT_64"
+    },
+    {
+      "id": 16,
+      "path": "authentication.latency.profile",
+      "repetition": "REQUIRED",
+      "physicalType": "INT32",
+      "logicalType": "ENUM_NUMBER"
+    },
+    {
+      "id": 17,
+      "path": "authentication.latency.count",
+      "repetition": "REQUIRED",
+      "physicalType": "INT64",
+      "logicalType": "UINT_64"
+    },
+    {
+      "id": 18,
+      "path": "authentication.latency.sum_milliseconds",
+      "repetition": "REQUIRED",
+      "physicalType": "INT64",
+      "logicalType": "UINT_64"
+    },
+    {
+      "id": 19,
+      "path": "authentication.latency.cumulative_counts",
+      "repetition": "REPEATED",
+      "physicalType": "INT64",
+      "logicalType": "UINT_64_LIST"
+    },
+    {
+      "id": 20,
+      "path": "authentication.flows",
+      "repetition": "REPEATED",
+      "physicalType": "GROUP",
+      "logicalType": "LIST"
+    },
+    {
+      "id": 21,
+      "path": "authentication.flows.flow",
+      "repetition": "REQUIRED",
+      "physicalType": "INT32",
+      "logicalType": "ENUM_NUMBER"
+    },
+    {
+      "id": 22,
+      "path": "authentication.flows.attempts",
+      "repetition": "REQUIRED",
+      "physicalType": "INT64",
+      "logicalType": "UINT_64"
+    },
+    {
+      "id": 23,
+      "path": "authentication.flows.successes",
+      "repetition": "REQUIRED",
+      "physicalType": "INT64",
+      "logicalType": "UINT_64"
+    },
+    {
+      "id": 24,
+      "path": "authentication.flows.failures",
+      "repetition": "REQUIRED",
+      "physicalType": "INT64",
+      "logicalType": "UINT_64"
+    },
+    {
+      "id": 25,
+      "path": "authentication.flows.denials",
+      "repetition": "REQUIRED",
+      "physicalType": "INT64",
+      "logicalType": "UINT_64"
+    },
+    {
+      "id": 26,
+      "path": "authentication.failure_classes",
+      "repetition": "REPEATED",
+      "physicalType": "GROUP",
+      "logicalType": "LIST"
+    },
+    {
+      "id": 27,
+      "path": "authentication.failure_classes.failure_class",
+      "repetition": "REQUIRED",
+      "physicalType": "INT32",
+      "logicalType": "ENUM_NUMBER"
+    },
+    {
+      "id": 28,
+      "path": "authentication.failure_classes.count",
+      "repetition": "REQUIRED",
+      "physicalType": "INT64",
+      "logicalType": "UINT_64"
+    },
+
+    {
+      "id": 29,
+      "path": "registration",
+      "repetition": "OPTIONAL",
+      "physicalType": "GROUP",
+      "logicalType": null
+    },
+    {
+      "id": 30,
+      "path": "registration.options_started",
+      "repetition": "REQUIRED",
+      "physicalType": "INT64",
+      "logicalType": "UINT_64"
+    },
+    {
+      "id": 31,
+      "path": "registration.ceremonies_opened",
+      "repetition": "REQUIRED",
+      "physicalType": "INT64",
+      "logicalType": "UINT_64"
+    },
+    {
+      "id": 32,
+      "path": "registration.responses_returned",
+      "repetition": "REQUIRED",
+      "physicalType": "INT64",
+      "logicalType": "UINT_64"
+    },
+    {
+      "id": 33,
+      "path": "registration.registrations_completed",
+      "repetition": "REQUIRED",
+      "physicalType": "INT64",
+      "logicalType": "UINT_64"
+    },
+    {
+      "id": 34,
+      "path": "registration.challenges_expired",
+      "repetition": "REQUIRED",
+      "physicalType": "INT64",
+      "logicalType": "UINT_64"
+    },
+
+    {
+      "id": 35,
+      "path": "sessions_and_tokens",
+      "repetition": "OPTIONAL",
+      "physicalType": "GROUP",
+      "logicalType": null
+    },
+    {
+      "id": 36,
+      "path": "sessions_and_tokens.sessions_created",
+      "repetition": "REQUIRED",
+      "physicalType": "INT64",
+      "logicalType": "UINT_64"
+    },
+    {
+      "id": 37,
+      "path": "sessions_and_tokens.sessions_revoked",
+      "repetition": "REQUIRED",
+      "physicalType": "INT64",
+      "logicalType": "UINT_64"
+    },
+    {
+      "id": 38,
+      "path": "sessions_and_tokens.user_tokens_issued",
+      "repetition": "REQUIRED",
+      "physicalType": "INT64",
+      "logicalType": "UINT_64"
+    },
+    {
+      "id": 39,
+      "path": "sessions_and_tokens.service_tokens_issued",
+      "repetition": "REQUIRED",
+      "physicalType": "INT64",
+      "logicalType": "UINT_64"
+    },
+
+    {
+      "id": 40,
+      "path": "service_accounts",
+      "repetition": "OPTIONAL",
+      "physicalType": "GROUP",
+      "logicalType": null
+    },
+    {
+      "id": 41,
+      "path": "service_accounts.calls",
+      "repetition": "REQUIRED",
+      "physicalType": "INT64",
+      "logicalType": "UINT_64"
+    },
+    {
+      "id": 42,
+      "path": "service_accounts.successes",
+      "repetition": "REQUIRED",
+      "physicalType": "INT64",
+      "logicalType": "UINT_64"
+    },
+    {
+      "id": 43,
+      "path": "service_accounts.failures",
+      "repetition": "REQUIRED",
+      "physicalType": "INT64",
+      "logicalType": "UINT_64"
+    },
+    {
+      "id": 44,
+      "path": "service_accounts.denials",
+      "repetition": "REQUIRED",
+      "physicalType": "INT64",
+      "logicalType": "UINT_64"
+    },
+    {
+      "id": 45,
+      "path": "service_accounts.credential_rotations",
+      "repetition": "REQUIRED",
+      "physicalType": "INT64",
+      "logicalType": "UINT_64"
+    },
+
+    { "id": 46, "path": "webhooks", "repetition": "OPTIONAL", "physicalType": "GROUP", "logicalType": null },
+    {
+      "id": 47,
+      "path": "webhooks.deliveries",
+      "repetition": "REQUIRED",
+      "physicalType": "INT64",
+      "logicalType": "UINT_64"
+    },
+    {
+      "id": 48,
+      "path": "webhooks.successes",
+      "repetition": "REQUIRED",
+      "physicalType": "INT64",
+      "logicalType": "UINT_64"
+    },
+    {
+      "id": 49,
+      "path": "webhooks.failures",
+      "repetition": "REQUIRED",
+      "physicalType": "INT64",
+      "logicalType": "UINT_64"
+    },
+    {
+      "id": 50,
+      "path": "webhooks.backlog",
+      "repetition": "REQUIRED",
+      "physicalType": "INT64",
+      "logicalType": "UINT_64"
+    },
+    {
+      "id": 51,
+      "path": "webhooks.latency.profile",
+      "repetition": "REQUIRED",
+      "physicalType": "INT32",
+      "logicalType": "ENUM_NUMBER"
+    },
+    {
+      "id": 52,
+      "path": "webhooks.latency.count",
+      "repetition": "REQUIRED",
+      "physicalType": "INT64",
+      "logicalType": "UINT_64"
+    },
+    {
+      "id": 53,
+      "path": "webhooks.latency.sum_milliseconds",
+      "repetition": "REQUIRED",
+      "physicalType": "INT64",
+      "logicalType": "UINT_64"
+    },
+    {
+      "id": 54,
+      "path": "webhooks.latency.cumulative_counts",
+      "repetition": "REPEATED",
+      "physicalType": "INT64",
+      "logicalType": "UINT_64_LIST"
+    },
+
+    { "id": 55, "path": "platform", "repetition": "OPTIONAL", "physicalType": "GROUP", "logicalType": null },
+    {
+      "id": 56,
+      "path": "platform.api_requests",
+      "repetition": "REQUIRED",
+      "physicalType": "INT64",
+      "logicalType": "UINT_64"
+    },
+    {
+      "id": 57,
+      "path": "platform.api_errors",
+      "repetition": "REQUIRED",
+      "physicalType": "INT64",
+      "logicalType": "UINT_64"
+    },
+    {
+      "id": 58,
+      "path": "platform.api_latency.profile",
+      "repetition": "REQUIRED",
+      "physicalType": "INT32",
+      "logicalType": "ENUM_NUMBER"
+    },
+    {
+      "id": 59,
+      "path": "platform.api_latency.count",
+      "repetition": "REQUIRED",
+      "physicalType": "INT64",
+      "logicalType": "UINT_64"
+    },
+    {
+      "id": 60,
+      "path": "platform.api_latency.sum_milliseconds",
+      "repetition": "REQUIRED",
+      "physicalType": "INT64",
+      "logicalType": "UINT_64"
+    },
+    {
+      "id": 61,
+      "path": "platform.api_latency.cumulative_counts",
+      "repetition": "REPEATED",
+      "physicalType": "INT64",
+      "logicalType": "UINT_64_LIST"
+    },
+    {
+      "id": 62,
+      "path": "platform.sabledb_operations",
+      "repetition": "REQUIRED",
+      "physicalType": "INT64",
+      "logicalType": "UINT_64"
+    },
+    {
+      "id": 63,
+      "path": "platform.sabledb_errors",
+      "repetition": "REQUIRED",
+      "physicalType": "INT64",
+      "logicalType": "UINT_64"
+    },
+    {
+      "id": 64,
+      "path": "platform.sabledb_latency.profile",
+      "repetition": "REQUIRED",
+      "physicalType": "INT32",
+      "logicalType": "ENUM_NUMBER"
+    },
+    {
+      "id": 65,
+      "path": "platform.sabledb_latency.count",
+      "repetition": "REQUIRED",
+      "physicalType": "INT64",
+      "logicalType": "UINT_64"
+    },
+    {
+      "id": 66,
+      "path": "platform.sabledb_latency.sum_milliseconds",
+      "repetition": "REQUIRED",
+      "physicalType": "INT64",
+      "logicalType": "UINT_64"
+    },
+    {
+      "id": 67,
+      "path": "platform.sabledb_latency.cumulative_counts",
+      "repetition": "REPEATED",
+      "physicalType": "INT64",
+      "logicalType": "UINT_64_LIST"
+    },
+
+    {
+      "id": 68,
+      "path": "realm_health",
+      "repetition": "OPTIONAL",
+      "physicalType": "GROUP",
+      "logicalType": null
+    },
+    {
+      "id": 69,
+      "path": "realm_health.serving_state",
+      "repetition": "REQUIRED",
+      "physicalType": "INT32",
+      "logicalType": "ENUM_NUMBER"
+    },
+    {
+      "id": 70,
+      "path": "realm_health.backup_age_seconds",
+      "repetition": "REQUIRED",
+      "physicalType": "INT64",
+      "logicalType": "UINT_64"
+    },
+    {
+      "id": 71,
+      "path": "realm_health.signing_key_age_seconds",
+      "repetition": "REQUIRED",
+      "physicalType": "INT64",
+      "logicalType": "UINT_64"
+    },
+    {
+      "id": 72,
+      "path": "realm_health.connector_lag_seconds",
+      "repetition": "REQUIRED",
+      "physicalType": "INT64",
+      "logicalType": "UINT_64"
+    }
+  ]
+}

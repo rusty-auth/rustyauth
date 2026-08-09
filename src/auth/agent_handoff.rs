@@ -24,7 +24,7 @@ pub(super) async fn local_agent_handoff(
     if !state.local_agent_handoffs_enabled {
         return Err(ApiError::unauthorized("local agent handoff is disabled"));
     }
-    require_rate_limit(&state, peer, &headers, RateLimitClass::Ceremony, None)?;
+    require_rate_limit(&state, peer, &headers, RateLimitClass::Ceremony, None).await?;
     let handoff = state
         .store
         .take_local_agent_handoff(&query.code)

@@ -10,7 +10,9 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file rustyauth/identity/v1/identity.proto.
  */
 export const file_rustyauth_identity_v1_identity: GenFile = /*@__PURE__*/
-  fileDesc("CiRydXN0eWF1dGgvaWRlbnRpdHkvdjEvaWRlbnRpdHkucHJvdG8SFXJ1c3R5YXV0aC5pZGVudGl0eS52MSJICgdQcm9maWxlEhIKCmdpdmVuX25hbWUYASABKAkSEwoLZmFtaWx5X25hbWUYAiABKAkSFAoMZGlzcGxheV9uYW1lGAMgASgJIlUKD0lkZW50aWZpZXJWYWx1ZRIzCgR0eXBlGAEgASgOMiUucnVzdHlhdXRoLmlkZW50aXR5LnYxLklkZW50aWZpZXJUeXBlEg0KBXZhbHVlGAIgASgJIpwBCgpJZGVudGlmaWVyEjMKBHR5cGUYASABKA4yJS5ydXN0eWF1dGguaWRlbnRpdHkudjEuSWRlbnRpZmllclR5cGUSDQoFdmFsdWUYAiABKAkSEAoIdmVyaWZpZWQYAyABKAgSEwoLdmVyaWZpZWRfYXQYBCABKAkSDwoHcHJpbWFyeRgFIAEoCBISCgpjcmVhdGVkX2F0GAYgASgJIlkKB1Bhc3NrZXkSFQoNY3JlZGVudGlhbF9pZBgBIAEoCRINCgVsYWJlbBgCIAEoCRISCgpjcmVhdGVkX2F0GAMgASgJEhQKDGxhc3RfdXNlZF9hdBgEIAEoCSLBAQoEVXNlchIKCgJpZBgBIAEoCRIvCgdwcm9maWxlGAIgASgLMh4ucnVzdHlhdXRoLmlkZW50aXR5LnYxLlByb2ZpbGUSNgoLaWRlbnRpZmllcnMYAyADKAsyIS5ydXN0eWF1dGguaWRlbnRpdHkudjEuSWRlbnRpZmllchIwCghwYXNza2V5cxgEIAMoCzIeLnJ1c3R5YXV0aC5pZGVudGl0eS52MS5QYXNza2V5EhIKCmNyZWF0ZWRfYXQYBSABKAkiIQoOR2V0VXNlclJlcXVlc3QSDwoHdXNlcl9pZBgBIAEoCSL9AQoSU2VhcmNoVXNlcnNSZXF1ZXN0Eg8KB3VzZXJfaWQYASABKAkSOgoKaWRlbnRpZmllchgCIAEoCzImLnJ1c3R5YXV0aC5pZGVudGl0eS52MS5JZGVudGlmaWVyVmFsdWUSHQoVcGFzc2tleV9jcmVkZW50aWFsX2lkGAMgASgJEhUKDXBhc3NrZXlfbGFiZWwYBCABKAkSEgoKZ2l2ZW5fbmFtZRgFIAEoCRITCgtmYW1pbHlfbmFtZRgGIAEoCRIUCgxkaXNwbGF5X25hbWUYByABKAkSEQoJcGFnZV9zaXplGAggASgNEhIKCnBhZ2VfdG9rZW4YCSABKAkiWgoTU2VhcmNoVXNlcnNSZXNwb25zZRIqCgV1c2VycxgBIAMoCzIbLnJ1c3R5YXV0aC5pZGVudGl0eS52MS5Vc2VyEhcKD25leHRfcGFnZV90b2tlbhgCIAEoCSJYChRVcGRhdGVQcm9maWxlUmVxdWVzdBIPCgd1c2VyX2lkGAEgASgJEi8KB3Byb2ZpbGUYAiABKAsyHi5ydXN0eWF1dGguaWRlbnRpdHkudjEuUHJvZmlsZSJ1ChRBZGRJZGVudGlmaWVyUmVxdWVzdBIPCgd1c2VyX2lkGAEgASgJEjoKCmlkZW50aWZpZXIYAiABKAsyJi5ydXN0eWF1dGguaWRlbnRpdHkudjEuSWRlbnRpZmllclZhbHVlEhAKCHZlcmlmaWVkGAMgASgIImgKGUlkZW50aWZpZXJNdXRhdGlvblJlcXVlc3QSDwoHdXNlcl9pZBgBIAEoCRI6CgppZGVudGlmaWVyGAIgASgLMiYucnVzdHlhdXRoLmlkZW50aXR5LnYxLklkZW50aWZpZXJWYWx1ZSKBAQogU2V0SWRlbnRpZmllclZlcmlmaWNhdGlvblJlcXVlc3QSDwoHdXNlcl9pZBgBIAEoCRI6CgppZGVudGlmaWVyGAIgASgLMiYucnVzdHlhdXRoLmlkZW50aXR5LnYxLklkZW50aWZpZXJWYWx1ZRIQCgh2ZXJpZmllZBgDIAEoCCJNChRSZW5hbWVQYXNza2V5UmVxdWVzdBIPCgd1c2VyX2lkGAEgASgJEhUKDWNyZWRlbnRpYWxfaWQYAiABKAkSDQoFbGFiZWwYAyABKAkiPgoUUmV2b2tlUGFzc2tleVJlcXVlc3QSDwoHdXNlcl9pZBgBIAEoCRIVCg1jcmVkZW50aWFsX2lkGAIgASgJKmcKDklkZW50aWZpZXJUeXBlEh8KG0lERU5USUZJRVJfVFlQRV9VTlNQRUNJRklFRBAAEhkKFUlERU5USUZJRVJfVFlQRV9FTUFJTBABEhkKFUlERU5USUZJRVJfVFlQRV9QSE9ORRACMu8GCg9JZGVudGl0eVNlcnZpY2USTQoHR2V0VXNlchIlLnJ1c3R5YXV0aC5pZGVudGl0eS52MS5HZXRVc2VyUmVxdWVzdBobLnJ1c3R5YXV0aC5pZGVudGl0eS52MS5Vc2VyEmQKC1NlYXJjaFVzZXJzEikucnVzdHlhdXRoLmlkZW50aXR5LnYxLlNlYXJjaFVzZXJzUmVxdWVzdBoqLnJ1c3R5YXV0aC5pZGVudGl0eS52MS5TZWFyY2hVc2Vyc1Jlc3BvbnNlElkKDVVwZGF0ZVByb2ZpbGUSKy5ydXN0eWF1dGguaWRlbnRpdHkudjEuVXBkYXRlUHJvZmlsZVJlcXVlc3QaGy5ydXN0eWF1dGguaWRlbnRpdHkudjEuVXNlchJZCg1BZGRJZGVudGlmaWVyEisucnVzdHlhdXRoLmlkZW50aXR5LnYxLkFkZElkZW50aWZpZXJSZXF1ZXN0GhsucnVzdHlhdXRoLmlkZW50aXR5LnYxLlVzZXISYQoQUmVtb3ZlSWRlbnRpZmllchIwLnJ1c3R5YXV0aC5pZGVudGl0eS52MS5JZGVudGlmaWVyTXV0YXRpb25SZXF1ZXN0GhsucnVzdHlhdXRoLmlkZW50aXR5LnYxLlVzZXISZQoUU2V0UHJpbWFyeUlkZW50aWZpZXISMC5ydXN0eWF1dGguaWRlbnRpdHkudjEuSWRlbnRpZmllck11dGF0aW9uUmVxdWVzdBobLnJ1c3R5YXV0aC5pZGVudGl0eS52MS5Vc2VyEnEKGVNldElkZW50aWZpZXJWZXJpZmljYXRpb24SNy5ydXN0eWF1dGguaWRlbnRpdHkudjEuU2V0SWRlbnRpZmllclZlcmlmaWNhdGlvblJlcXVlc3QaGy5ydXN0eWF1dGguaWRlbnRpdHkudjEuVXNlchJZCg1SZW5hbWVQYXNza2V5EisucnVzdHlhdXRoLmlkZW50aXR5LnYxLlJlbmFtZVBhc3NrZXlSZXF1ZXN0GhsucnVzdHlhdXRoLmlkZW50aXR5LnYxLlVzZXISWQoNUmV2b2tlUGFzc2tleRIrLnJ1c3R5YXV0aC5pZGVudGl0eS52MS5SZXZva2VQYXNza2V5UmVxdWVzdBobLnJ1c3R5YXV0aC5pZGVudGl0eS52MS5Vc2VyYgZwcm90bzM");
+  fileDesc(
+    "CiRydXN0eWF1dGgvaWRlbnRpdHkvdjEvaWRlbnRpdHkucHJvdG8SFXJ1c3R5YXV0aC5pZGVudGl0eS52MSJICgdQcm9maWxlEhIKCmdpdmVuX25hbWUYASABKAkSEwoLZmFtaWx5X25hbWUYAiABKAkSFAoMZGlzcGxheV9uYW1lGAMgASgJIlUKD0lkZW50aWZpZXJWYWx1ZRIzCgR0eXBlGAEgASgOMiUucnVzdHlhdXRoLmlkZW50aXR5LnYxLklkZW50aWZpZXJUeXBlEg0KBXZhbHVlGAIgASgJIpwBCgpJZGVudGlmaWVyEjMKBHR5cGUYASABKA4yJS5ydXN0eWF1dGguaWRlbnRpdHkudjEuSWRlbnRpZmllclR5cGUSDQoFdmFsdWUYAiABKAkSEAoIdmVyaWZpZWQYAyABKAgSEwoLdmVyaWZpZWRfYXQYBCABKAkSDwoHcHJpbWFyeRgFIAEoCBISCgpjcmVhdGVkX2F0GAYgASgJIlkKB1Bhc3NrZXkSFQoNY3JlZGVudGlhbF9pZBgBIAEoCRINCgVsYWJlbBgCIAEoCRISCgpjcmVhdGVkX2F0GAMgASgJEhQKDGxhc3RfdXNlZF9hdBgEIAEoCSLBAQoEVXNlchIKCgJpZBgBIAEoCRIvCgdwcm9maWxlGAIgASgLMh4ucnVzdHlhdXRoLmlkZW50aXR5LnYxLlByb2ZpbGUSNgoLaWRlbnRpZmllcnMYAyADKAsyIS5ydXN0eWF1dGguaWRlbnRpdHkudjEuSWRlbnRpZmllchIwCghwYXNza2V5cxgEIAMoCzIeLnJ1c3R5YXV0aC5pZGVudGl0eS52MS5QYXNza2V5EhIKCmNyZWF0ZWRfYXQYBSABKAkiIQoOR2V0VXNlclJlcXVlc3QSDwoHdXNlcl9pZBgBIAEoCSI5ChBMaXN0VXNlcnNSZXF1ZXN0EhEKCXBhZ2Vfc2l6ZRgBIAEoDRISCgpwYWdlX3Rva2VuGAIgASgJIlgKEUxpc3RVc2Vyc1Jlc3BvbnNlEioKBXVzZXJzGAEgAygLMhsucnVzdHlhdXRoLmlkZW50aXR5LnYxLlVzZXISFwoPbmV4dF9wYWdlX3Rva2VuGAIgASgJIv0BChJTZWFyY2hVc2Vyc1JlcXVlc3QSDwoHdXNlcl9pZBgBIAEoCRI6CgppZGVudGlmaWVyGAIgASgLMiYucnVzdHlhdXRoLmlkZW50aXR5LnYxLklkZW50aWZpZXJWYWx1ZRIdChVwYXNza2V5X2NyZWRlbnRpYWxfaWQYAyABKAkSFQoNcGFzc2tleV9sYWJlbBgEIAEoCRISCgpnaXZlbl9uYW1lGAUgASgJEhMKC2ZhbWlseV9uYW1lGAYgASgJEhQKDGRpc3BsYXlfbmFtZRgHIAEoCRIRCglwYWdlX3NpemUYCCABKA0SEgoKcGFnZV90b2tlbhgJIAEoCSJaChNTZWFyY2hVc2Vyc1Jlc3BvbnNlEioKBXVzZXJzGAEgAygLMhsucnVzdHlhdXRoLmlkZW50aXR5LnYxLlVzZXISFwoPbmV4dF9wYWdlX3Rva2VuGAIgASgJIlgKFFVwZGF0ZVByb2ZpbGVSZXF1ZXN0Eg8KB3VzZXJfaWQYASABKAkSLwoHcHJvZmlsZRgCIAEoCzIeLnJ1c3R5YXV0aC5pZGVudGl0eS52MS5Qcm9maWxlInUKFEFkZElkZW50aWZpZXJSZXF1ZXN0Eg8KB3VzZXJfaWQYASABKAkSOgoKaWRlbnRpZmllchgCIAEoCzImLnJ1c3R5YXV0aC5pZGVudGl0eS52MS5JZGVudGlmaWVyVmFsdWUSEAoIdmVyaWZpZWQYAyABKAgiaAoZSWRlbnRpZmllck11dGF0aW9uUmVxdWVzdBIPCgd1c2VyX2lkGAEgASgJEjoKCmlkZW50aWZpZXIYAiABKAsyJi5ydXN0eWF1dGguaWRlbnRpdHkudjEuSWRlbnRpZmllclZhbHVlIoEBCiBTZXRJZGVudGlmaWVyVmVyaWZpY2F0aW9uUmVxdWVzdBIPCgd1c2VyX2lkGAEgASgJEjoKCmlkZW50aWZpZXIYAiABKAsyJi5ydXN0eWF1dGguaWRlbnRpdHkudjEuSWRlbnRpZmllclZhbHVlEhAKCHZlcmlmaWVkGAMgASgIIk0KFFJlbmFtZVBhc3NrZXlSZXF1ZXN0Eg8KB3VzZXJfaWQYASABKAkSFQoNY3JlZGVudGlhbF9pZBgCIAEoCRINCgVsYWJlbBgDIAEoCSI+ChRSZXZva2VQYXNza2V5UmVxdWVzdBIPCgd1c2VyX2lkGAEgASgJEhUKDWNyZWRlbnRpYWxfaWQYAiABKAkqZwoOSWRlbnRpZmllclR5cGUSHwobSURFTlRJRklFUl9UWVBFX1VOU1BFQ0lGSUVEEAASGQoVSURFTlRJRklFUl9UWVBFX0VNQUlMEAESGQoVSURFTlRJRklFUl9UWVBFX1BIT05FEAIyzwcKD0lkZW50aXR5U2VydmljZRJNCgdHZXRVc2VyEiUucnVzdHlhdXRoLmlkZW50aXR5LnYxLkdldFVzZXJSZXF1ZXN0GhsucnVzdHlhdXRoLmlkZW50aXR5LnYxLlVzZXISXgoJTGlzdFVzZXJzEicucnVzdHlhdXRoLmlkZW50aXR5LnYxLkxpc3RVc2Vyc1JlcXVlc3QaKC5ydXN0eWF1dGguaWRlbnRpdHkudjEuTGlzdFVzZXJzUmVzcG9uc2USZAoLU2VhcmNoVXNlcnMSKS5ydXN0eWF1dGguaWRlbnRpdHkudjEuU2VhcmNoVXNlcnNSZXF1ZXN0GioucnVzdHlhdXRoLmlkZW50aXR5LnYxLlNlYXJjaFVzZXJzUmVzcG9uc2USWQoNVXBkYXRlUHJvZmlsZRIrLnJ1c3R5YXV0aC5pZGVudGl0eS52MS5VcGRhdGVQcm9maWxlUmVxdWVzdBobLnJ1c3R5YXV0aC5pZGVudGl0eS52MS5Vc2VyElkKDUFkZElkZW50aWZpZXISKy5ydXN0eWF1dGguaWRlbnRpdHkudjEuQWRkSWRlbnRpZmllclJlcXVlc3QaGy5ydXN0eWF1dGguaWRlbnRpdHkudjEuVXNlchJhChBSZW1vdmVJZGVudGlmaWVyEjAucnVzdHlhdXRoLmlkZW50aXR5LnYxLklkZW50aWZpZXJNdXRhdGlvblJlcXVlc3QaGy5ydXN0eWF1dGguaWRlbnRpdHkudjEuVXNlchJlChRTZXRQcmltYXJ5SWRlbnRpZmllchIwLnJ1c3R5YXV0aC5pZGVudGl0eS52MS5JZGVudGlmaWVyTXV0YXRpb25SZXF1ZXN0GhsucnVzdHlhdXRoLmlkZW50aXR5LnYxLlVzZXIScQoZU2V0SWRlbnRpZmllclZlcmlmaWNhdGlvbhI3LnJ1c3R5YXV0aC5pZGVudGl0eS52MS5TZXRJZGVudGlmaWVyVmVyaWZpY2F0aW9uUmVxdWVzdBobLnJ1c3R5YXV0aC5pZGVudGl0eS52MS5Vc2VyElkKDVJlbmFtZVBhc3NrZXkSKy5ydXN0eWF1dGguaWRlbnRpdHkudjEuUmVuYW1lUGFzc2tleVJlcXVlc3QaGy5ydXN0eWF1dGguaWRlbnRpdHkudjEuVXNlchJZCg1SZXZva2VQYXNza2V5EisucnVzdHlhdXRoLmlkZW50aXR5LnYxLlJldm9rZVBhc3NrZXlSZXF1ZXN0GhsucnVzdHlhdXRoLmlkZW50aXR5LnYxLlVzZXJiBnByb3RvMw",
+  );
 
 /**
  * @generated from message rustyauth.identity.v1.Profile
@@ -192,6 +194,50 @@ export const GetUserRequestSchema: GenMessage<GetUserRequest> = /*@__PURE__*/
   messageDesc(file_rustyauth_identity_v1_identity, 5);
 
 /**
+ * @generated from message rustyauth.identity.v1.ListUsersRequest
+ */
+export type ListUsersRequest = Message<"rustyauth.identity.v1.ListUsersRequest"> & {
+  /**
+   * @generated from field: uint32 page_size = 1;
+   */
+  pageSize: number;
+
+  /**
+   * @generated from field: string page_token = 2;
+   */
+  pageToken: string;
+};
+
+/**
+ * Describes the message rustyauth.identity.v1.ListUsersRequest.
+ * Use `create(ListUsersRequestSchema)` to create a new message.
+ */
+export const ListUsersRequestSchema: GenMessage<ListUsersRequest> = /*@__PURE__*/
+  messageDesc(file_rustyauth_identity_v1_identity, 6);
+
+/**
+ * @generated from message rustyauth.identity.v1.ListUsersResponse
+ */
+export type ListUsersResponse = Message<"rustyauth.identity.v1.ListUsersResponse"> & {
+  /**
+   * @generated from field: repeated rustyauth.identity.v1.User users = 1;
+   */
+  users: User[];
+
+  /**
+   * @generated from field: string next_page_token = 2;
+   */
+  nextPageToken: string;
+};
+
+/**
+ * Describes the message rustyauth.identity.v1.ListUsersResponse.
+ * Use `create(ListUsersResponseSchema)` to create a new message.
+ */
+export const ListUsersResponseSchema: GenMessage<ListUsersResponse> = /*@__PURE__*/
+  messageDesc(file_rustyauth_identity_v1_identity, 7);
+
+/**
  * @generated from message rustyauth.identity.v1.SearchUsersRequest
  */
 export type SearchUsersRequest = Message<"rustyauth.identity.v1.SearchUsersRequest"> & {
@@ -250,7 +296,7 @@ export type SearchUsersRequest = Message<"rustyauth.identity.v1.SearchUsersReque
  * Use `create(SearchUsersRequestSchema)` to create a new message.
  */
 export const SearchUsersRequestSchema: GenMessage<SearchUsersRequest> = /*@__PURE__*/
-  messageDesc(file_rustyauth_identity_v1_identity, 6);
+  messageDesc(file_rustyauth_identity_v1_identity, 8);
 
 /**
  * @generated from message rustyauth.identity.v1.SearchUsersResponse
@@ -272,7 +318,7 @@ export type SearchUsersResponse = Message<"rustyauth.identity.v1.SearchUsersResp
  * Use `create(SearchUsersResponseSchema)` to create a new message.
  */
 export const SearchUsersResponseSchema: GenMessage<SearchUsersResponse> = /*@__PURE__*/
-  messageDesc(file_rustyauth_identity_v1_identity, 7);
+  messageDesc(file_rustyauth_identity_v1_identity, 9);
 
 /**
  * @generated from message rustyauth.identity.v1.UpdateProfileRequest
@@ -296,7 +342,7 @@ export type UpdateProfileRequest = Message<"rustyauth.identity.v1.UpdateProfileR
  * Use `create(UpdateProfileRequestSchema)` to create a new message.
  */
 export const UpdateProfileRequestSchema: GenMessage<UpdateProfileRequest> = /*@__PURE__*/
-  messageDesc(file_rustyauth_identity_v1_identity, 8);
+  messageDesc(file_rustyauth_identity_v1_identity, 10);
 
 /**
  * @generated from message rustyauth.identity.v1.AddIdentifierRequest
@@ -323,7 +369,7 @@ export type AddIdentifierRequest = Message<"rustyauth.identity.v1.AddIdentifierR
  * Use `create(AddIdentifierRequestSchema)` to create a new message.
  */
 export const AddIdentifierRequestSchema: GenMessage<AddIdentifierRequest> = /*@__PURE__*/
-  messageDesc(file_rustyauth_identity_v1_identity, 9);
+  messageDesc(file_rustyauth_identity_v1_identity, 11);
 
 /**
  * @generated from message rustyauth.identity.v1.IdentifierMutationRequest
@@ -345,34 +391,38 @@ export type IdentifierMutationRequest = Message<"rustyauth.identity.v1.Identifie
  * Use `create(IdentifierMutationRequestSchema)` to create a new message.
  */
 export const IdentifierMutationRequestSchema: GenMessage<IdentifierMutationRequest> = /*@__PURE__*/
-  messageDesc(file_rustyauth_identity_v1_identity, 10);
+  messageDesc(file_rustyauth_identity_v1_identity, 12);
 
 /**
  * @generated from message rustyauth.identity.v1.SetIdentifierVerificationRequest
  */
-export type SetIdentifierVerificationRequest = Message<"rustyauth.identity.v1.SetIdentifierVerificationRequest"> & {
-  /**
-   * @generated from field: string user_id = 1;
-   */
-  userId: string;
+export type SetIdentifierVerificationRequest =
+  & Message<"rustyauth.identity.v1.SetIdentifierVerificationRequest">
+  & {
+    /**
+     * @generated from field: string user_id = 1;
+     */
+    userId: string;
 
-  /**
-   * @generated from field: rustyauth.identity.v1.IdentifierValue identifier = 2;
-   */
-  identifier?: IdentifierValue | undefined;
+    /**
+     * @generated from field: rustyauth.identity.v1.IdentifierValue identifier = 2;
+     */
+    identifier?: IdentifierValue | undefined;
 
-  /**
-   * @generated from field: bool verified = 3;
-   */
-  verified: boolean;
-};
+    /**
+     * @generated from field: bool verified = 3;
+     */
+    verified: boolean;
+  };
 
 /**
  * Describes the message rustyauth.identity.v1.SetIdentifierVerificationRequest.
  * Use `create(SetIdentifierVerificationRequestSchema)` to create a new message.
  */
-export const SetIdentifierVerificationRequestSchema: GenMessage<SetIdentifierVerificationRequest> = /*@__PURE__*/
-  messageDesc(file_rustyauth_identity_v1_identity, 11);
+export const SetIdentifierVerificationRequestSchema: GenMessage<
+  SetIdentifierVerificationRequest
+> = /*@__PURE__*/
+  messageDesc(file_rustyauth_identity_v1_identity, 13);
 
 /**
  * @generated from message rustyauth.identity.v1.RenamePasskeyRequest
@@ -399,7 +449,7 @@ export type RenamePasskeyRequest = Message<"rustyauth.identity.v1.RenamePasskeyR
  * Use `create(RenamePasskeyRequestSchema)` to create a new message.
  */
 export const RenamePasskeyRequestSchema: GenMessage<RenamePasskeyRequest> = /*@__PURE__*/
-  messageDesc(file_rustyauth_identity_v1_identity, 12);
+  messageDesc(file_rustyauth_identity_v1_identity, 14);
 
 /**
  * @generated from message rustyauth.identity.v1.RevokePasskeyRequest
@@ -421,7 +471,7 @@ export type RevokePasskeyRequest = Message<"rustyauth.identity.v1.RevokePasskeyR
  * Use `create(RevokePasskeyRequestSchema)` to create a new message.
  */
 export const RevokePasskeyRequestSchema: GenMessage<RevokePasskeyRequest> = /*@__PURE__*/
-  messageDesc(file_rustyauth_identity_v1_identity, 13);
+  messageDesc(file_rustyauth_identity_v1_identity, 15);
 
 /**
  * @generated from enum rustyauth.identity.v1.IdentifierType
@@ -462,7 +512,15 @@ export const IdentityService: GenService<{
     methodKind: "unary";
     input: typeof GetUserRequestSchema;
     output: typeof UserSchema;
-  },
+  };
+  /**
+   * @generated from rpc rustyauth.identity.v1.IdentityService.ListUsers
+   */
+  listUsers: {
+    methodKind: "unary";
+    input: typeof ListUsersRequestSchema;
+    output: typeof ListUsersResponseSchema;
+  };
   /**
    * @generated from rpc rustyauth.identity.v1.IdentityService.SearchUsers
    */
@@ -470,7 +528,7 @@ export const IdentityService: GenService<{
     methodKind: "unary";
     input: typeof SearchUsersRequestSchema;
     output: typeof SearchUsersResponseSchema;
-  },
+  };
   /**
    * @generated from rpc rustyauth.identity.v1.IdentityService.UpdateProfile
    */
@@ -478,7 +536,7 @@ export const IdentityService: GenService<{
     methodKind: "unary";
     input: typeof UpdateProfileRequestSchema;
     output: typeof UserSchema;
-  },
+  };
   /**
    * @generated from rpc rustyauth.identity.v1.IdentityService.AddIdentifier
    */
@@ -486,7 +544,7 @@ export const IdentityService: GenService<{
     methodKind: "unary";
     input: typeof AddIdentifierRequestSchema;
     output: typeof UserSchema;
-  },
+  };
   /**
    * @generated from rpc rustyauth.identity.v1.IdentityService.RemoveIdentifier
    */
@@ -494,7 +552,7 @@ export const IdentityService: GenService<{
     methodKind: "unary";
     input: typeof IdentifierMutationRequestSchema;
     output: typeof UserSchema;
-  },
+  };
   /**
    * @generated from rpc rustyauth.identity.v1.IdentityService.SetPrimaryIdentifier
    */
@@ -502,7 +560,7 @@ export const IdentityService: GenService<{
     methodKind: "unary";
     input: typeof IdentifierMutationRequestSchema;
     output: typeof UserSchema;
-  },
+  };
   /**
    * @generated from rpc rustyauth.identity.v1.IdentityService.SetIdentifierVerification
    */
@@ -510,7 +568,7 @@ export const IdentityService: GenService<{
     methodKind: "unary";
     input: typeof SetIdentifierVerificationRequestSchema;
     output: typeof UserSchema;
-  },
+  };
   /**
    * @generated from rpc rustyauth.identity.v1.IdentityService.RenamePasskey
    */
@@ -518,7 +576,7 @@ export const IdentityService: GenService<{
     methodKind: "unary";
     input: typeof RenamePasskeyRequestSchema;
     output: typeof UserSchema;
-  },
+  };
   /**
    * @generated from rpc rustyauth.identity.v1.IdentityService.RevokePasskey
    */
@@ -526,6 +584,6 @@ export const IdentityService: GenService<{
     methodKind: "unary";
     input: typeof RevokePasskeyRequestSchema;
     output: typeof UserSchema;
-  },
+  };
 }> = /*@__PURE__*/
   serviceDesc(file_rustyauth_identity_v1_identity, 0);

@@ -1,3 +1,8 @@
+#![cfg_attr(
+    all(feature = "bundle", target_os = "windows"),
+    windows_subsystem = "windows"
+)]
+
 mod app;
 mod fixtures;
 mod fleet_client;

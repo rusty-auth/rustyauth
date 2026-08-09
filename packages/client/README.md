@@ -4,8 +4,9 @@ Framework-agnostic browser client for the RustyAuth **public** passkey HTTP API 
 documented in `docs/API.md`. It drives the WebAuthn ceremonies with `navigator.credentials`, sends every
 request with `credentials: "include"` for the HttpOnly session cookie, and has zero runtime dependencies.
 
-The private ConnectRPC surface (identity, events, organization and service-account services) is deliberately
-out of scope here; use `@rustyauth/protocol` with `@rustyauth/connect-solid` for that.
+The private ConnectRPC surface (identity, events, organization, service-account, Fleet and analytics services)
+is deliberately out of scope here. Use the versioned `@rustyauth/protocol` descriptors with an appropriate
+Connect or native gRPC transport in a trusted client. The shipped dashboard product path is Dioxus.
 
 ## Usage
 
@@ -14,12 +15,16 @@ import { createRustyAuthClient, RustyAuthError } from "@rustyauth/client";
 
 const auth = createRustyAuthClient({ baseUrl: "http://localhost:8081" });
 
+// For local evaluation, load this from the ignored .env.standalone.local.
+// Never embed an administrative bootstrap credential in production browser code.
+const localDevelopmentToken = "<read from ignored .env.standalone.local>";
+
 // Register a new account. Initial enrolment is administrative and needs the
 // deployment's bootstrap token; the browser prompts for a passkey.
 await auth.register({
   identifier: { type: "email", value: "person@example.com" },
   displayName: "Ada Lovelace",
-  bootstrapToken: "vtr-local-enrolment-only", // dev fixture from .env.example
+  bootstrapToken: localDevelopmentToken,
 });
 
 // Later: sign in with the same identifier. The session cookie is set for you.
@@ -52,6 +57,10 @@ try {
 
 The page calling `register`/`signIn` must be served from the exact `WEBAUTHN_RP_ORIGIN` the server is
 configured with; RustyAuth's CORS policy admits only that origin.
+
+Start the supported local topology from the repository root with `scripts/local-stack standalone up`. See
+[`docs/INTEGRATION.md`](../../docs/INTEGRATION.md) for the complete session, token-verification and production
+checklist.
 
 ## WebAuthn JSON mapping
 

@@ -330,6 +330,30 @@ impl BackupSnapshot {
                         bail!("backup contains duplicate realm Fleet grant locators");
                     }
                 }
+                "remote-mutation" => {
+                    Uuid::parse_str(record.key.trim_start_matches("auth:remote-mutation:"))
+                        .context("backup remote mutation key has an invalid request id")?;
+                    if record.expires_at.is_none() {
+                        bail!("backup remote mutation receipt has no expiry");
+                    }
+                    let value: serde_json::Value = serde_json::from_str(&record.value)
+                        .context("decode backup remote mutation receipt")?;
+                    if value
+                        .get("digest")
+                        .and_then(serde_json::Value::as_str)
+                        .is_none()
+                        || value
+                            .get("state")
+                            .and_then(serde_json::Value::as_str)
+                            .is_none()
+                        || value
+                            .get("claimedAt")
+                            .and_then(serde_json::Value::as_u64)
+                            .is_none()
+                    {
+                        bail!("backup remote mutation receipt is malformed");
+                    }
+                }
                 "event" => {
                     let sequence = record
                         .key
@@ -1003,6 +1027,7 @@ fn record_family(key: &str) -> Result<String> {
         ("auth:service-credential:", "service-credential"),
         ("auth:fleet-grant:", "realm-fleet-grant"),
         ("auth:fleet-grant-secret:", "realm-fleet-grant-secret"),
+        ("auth:remote-mutation:", "remote-mutation"),
         ("fleet:organization:", "fleet-organization"),
         ("fleet:organization-slug:", "fleet-organization-slug"),
         ("fleet:project:", "fleet-project"),
@@ -1062,6 +1087,7 @@ fn identity_snapshot() -> BackupSnapshot {
             created_at: 1_000,
         }],
         session_version: 1,
+        recovery_codes: Vec::new(),
         created_at: 1_000,
         passkeys: Vec::new(),
     };

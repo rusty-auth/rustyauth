@@ -8,7 +8,7 @@ mod errors;
 mod handlers;
 mod pagination;
 mod ports;
-mod projection;
+pub(crate) mod projection;
 mod validation;
 
 pub(crate) use self::handlers::ServiceAccountRpc;

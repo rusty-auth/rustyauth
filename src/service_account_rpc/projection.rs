@@ -36,7 +36,7 @@ pub(super) fn parse_required_status(
         .ok_or_else(|| invalid_argument("service-account status is required"))
 }
 
-pub(super) fn service_account_to_proto(
+pub(crate) fn service_account_to_proto(
     account: ServiceAccountRecord,
 ) -> Result<ProtoServiceAccount, ConnectError> {
     let credentials = account

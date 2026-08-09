@@ -39,6 +39,15 @@ export interface TokenResponse {
   expiresIn: number;
 }
 
+/** One-time identifier verification challenge. */
+export interface IdentifierVerificationChallenge {
+  challengeId: string;
+  expiresAt: number;
+  delivered: boolean;
+  /** Present only on development deployments. */
+  developmentCode: string | null;
+}
+
 /** One linked identifier in the `GET /v1/account` response. */
 export interface AccountIdentifier {
   type: IdentifierType;

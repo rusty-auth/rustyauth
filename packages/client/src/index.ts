@@ -18,6 +18,7 @@ export type {
   CredentialSummary,
   Identifier,
   IdentifierType,
+  IdentifierVerificationChallenge,
   RegistrationCeremony,
   RegistrationResponseJSON,
   RequestOptionsJSON,

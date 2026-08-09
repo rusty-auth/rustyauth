@@ -4,11 +4,14 @@
 use connectrpc::{RequestContext, Response, ServiceRequest, ServiceResult};
 
 use crate::{
+    operator_auth::OperatorAuthorizer,
     proto::rustyauth::identity::v1::{
         AddIdentifierRequest, GetUserRequest, IdentifierMutationRequest, IdentityService,
-        RenamePasskeyRequest, RevokePasskeyRequest, SearchUsersRequest, SearchUsersResponse,
-        SetIdentifierVerificationRequest, UpdateProfileRequest, User as ProtoUser,
+        ListUsersRequest, ListUsersResponse, RenamePasskeyRequest, RevokePasskeyRequest,
+        SearchUsersRequest, SearchUsersResponse, SetIdentifierVerificationRequest,
+        UpdateProfileRequest, User as ProtoUser,
     },
+    rpc::RpcPrincipal,
     store::AccountProfile,
 };
 
@@ -27,11 +30,43 @@ const MAX_PAGE_SIZE: usize = 100;
 
 pub(crate) struct IdentityRpc<S> {
     source: S,
+    authorizer: Option<OperatorAuthorizer>,
 }
 
 impl<S> IdentityRpc<S> {
+    #[cfg(test)]
     pub(crate) fn new(source: S) -> Self {
-        Self { source }
+        Self {
+            source,
+            authorizer: None,
+        }
+    }
+
+    pub(crate) fn with_authorizer(source: S, authorizer: OperatorAuthorizer) -> Self {
+        Self {
+            source,
+            authorizer: Some(authorizer),
+        }
+    }
+
+    async fn require_target_dominance(
+        &self,
+        ctx: &RequestContext,
+        user_id: uuid::Uuid,
+    ) -> Result<(), connectrpc::ConnectError> {
+        if ctx.extensions().get::<RpcPrincipal>() == Some(&RpcPrincipal::Machine) {
+            return Ok(());
+        }
+        if let Some(authorizer) = &self.authorizer {
+            let actor = authorizer
+                .authorize(
+                    ctx.headers(),
+                    crate::operator_auth::OperatorCapability::Support,
+                )
+                .await?;
+            authorizer.require_target_dominance(&actor, user_id).await?;
+        }
+        Ok(())
     }
 }
 
@@ -50,6 +85,37 @@ impl<S: IdentitySource> IdentityService for IdentityRpc<S> {
             .map_err(source_error)?
             .ok_or_else(user_not_found)?;
         Response::ok(record_to_proto(record)?)
+    }
+
+    async fn list_users(
+        &self,
+        _ctx: RequestContext,
+        request: ServiceRequest<'_, ListUsersRequest>,
+    ) -> ServiceResult<ListUsersResponse> {
+        let after = decode_page_token(request.page_token)?;
+        let page_size = match request.page_size {
+            0 => DEFAULT_PAGE_SIZE,
+            value if value as usize <= MAX_PAGE_SIZE => value as usize,
+            _ => {
+                return Err(invalid_argument(format!(
+                    "page_size must not exceed {MAX_PAGE_SIZE}"
+                )));
+            }
+        };
+        let page = self
+            .source
+            .list_users(after, page_size)
+            .await
+            .map_err(source_error)?;
+        Response::ok(ListUsersResponse {
+            users: page
+                .records
+                .into_iter()
+                .map(record_to_proto)
+                .collect::<Result<Vec<_>, _>>()?,
+            next_page_token: page.next_after.map(encode_page_token).unwrap_or_default(),
+            ..Default::default()
+        })
     }
 
     async fn search_users(
@@ -87,10 +153,11 @@ impl<S: IdentitySource> IdentityService for IdentityRpc<S> {
 
     async fn update_profile(
         &self,
-        _ctx: RequestContext,
+        ctx: RequestContext,
         request: ServiceRequest<'_, UpdateProfileRequest>,
     ) -> ServiceResult<ProtoUser> {
         let user_id = parse_user_id(request.user_id)?;
+        self.require_target_dominance(&ctx, user_id).await?;
         let profile = request
             .profile
             .as_option()
@@ -111,10 +178,11 @@ impl<S: IdentitySource> IdentityService for IdentityRpc<S> {
 
     async fn add_identifier(
         &self,
-        _ctx: RequestContext,
+        ctx: RequestContext,
         request: ServiceRequest<'_, AddIdentifierRequest>,
     ) -> ServiceResult<ProtoUser> {
         let user_id = parse_user_id(request.user_id)?;
+        self.require_target_dominance(&ctx, user_id).await?;
         let identifier = parse_identifier(request.identifier.as_option())?;
         // Attaching an address and asserting the account controls it are separate
         // decisions at separate privilege levels. Honouring `verified` here would
@@ -135,10 +203,11 @@ impl<S: IdentitySource> IdentityService for IdentityRpc<S> {
 
     async fn remove_identifier(
         &self,
-        _ctx: RequestContext,
+        ctx: RequestContext,
         request: ServiceRequest<'_, IdentifierMutationRequest>,
     ) -> ServiceResult<ProtoUser> {
         let user_id = parse_user_id(request.user_id)?;
+        self.require_target_dominance(&ctx, user_id).await?;
         let identifier = parse_identifier(request.identifier.as_option())?;
         let record = self
             .source
@@ -150,10 +219,11 @@ impl<S: IdentitySource> IdentityService for IdentityRpc<S> {
 
     async fn set_primary_identifier(
         &self,
-        _ctx: RequestContext,
+        ctx: RequestContext,
         request: ServiceRequest<'_, IdentifierMutationRequest>,
     ) -> ServiceResult<ProtoUser> {
         let user_id = parse_user_id(request.user_id)?;
+        self.require_target_dominance(&ctx, user_id).await?;
         let identifier = parse_identifier(request.identifier.as_option())?;
         let record = self
             .source
@@ -165,10 +235,11 @@ impl<S: IdentitySource> IdentityService for IdentityRpc<S> {
 
     async fn set_identifier_verification(
         &self,
-        _ctx: RequestContext,
+        ctx: RequestContext,
         request: ServiceRequest<'_, SetIdentifierVerificationRequest>,
     ) -> ServiceResult<ProtoUser> {
         let user_id = parse_user_id(request.user_id)?;
+        self.require_target_dominance(&ctx, user_id).await?;
         let identifier = parse_identifier(request.identifier.as_option())?;
         let record = self
             .source
@@ -180,10 +251,11 @@ impl<S: IdentitySource> IdentityService for IdentityRpc<S> {
 
     async fn rename_passkey(
         &self,
-        _ctx: RequestContext,
+        ctx: RequestContext,
         request: ServiceRequest<'_, RenamePasskeyRequest>,
     ) -> ServiceResult<ProtoUser> {
         let user_id = parse_user_id(request.user_id)?;
+        self.require_target_dominance(&ctx, user_id).await?;
         let credential_id = canonical_credential_id(request.credential_id)?;
         let label = canonical_passkey_label(request.label)?;
         let record = self
@@ -196,10 +268,11 @@ impl<S: IdentitySource> IdentityService for IdentityRpc<S> {
 
     async fn revoke_passkey(
         &self,
-        _ctx: RequestContext,
+        ctx: RequestContext,
         request: ServiceRequest<'_, RevokePasskeyRequest>,
     ) -> ServiceResult<ProtoUser> {
         let user_id = parse_user_id(request.user_id)?;
+        self.require_target_dominance(&ctx, user_id).await?;
         let credential_id = canonical_credential_id(request.credential_id)?;
         let record = self
             .source
@@ -272,6 +345,28 @@ mod tests {
                 .iter()
                 .find(|record| record.id == user_id)
                 .cloned())
+        }
+
+        async fn list_users(
+            &self,
+            after: Option<Uuid>,
+            page_size: usize,
+        ) -> Result<IdentitySearchPage> {
+            let mut records = self
+                .records
+                .read()
+                .await
+                .iter()
+                .filter(|record| after.is_none_or(|value| record.id > value))
+                .cloned()
+                .collect::<Vec<_>>();
+            records.sort_by_key(|record| record.id);
+            let next_after = (records.len() > page_size).then(|| records[page_size - 1].id);
+            records.truncate(page_size);
+            Ok(IdentitySearchPage {
+                records,
+                next_after,
+            })
         }
 
         async fn search_users(

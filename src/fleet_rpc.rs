@@ -4,32 +4,48 @@
 //! durable organization/project/environment hierarchy, central audit history,
 //! scoped delegated roles, and origin-bound realm pairing.
 
-use std::{net::IpAddr, sync::Arc, time::Duration};
+use std::{
+    collections::BTreeMap,
+    net::{IpAddr, SocketAddr},
+    time::Duration,
+};
 
 use aes_gcm::{
     AeadCore, Aes256Gcm, KeyInit,
     aead::{Aead, OsRng, Payload},
 };
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
+use buffa::Message;
+use bytes::{Bytes, BytesMut};
 use connectrpc::{
     ConnectError, ErrorCode, Protocol, RequestContext, Response, ServiceRequest, ServiceResult,
-    client::{CallOptions, ClientConfig, HttpClient},
+    client::{CallOptions, ClientConfig, ClientTransport},
 };
+use futures::{StreamExt, future::BoxFuture};
+use http_body_util::{BodyExt, Full};
+use rand::RngCore;
 use secrecy::{ExposeSecret, SecretString};
 use time::{OffsetDateTime, format_description::well_known::Rfc3339};
 use url::Url;
 use uuid::Uuid;
 
 use crate::{
+    analytics_store::GreptimeAnalyticsStore,
     config::{Environment as RuntimeEnvironment, KeyRing},
     operator_auth::{OperatorAuthorizer, OperatorCapability},
     proto::rustyauth::{fleet::v1::*, management::v1::*},
     store::{
-        EncryptedFleetCredential, FleetAuditRecord, FleetConnectionAttemptRecord,
-        FleetConnectionModeRecord, FleetConnectionRecord, FleetConnectionStateRecord,
-        FleetEnvironmentKindRecord, FleetEnvironmentRecord, FleetOrganizationRecord,
-        FleetProjectRecord, FleetResourceKindRecord, FleetResourceStateRecord,
-        FleetRoleBindingRecord, FleetRoleRecord, Store, StorePolicyError, now,
+        EncryptedFleetCredential, FleetAnalyticsMaintenanceActionRecord,
+        FleetAnalyticsMaintenanceAuditRecord, FleetAnalyticsMaintenanceOutcomeRecord,
+        FleetAuditRecord, FleetConnectionAttemptRecord, FleetConnectionModeRecord,
+        FleetConnectionRecord, FleetConnectionStateRecord, FleetEnvironmentKindRecord,
+        FleetEnvironmentRecord, FleetOrganizationRecord, FleetProjectRecord,
+        FleetResourceKindRecord, FleetResourceStateRecord, FleetRoleBindingRecord, FleetRoleRecord,
+        Store, StorePolicyError, now,
+    },
+    telemetry::{
+        ConnectorHub, connector_expiry_after, connector_signing_key_from_credential,
+        sign_connector_frame, validate_management_discovery,
     },
 };
 
@@ -37,7 +53,18 @@ const DEFAULT_PAGE_SIZE: usize = 25;
 const MAX_PAGE_SIZE: u32 = 100;
 const PAGE_TOKEN_LENGTH: usize = 22;
 const MANAGEMENT_TIMEOUT: Duration = Duration::from_secs(8);
+const MANAGEMENT_DNS_TIMEOUT: Duration = Duration::from_secs(3);
+const MANAGEMENT_RESPONSE_MAX_BYTES: usize = 4 * 1024 * 1024 + 64 * 1024;
 const FLEET_CREDENTIAL_AAD_VERSION: &str = "rustyauth-fleet-credential-v1";
+const OPERATIONAL_SNAPSHOT_REQUEST_TYPE: &str =
+    "rustyauth.management.v1.GetOperationalSnapshotRequest";
+const OPERATIONAL_SNAPSHOT_RESPONSE_TYPE: &str = "rustyauth.management.v1.RealmOperationalSnapshot";
+const REMOTE_MUTATION_REQUEST_TYPE: &str = "rustyauth.management.v1.RemoteMutationRequest";
+const REMOTE_MUTATION_RESPONSE_TYPE: &str = "rustyauth.management.v1.RemoteMutationResult";
+const REVOKE_CONNECTION_REQUEST_TYPE: &str = "rustyauth.management.v1.RevokeFleetConnectionRequest";
+const REVOKE_CONNECTION_RESPONSE_TYPE: &str = "rustyauth.management.v1.FleetConnectionState";
+const ROTATE_CONNECTION_REQUEST_TYPE: &str = "rustyauth.management.v1.RotateFleetCredentialRequest";
+const ROTATE_CONNECTION_RESPONSE_TYPE: &str = "rustyauth.management.v1.PairingGrant";
 
 pub(crate) struct FleetRpc {
     store: Store,
@@ -46,9 +73,12 @@ pub(crate) struct FleetRpc {
     runtime_environment: RuntimeEnvironment,
     control_plane_origin: String,
     control_plane_instance_id: String,
+    connector_hub: ConnectorHub,
+    analytics: Option<GreptimeAnalyticsStore>,
 }
 
 impl FleetRpc {
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn new(
         store: Store,
         authorizer: OperatorAuthorizer,
@@ -56,6 +86,8 @@ impl FleetRpc {
         runtime_environment: RuntimeEnvironment,
         control_plane_origin: String,
         control_plane_instance_id: String,
+        connector_hub: ConnectorHub,
+        analytics: Option<GreptimeAnalyticsStore>,
     ) -> Self {
         Self {
             store,
@@ -64,6 +96,188 @@ impl FleetRpc {
             runtime_environment,
             control_plane_origin,
             control_plane_instance_id,
+            connector_hub,
+            analytics,
+        }
+    }
+
+    async fn outbound_operational_snapshot(
+        &self,
+        connection: &FleetConnectionRecord,
+        request: GetOperationalSnapshotRequest,
+    ) -> Result<RealmOperationalSnapshot, ConnectError> {
+        let payload = self
+            .outbound_command(
+                connection,
+                Uuid::new_v4(),
+                "realm.operations",
+                connector_expiry_after(MANAGEMENT_TIMEOUT)?,
+                request.encode_to_vec(),
+                OPERATIONAL_SNAPSHOT_REQUEST_TYPE,
+                OPERATIONAL_SNAPSHOT_RESPONSE_TYPE,
+            )
+            .await?;
+        RealmOperationalSnapshot::decode_from_slice(&payload).map_err(|_| {
+            ConnectError::new(
+                ErrorCode::DataLoss,
+                "realm connector returned an invalid operational snapshot",
+            )
+        })
+    }
+
+    async fn outbound_remote_mutation(
+        &self,
+        connection: &FleetConnectionRecord,
+        request: RemoteMutationRequest,
+    ) -> Result<RemoteMutationResult, ConnectError> {
+        let request_id = required_uuid(&request.request_id, "request_id")?;
+        let expires_at = request.expires_at.clone();
+        let payload = self
+            .outbound_command(
+                connection,
+                request_id,
+                "realm.remote-admin",
+                expires_at,
+                request.encode_to_vec(),
+                REMOTE_MUTATION_REQUEST_TYPE,
+                REMOTE_MUTATION_RESPONSE_TYPE,
+            )
+            .await?;
+        RemoteMutationResult::decode_from_slice(&payload).map_err(|_| {
+            ConnectError::new(
+                ErrorCode::DataLoss,
+                "realm connector returned an invalid mutation result",
+            )
+        })
+    }
+
+    async fn outbound_revoke_connection(
+        &self,
+        connection: &FleetConnectionRecord,
+        request: RevokeFleetConnectionRequest,
+    ) -> Result<FleetConnectionState, ConnectError> {
+        let request_id = required_uuid(&request.request_id, "request_id")?;
+        let payload = self
+            .outbound_command(
+                connection,
+                request_id,
+                "realm.connection.revoke",
+                connector_expiry_after(MANAGEMENT_TIMEOUT)?,
+                request.encode_to_vec(),
+                REVOKE_CONNECTION_REQUEST_TYPE,
+                REVOKE_CONNECTION_RESPONSE_TYPE,
+            )
+            .await?;
+        FleetConnectionState::decode_from_slice(&payload).map_err(|_| {
+            ConnectError::new(
+                ErrorCode::DataLoss,
+                "realm connector returned an invalid revocation result",
+            )
+        })
+    }
+
+    async fn outbound_rotate_connection(
+        &self,
+        connection: &FleetConnectionRecord,
+        request: RotateFleetCredentialRequest,
+        credential: &SecretString,
+    ) -> Result<PairingGrant, ConnectError> {
+        let request_id = required_uuid(&request.request_id, "request_id")?;
+        let payload = self
+            .outbound_command_with_credential(
+                connection,
+                credential,
+                request_id,
+                "realm.connection.rotate",
+                connector_expiry_after(MANAGEMENT_TIMEOUT)?,
+                request.encode_to_vec(),
+                ROTATE_CONNECTION_REQUEST_TYPE,
+                ROTATE_CONNECTION_RESPONSE_TYPE,
+            )
+            .await?;
+        PairingGrant::decode_from_slice(&payload).map_err(|_| {
+            ConnectError::new(
+                ErrorCode::DataLoss,
+                "realm connector returned an invalid credential rotation result",
+            )
+        })
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    async fn outbound_command(
+        &self,
+        connection: &FleetConnectionRecord,
+        request_id: Uuid,
+        capability: &'static str,
+        expires_at: String,
+        payload: Vec<u8>,
+        request_type: &'static str,
+        response_type: &'static str,
+    ) -> Result<Vec<u8>, ConnectError> {
+        let credential =
+            open_fleet_credential(&self.credential_keys, connection.id, &connection.credential)?;
+        self.outbound_command_with_credential(
+            connection,
+            &credential,
+            request_id,
+            capability,
+            expires_at,
+            payload,
+            request_type,
+            response_type,
+        )
+        .await
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    async fn outbound_command_with_credential(
+        &self,
+        connection: &FleetConnectionRecord,
+        credential: &SecretString,
+        request_id: Uuid,
+        capability: &'static str,
+        expires_at: String,
+        payload: Vec<u8>,
+        request_type: &'static str,
+        response_type: &'static str,
+    ) -> Result<Vec<u8>, ConnectError> {
+        let signing_key = connector_signing_key_from_credential(credential.expose_secret());
+        let mut command = ConnectorFrame {
+            realm_id: connection.realm_id.clone(),
+            connection_id: connection.id.to_string(),
+            request_id: request_id.to_string(),
+            kind: ConnectorFrameKind::Command.into(),
+            capability: capability.into(),
+            expires_at: expires_at.clone(),
+            payload,
+            payload_type: request_type.into(),
+            ..Default::default()
+        };
+        sign_connector_frame(&mut command, &signing_key)?;
+        let response = self.connector_hub.command(connection.id, command).await?;
+        if response.realm_id != connection.realm_id
+            || response.connection_id != connection.id.to_string()
+            || response.request_id != request_id.to_string()
+            || response.capability != capability
+            || response.expires_at != expires_at
+        {
+            return Err(ConnectError::new(
+                ErrorCode::DataLoss,
+                "realm connector response does not match the command",
+            ));
+        }
+        match response.kind.as_known() {
+            Some(ConnectorFrameKind::Result) if response.payload_type == response_type => {
+                Ok(response.payload)
+            }
+            Some(ConnectorFrameKind::Error) => Err(ConnectError::new(
+                ErrorCode::FailedPrecondition,
+                "realm rejected the connector command",
+            )),
+            _ => Err(ConnectError::new(
+                ErrorCode::DataLoss,
+                "realm connector response type does not match the command",
+            )),
         }
     }
 }
@@ -130,6 +344,433 @@ impl FleetService for FleetRpc {
                 .filter(|record| record.state == FleetConnectionStateRecord::Offline)
                 .count() as u64,
             calculated_at: format_timestamp(now())?,
+            ..Default::default()
+        })
+    }
+
+    async fn get_analytics_overview(
+        &self,
+        ctx: RequestContext,
+        request: ServiceRequest<'_, GetAnalyticsOverviewRequest>,
+    ) -> ServiceResult<FleetAnalyticsOverview> {
+        let organization_id = required_uuid(request.organization_id, "organization_id")?;
+        self.authorizer
+            .authorize_fleet(
+                ctx.headers(),
+                OperatorCapability::Read,
+                FleetResourceKindRecord::Organization,
+                organization_id,
+            )
+            .await?;
+        let project_id = optional_uuid(request.project_id, "project_id")?;
+        let environment_id = optional_uuid(request.environment_id, "environment_id")?;
+        let realm_id = optional_realm_id(request.realm_id)?;
+        let (starts_at, ends_at) = analytics_range(request.starts_at, request.ends_at)?;
+        let (records, source) = if let Some(analytics) = &self.analytics {
+            (
+                analytics
+                    .query(
+                        Some(organization_id),
+                        project_id,
+                        environment_id,
+                        None,
+                        realm_id.as_deref(),
+                        starts_at,
+                        ends_at,
+                    )
+                    .await
+                    .map_err(source_error)?,
+                "canonical-greptimedb",
+            )
+        } else {
+            (
+                self.store
+                    .fleet_telemetry_buckets(
+                        Some(organization_id),
+                        project_id,
+                        environment_id,
+                        None,
+                        realm_id.as_deref(),
+                        starts_at,
+                        ends_at,
+                    )
+                    .await
+                    .map_err(source_error)?,
+                "trusted-fleet-acceptance-ledger",
+            )
+        };
+
+        let mut response = FleetAnalyticsOverview {
+            source: source.into(),
+            calculated_at: format_timestamp(now())?,
+            ..Default::default()
+        };
+        let mut points = BTreeMap::<i64, FleetAnalyticsPoint>::new();
+        let mut latest_bucket = BTreeMap::<Uuid, i64>::new();
+        for record in records {
+            let bucket = record.bucket().map_err(source_error)?;
+            latest_bucket
+                .entry(record.connection_id)
+                .and_modify(|value| *value = (*value).max(record.bucket_start_unix_milliseconds))
+                .or_insert(record.bucket_start_unix_milliseconds);
+            let point_starts_at =
+                format_millisecond_timestamp(record.bucket_start_unix_milliseconds)?;
+            let point = points
+                .entry(record.bucket_start_unix_milliseconds)
+                .or_insert_with(|| FleetAnalyticsPoint {
+                    starts_at: point_starts_at,
+                    ..Default::default()
+                });
+            if let Some(metrics) = bucket.authentication.as_option() {
+                add_analytics_count(&mut response.authentication_attempts, metrics.attempts)?;
+                add_analytics_count(&mut response.authentication_successes, metrics.successes)?;
+                add_analytics_count(&mut response.authentication_failures, metrics.failures)?;
+                add_analytics_count(&mut response.authentication_denials, metrics.denials)?;
+                add_analytics_count(&mut point.authentication_attempts, metrics.attempts)?;
+                add_analytics_count(&mut point.authentication_successes, metrics.successes)?;
+                add_analytics_count(&mut point.authentication_failures, metrics.failures)?;
+                add_analytics_count(&mut point.authentication_denials, metrics.denials)?;
+            }
+            if let Some(metrics) = bucket.registration.as_option() {
+                add_analytics_count(
+                    &mut response.registrations_completed,
+                    metrics.registrations_completed,
+                )?;
+            }
+            if let Some(metrics) = bucket.sessions_and_tokens.as_option() {
+                add_analytics_count(&mut response.sessions_created, metrics.sessions_created)?;
+            }
+            if let Some(metrics) = bucket.service_accounts.as_option() {
+                add_analytics_count(&mut response.service_account_calls, metrics.calls)?;
+            }
+            if let Some(metrics) = bucket.webhooks.as_option() {
+                add_analytics_count(&mut response.webhook_deliveries, metrics.deliveries)?;
+                add_analytics_count(&mut response.webhook_failures, metrics.failures)?;
+            }
+        }
+        response.points = points.into_values().collect();
+
+        let mut connections = self
+            .store
+            .fleet_connections(Some(organization_id), project_id, environment_id, false)
+            .await
+            .map_err(source_error)?;
+        if let Some(realm_id) = realm_id.as_deref() {
+            connections.retain(|connection| connection.realm_id == realm_id);
+        }
+        let stale_before = ends_at.saturating_sub(15 * 60 * 1_000);
+        response.expected_realms = analytics_cardinality(connections.len())?;
+        let mut stale_realms = 0_u64;
+        let mut coverage = Vec::with_capacity(connections.len());
+        for connection in connections {
+            let last = latest_bucket.get(&connection.id).copied();
+            let (reporting, stale) =
+                analytics_reporting_status(last, stale_before, connection.state);
+            add_analytics_count(&mut response.reporting_realms, u64::from(reporting))?;
+            add_analytics_count(&mut stale_realms, u64::from(stale))?;
+            coverage.push(RealmAnalyticsCoverage {
+                connection_id: connection.id.to_string(),
+                realm_id: connection.realm_id,
+                connection_state: connection_state_proto(connection.state).into(),
+                reporting,
+                stale,
+                last_bucket_at: last
+                    .map(format_millisecond_timestamp)
+                    .transpose()?
+                    .unwrap_or_default(),
+                ..Default::default()
+            });
+        }
+        response.stale_realms = stale_realms;
+        response.coverage = coverage;
+        Response::ok(response)
+    }
+
+    async fn get_realm_operations(
+        &self,
+        ctx: RequestContext,
+        request: ServiceRequest<'_, GetRealmOperationsRequest>,
+    ) -> ServiceResult<FleetRealmOperations> {
+        let organization_id = required_uuid(request.organization_id, "organization_id")?;
+        let project_id = required_uuid(request.project_id, "project_id")?;
+        let environment_id = required_uuid(request.environment_id, "environment_id")?;
+        self.authorizer
+            .authorize_fleet(
+                ctx.headers(),
+                OperatorCapability::Read,
+                FleetResourceKindRecord::Environment,
+                environment_id,
+            )
+            .await?;
+        let connection_id = required_uuid(request.connection_id, "connection_id")?;
+        let connection = self
+            .store
+            .fleet_connection(connection_id)
+            .await
+            .map_err(source_error)?
+            .filter(|record| {
+                record.organization_id == organization_id
+                    && record.project_id == project_id
+                    && record.environment_id == environment_id
+                    && connector_connection_usable(record)
+            })
+            .ok_or_else(not_found)?;
+        if !connection
+            .capabilities
+            .iter()
+            .any(|(name, version)| name == "realm.operations" && *version == 1)
+        {
+            return Err(ConnectError::new(
+                ErrorCode::FailedPrecondition,
+                "realm does not support the operational snapshot capability",
+            ));
+        }
+        let remote_request = GetOperationalSnapshotRequest {
+            connection_id: connection.id.to_string(),
+            user_page_size: request.user_page_size,
+            user_page_token: request.user_page_token.to_owned(),
+            event_after_sequence: request.event_after_sequence,
+            event_page_size: request.event_page_size,
+            metrics_starts_at: request.metrics_starts_at.to_owned(),
+            metrics_ends_at: request.metrics_ends_at.to_owned(),
+            service_account_page_size: request.service_account_page_size,
+            service_account_page_token: request.service_account_page_token.to_owned(),
+            webhook_page_size: request.webhook_page_size,
+            webhook_page_token: request.webhook_page_token.to_owned(),
+            ..Default::default()
+        };
+        let live_source = match connection.mode {
+            FleetConnectionModeRecord::PublicEndpoint => "live-public-endpoint",
+            FleetConnectionModeRecord::OutboundConnector => "live-outbound-connector",
+        };
+        let response = match connection.mode {
+            FleetConnectionModeRecord::PublicEndpoint => {
+                let credential = open_fleet_credential(
+                    &self.credential_keys,
+                    connection.id,
+                    &connection.credential,
+                )?;
+                let mut client =
+                    management_client(&connection.management_endpoint, &self.runtime_environment)
+                        .await?;
+                let authorized_config = client.config().clone().with_default_header(
+                    http::header::AUTHORIZATION,
+                    format!("Bearer {}", credential.expose_secret()),
+                );
+                *client.config_mut() = authorized_config;
+                client
+                    .get_operational_snapshot_with_options(
+                        remote_request,
+                        CallOptions::default().with_timeout(MANAGEMENT_TIMEOUT),
+                    )
+                    .await
+                    .map(|response| response.into_owned())
+                    .map_err(management_error)
+            }
+            FleetConnectionModeRecord::OutboundConnector => {
+                self.outbound_operational_snapshot(&connection, remote_request)
+                    .await
+            }
+        };
+        let snapshot = match response {
+            Ok(snapshot) => snapshot,
+            Err(error) => {
+                if let Err(observe_error) = self
+                    .store
+                    .observe_fleet_connection(connection.id, FleetConnectionStateRecord::Degraded)
+                    .await
+                {
+                    tracing::warn!(
+                        connection_id = %connection.id,
+                        error = %observe_error,
+                        "could not persist degraded Fleet connection state"
+                    );
+                }
+                let cached = self
+                    .store
+                    .fleet_operational_snapshot(connection.id, &connection.realm_id)
+                    .await
+                    .map_err(source_error)?;
+                let Some(cached) = cached else {
+                    return Err(error);
+                };
+                let snapshot = cached.snapshot().map_err(source_error)?;
+                return Response::ok(FleetRealmOperations {
+                    snapshot: snapshot.into(),
+                    connection_id: connection.id.to_string(),
+                    connection_state: ConnectionState::Degraded.into(),
+                    source: "stale-bounded-cache".into(),
+                    stale: true,
+                    observed_at: format_timestamp(cached.observed_at)?,
+                    ..Default::default()
+                });
+            }
+        };
+        if snapshot.realm_id != connection.realm_id || snapshot.source != "live-realm" {
+            return Err(ConnectError::new(
+                ErrorCode::DataLoss,
+                "realm operational response does not match the authenticated connection",
+            ));
+        }
+        let observed = self
+            .store
+            .observe_fleet_connection(connection.id, FleetConnectionStateRecord::Healthy)
+            .await
+            .map_err(source_error)?;
+        if let Err(error) = self
+            .store
+            .cache_fleet_operational_snapshot(connection.id, &connection.realm_id, &snapshot)
+            .await
+        {
+            tracing::warn!(
+                connection_id = %connection.id,
+                error = %error,
+                "could not persist bounded Fleet operational cache"
+            );
+        }
+        Response::ok(FleetRealmOperations {
+            snapshot: snapshot.into(),
+            connection_id: connection.id.to_string(),
+            connection_state: connection_state_proto(observed.state).into(),
+            source: live_source.into(),
+            stale: false,
+            observed_at: format_timestamp(now())?,
+            ..Default::default()
+        })
+    }
+
+    async fn execute_realm_mutation(
+        &self,
+        ctx: RequestContext,
+        request: ServiceRequest<'_, ExecuteRealmMutationRequest>,
+    ) -> ServiceResult<FleetRealmMutationResult> {
+        require_mutation(&request.mutation)?;
+        let organization_id = required_uuid(request.organization_id, "organization_id")?;
+        let project_id = required_uuid(request.project_id, "project_id")?;
+        let environment_id = required_uuid(request.environment_id, "environment_id")?;
+        let actor = self
+            .authorizer
+            .authorize_fleet(
+                ctx.headers(),
+                OperatorCapability::Administer,
+                FleetResourceKindRecord::Environment,
+                environment_id,
+            )
+            .await?;
+        let connection_id = required_uuid(request.connection_id, "connection_id")?;
+        let connection = self
+            .store
+            .fleet_connection(connection_id)
+            .await
+            .map_err(source_error)?
+            .filter(|record| {
+                record.organization_id == organization_id
+                    && record.project_id == project_id
+                    && record.environment_id == environment_id
+                    && connector_connection_usable(record)
+            })
+            .ok_or_else(not_found)?;
+        if !connection
+            .capabilities
+            .iter()
+            .any(|(name, version)| name == "realm.remote-admin" && *version == 1)
+        {
+            return Err(ConnectError::new(
+                ErrorCode::FailedPrecondition,
+                "realm does not support controlled remote administration",
+            ));
+        }
+        let request_id = required_uuid(request.mutation.request_id, "mutation.request_id")?;
+        let reason = safe_remote_reason(request.mutation.reason)?;
+        validate_remote_expiry(request.expires_at)?;
+        let operation = request
+            .operation
+            .as_known()
+            .filter(|value| *value != RemoteMutationOperation::Unspecified)
+            .ok_or_else(|| invalid("remote mutation operation is required"))?;
+        let target_id = safe_remote_target(request.target_id, 1_024)?;
+        let secondary_id = if request.secondary_id.trim().is_empty() {
+            String::new()
+        } else {
+            safe_remote_target(request.secondary_id, 1_024)?
+        };
+        let remote_request = RemoteMutationRequest {
+            connection_id: connection.id.to_string(),
+            request_id: request_id.to_string(),
+            reason: reason.clone(),
+            expires_at: request.expires_at.to_owned(),
+            operation: operation.into(),
+            target_id,
+            secondary_id,
+            enabled: request.enabled,
+            ..Default::default()
+        };
+        let live_source = match connection.mode {
+            FleetConnectionModeRecord::PublicEndpoint => "live-public-endpoint",
+            FleetConnectionModeRecord::OutboundConnector => "live-outbound-connector",
+        };
+        let remote = match connection.mode {
+            FleetConnectionModeRecord::PublicEndpoint => {
+                let credential = open_fleet_credential(
+                    &self.credential_keys,
+                    connection.id,
+                    &connection.credential,
+                )?;
+                let mut client =
+                    management_client(&connection.management_endpoint, &self.runtime_environment)
+                        .await?;
+                let authorized_config = client.config().clone().with_default_header(
+                    http::header::AUTHORIZATION,
+                    format!("Bearer {}", credential.expose_secret()),
+                );
+                *client.config_mut() = authorized_config;
+                client
+                    .execute_remote_mutation_with_options(
+                        remote_request,
+                        CallOptions::default().with_timeout(MANAGEMENT_TIMEOUT),
+                    )
+                    .await
+                    .map(|response| response.into_owned())
+                    .map_err(management_error)
+            }
+            FleetConnectionModeRecord::OutboundConnector => {
+                self.outbound_remote_mutation(&connection, remote_request)
+                    .await
+            }
+        };
+        let remote = match remote {
+            Ok(response) => response,
+            Err(error) => {
+                let _ = self
+                    .store
+                    .observe_fleet_connection(connection.id, FleetConnectionStateRecord::Degraded)
+                    .await;
+                return Err(error);
+            }
+        };
+        if remote.connection_id != connection.id.to_string()
+            || remote.request_id != request_id.to_string()
+            || remote.operation.as_known() != Some(operation)
+        {
+            return Err(ConnectError::new(
+                ErrorCode::DataLoss,
+                "realm mutation response does not match the authenticated request",
+            ));
+        }
+        let action = format!("realm.remote.{}", remote_mutation_action(operation));
+        let audit = self
+            .store
+            .record_fleet_remote_mutation(connection.id, request_id, actor.user.id, action, reason)
+            .await
+            .map_err(source_error)?;
+        self.store
+            .observe_fleet_connection(connection.id, FleetConnectionStateRecord::Healthy)
+            .await
+            .map_err(source_error)?;
+        Response::ok(FleetRealmMutationResult {
+            result: remote.into(),
+            source: live_source.into(),
+            centrally_audited_at: format_timestamp(audit.occurred_at)?,
             ..Default::default()
         })
     }
@@ -681,14 +1322,26 @@ impl FleetService for FleetRpc {
             .await?;
         require_mutation(&request.mutation)?;
         let mode = connection_mode(request.mode.as_known())?;
-        if mode == FleetConnectionModeRecord::OutboundConnector {
-            return Err(ConnectError::new(
-                ErrorCode::Unimplemented,
-                "outbound connectors require workload identity and are not enabled in this release",
-            ));
-        }
-        let endpoint =
-            safe_management_endpoint(request.management_endpoint, &self.runtime_environment)?;
+        let pairing_code = match mode {
+            FleetConnectionModeRecord::OutboundConnector => {
+                Some(safe_secret(request.pairing_code, "pairing code", 16, 256)?)
+            }
+            FleetConnectionModeRecord::PublicEndpoint if request.pairing_code.is_empty() => None,
+            FleetConnectionModeRecord::PublicEndpoint => {
+                return Err(invalid(
+                    "pairing_code is valid only for an outbound connection",
+                ));
+            }
+        };
+        let endpoint = match mode {
+            FleetConnectionModeRecord::PublicEndpoint => {
+                safe_management_endpoint(request.management_endpoint, &self.runtime_environment)?
+                    .to_string()
+                    .trim_end_matches('/')
+                    .to_owned()
+            }
+            FleetConnectionModeRecord::OutboundConnector => self.control_plane_origin.clone(),
+        };
         let record = self
             .store
             .create_fleet_connection_attempt(
@@ -696,7 +1349,8 @@ impl FleetService for FleetRpc {
                 required_uuid(request.project_id, "project_id")?,
                 environment_id,
                 mode,
-                endpoint.to_string().trim_end_matches('/').to_owned(),
+                endpoint,
+                pairing_code.as_ref().map(|code| code.expose_secret()),
                 required_uuid(request.mutation.request_id, "mutation.request_id")?,
                 actor.user.id,
                 safe_text(request.mutation.reason, "mutation.reason", 500, true)?,
@@ -730,7 +1384,14 @@ impl FleetService for FleetRpc {
                 attempt.environment_id,
             )
             .await?;
-        let client = management_client(&attempt.management_endpoint)?;
+        if attempt.mode == FleetConnectionModeRecord::OutboundConnector {
+            return Err(ConnectError::new(
+                ErrorCode::FailedPrecondition,
+                "outbound attempt must be completed from the private realm",
+            ));
+        }
+        let client =
+            management_client(&attempt.management_endpoint, &self.runtime_environment).await?;
         let discovery = client
             .get_discovery_with_options(
                 GetDiscoveryRequest::default(),
@@ -739,6 +1400,12 @@ impl FleetService for FleetRpc {
             .await
             .map_err(management_error)?
             .into_owned();
+        validate_management_discovery(&discovery, false)?;
+        let assignment_epoch = self
+            .store
+            .reserve_fleet_assignment_epoch(&discovery.realm_id)
+            .await
+            .map_err(source_error)?;
         let mut grant = client
             .exchange_pairing_code_with_options(
                 ExchangePairingCodeRequest {
@@ -746,6 +1413,7 @@ impl FleetService for FleetRpc {
                     control_plane_origin: self.control_plane_origin.clone(),
                     control_plane_instance_id: self.control_plane_instance_id.clone(),
                     request_id: request.mutation.request_id.to_string(),
+                    assignment_epoch,
                     ..Default::default()
                 },
                 CallOptions::default().with_timeout(MANAGEMENT_TIMEOUT),
@@ -753,7 +1421,10 @@ impl FleetService for FleetRpc {
             .await
             .map_err(management_error)?
             .into_owned();
-        if grant.realm_id != discovery.realm_id || grant.connection_id.is_empty() {
+        if grant.realm_id != discovery.realm_id
+            || grant.connection_id.is_empty()
+            || grant.assignment_epoch != assignment_epoch
+        {
             return Err(ConnectError::new(
                 ErrorCode::DataLoss,
                 "realm pairing response is inconsistent",
@@ -770,11 +1441,15 @@ impl FleetService for FleetRpc {
             project_id: attempt.project_id,
             environment_id: attempt.environment_id,
             realm_id: safe_text(&discovery.realm_id, "realm_id", 128, false)?,
+            assignment_epoch,
             display_name: safe_text(&discovery.realm_id, "realm_id", 128, false)?,
             mode: attempt.mode,
             management_endpoint: attempt.management_endpoint,
             credential: encrypted,
             credential_hint: safe_text(&grant.credential_hint, "credential_hint", 32, true)?,
+            staged_credential: None,
+            staged_credential_hint: None,
+            credential_rotation_request_id: None,
             deployment_version: safe_text(
                 &discovery.deployment_version,
                 "deployment_version",
@@ -792,6 +1467,7 @@ impl FleetService for FleetRpc {
                 .iter()
                 .map(|capability| (capability.name.to_string(), capability.version))
                 .collect(),
+            granted_scopes: grant.granted_scopes,
             issuer: safe_text(&discovery.issuer, "issuer", 512, true)?,
             rp_id: safe_text(&discovery.rp_id, "rp_id", 253, true)?,
             state: FleetConnectionStateRecord::Healthy,
@@ -808,6 +1484,161 @@ impl FleetService for FleetRpc {
                 required_uuid(request.mutation.request_id, "mutation.request_id")?,
                 actor.user.id,
                 safe_text(request.mutation.reason, "mutation.reason", 500, true)?,
+            )
+            .await
+            .map_err(source_error)?;
+        Response::ok(connection_to_proto(record)?)
+    }
+
+    async fn rotate_connection(
+        &self,
+        ctx: RequestContext,
+        request: ServiceRequest<'_, RotateConnectionRequest>,
+    ) -> ServiceResult<RealmConnection> {
+        require_mutation(&request.mutation)?;
+        let organization_id = required_uuid(request.organization_id, "organization_id")?;
+        let project_id = required_uuid(request.project_id, "project_id")?;
+        let environment_id = required_uuid(request.environment_id, "environment_id")?;
+        let actor = self
+            .authorizer
+            .authorize_fleet(
+                ctx.headers(),
+                OperatorCapability::Administer,
+                FleetResourceKindRecord::Environment,
+                environment_id,
+            )
+            .await?;
+        let connection_id = required_uuid(request.connection_id, "connection_id")?;
+        let request_id = required_uuid(request.mutation.request_id, "mutation.request_id")?;
+        let reason = safe_remote_reason(request.mutation.reason)?;
+        let existing = self
+            .store
+            .fleet_connection(connection_id)
+            .await
+            .map_err(source_error)?
+            .filter(|record| {
+                record.organization_id == organization_id
+                    && record.project_id == project_id
+                    && record.environment_id == environment_id
+                    && connector_connection_usable(record)
+            })
+            .ok_or_else(not_found)?;
+        if let Some(completed) = self
+            .store
+            .fleet_connection_for_credential_rotation_request(request_id)
+            .await
+            .map_err(source_error)?
+        {
+            if completed.id != existing.id {
+                return Err(ConnectError::new(
+                    ErrorCode::AlreadyExists,
+                    "credential rotation request belongs to another connection",
+                ));
+            }
+            return Response::ok(connection_to_proto(completed)?);
+        }
+
+        let staged = if existing.credential_rotation_request_id == Some(request_id) {
+            existing
+        } else {
+            let mut random = [0_u8; 32];
+            rand::rng().fill_bytes(&mut random);
+            let credential = SecretString::from(format!("rfg_{}", URL_SAFE_NO_PAD.encode(random)));
+            let hint = credential
+                .expose_secret()
+                .chars()
+                .rev()
+                .take(6)
+                .collect::<String>()
+                .chars()
+                .rev()
+                .collect::<String>();
+            let encrypted =
+                seal_fleet_credential(&self.credential_keys, connection_id, &credential)?;
+            self.store
+                .stage_fleet_connection_credential(connection_id, encrypted, hint, request_id)
+                .await
+                .map_err(source_error)?
+        };
+        let active_credential =
+            open_fleet_credential(&self.credential_keys, staged.id, &staged.credential)?;
+        let staged_encrypted = staged.staged_credential.as_ref().ok_or_else(|| {
+            ConnectError::new(ErrorCode::DataLoss, "staged realm credential is missing")
+        })?;
+        let staged_credential =
+            open_fleet_credential(&self.credential_keys, staged.id, staged_encrypted)?;
+        let staged_hint = staged.staged_credential_hint.clone().ok_or_else(|| {
+            ConnectError::new(ErrorCode::DataLoss, "staged credential hint is missing")
+        })?;
+        let remote_request = RotateFleetCredentialRequest {
+            connection_id: connection_id.to_string(),
+            request_id: request_id.to_string(),
+            reason: reason.clone(),
+            new_credential: staged_credential.expose_secret().to_owned(),
+            new_credential_hint: staged_hint,
+            ..Default::default()
+        };
+        let first = match staged.mode {
+            FleetConnectionModeRecord::PublicEndpoint => {
+                rotate_remote_connection(
+                    &staged.management_endpoint,
+                    &active_credential,
+                    remote_request.clone(),
+                    &self.runtime_environment,
+                )
+                .await
+            }
+            FleetConnectionModeRecord::OutboundConnector => {
+                self.outbound_rotate_connection(&staged, remote_request.clone(), &active_credential)
+                    .await
+            }
+        };
+        let remote = match first {
+            Ok(response) => response,
+            Err(first_error) => {
+                tracing::warn!(
+                    connection_id = %connection_id,
+                    code = ?first_error.code,
+                    "active Fleet credential did not complete rotation; retrying the durable staged credential"
+                );
+                match staged.mode {
+                    FleetConnectionModeRecord::PublicEndpoint => {
+                        rotate_remote_connection(
+                            &staged.management_endpoint,
+                            &staged_credential,
+                            remote_request,
+                            &self.runtime_environment,
+                        )
+                        .await?
+                    }
+                    FleetConnectionModeRecord::OutboundConnector => {
+                        self.outbound_rotate_connection(&staged, remote_request, &staged_credential)
+                            .await?
+                    }
+                }
+            }
+        };
+        if remote.connection_id != connection_id.to_string()
+            || remote.realm_id != staged.realm_id
+            || remote.assignment_epoch != staged.assignment_epoch
+            || remote.granted_scopes != staged.granted_scopes
+            || !remote.credential.is_empty()
+        {
+            return Err(ConnectError::new(
+                ErrorCode::DataLoss,
+                "realm credential rotation response is inconsistent",
+            ));
+        }
+        let record = self
+            .store
+            .rotate_fleet_connection_credential(
+                organization_id,
+                project_id,
+                environment_id,
+                connection_id,
+                request_id,
+                actor.user.id,
+                reason,
             )
             .await
             .map_err(source_error)?;
@@ -845,17 +1676,38 @@ impl FleetService for FleetRpc {
             })
             .ok_or_else(not_found)?;
         if existing.state != FleetConnectionStateRecord::Revoked {
-            let credential =
-                open_fleet_credential(&self.credential_keys, existing.id, &existing.credential)?;
-            if let Err(error) = revoke_remote_connection(
-                &existing.management_endpoint,
-                &credential,
-                request.connection_id,
-                request.mutation.request_id,
-                request.mutation.reason,
-            )
-            .await
-            {
+            let remote = match existing.mode {
+                FleetConnectionModeRecord::PublicEndpoint => {
+                    let credential = open_fleet_credential(
+                        &self.credential_keys,
+                        existing.id,
+                        &existing.credential,
+                    )?;
+                    revoke_remote_connection(
+                        &existing.management_endpoint,
+                        &credential,
+                        request.connection_id,
+                        request.mutation.request_id,
+                        request.mutation.reason,
+                        &self.runtime_environment,
+                    )
+                    .await
+                    .map(|_| ())
+                }
+                FleetConnectionModeRecord::OutboundConnector => self
+                    .outbound_revoke_connection(
+                        &existing,
+                        RevokeFleetConnectionRequest {
+                            connection_id: request.connection_id.to_owned(),
+                            request_id: request.mutation.request_id.to_owned(),
+                            reason: request.mutation.reason.to_owned(),
+                            ..Default::default()
+                        },
+                    )
+                    .await
+                    .map(|_| ()),
+            };
+            if let Err(error) = remote {
                 tracing::warn!(
                     connection_id = %connection_id,
                     error = %error,
@@ -863,6 +1715,8 @@ impl FleetService for FleetRpc {
                 );
             }
         }
+        let request_id = required_uuid(request.mutation.request_id, "mutation.request_id")?;
+        let reason = safe_text(request.mutation.reason, "mutation.reason", 500, true)?;
         let record = self
             .store
             .revoke_fleet_connection(
@@ -870,12 +1724,35 @@ impl FleetService for FleetRpc {
                 project_id,
                 environment_id,
                 connection_id,
-                required_uuid(request.mutation.request_id, "mutation.request_id")?,
+                request_id,
                 actor.user.id,
-                safe_text(request.mutation.reason, "mutation.reason", 500, true)?,
+                reason.clone(),
             )
             .await
             .map_err(source_error)?;
+        if let Some(analytics) = &self.analytics {
+            let purge_result = analytics
+                .purge_connection(organization_id, connection_id)
+                .await;
+            self.store
+                .record_fleet_analytics_maintenance(FleetAnalyticsMaintenanceAuditRecord {
+                    request_id,
+                    organization_id,
+                    connection_id: Some(connection_id),
+                    operator_id: actor.user.id,
+                    action: FleetAnalyticsMaintenanceActionRecord::PurgeConnection,
+                    outcome: if purge_result.is_ok() {
+                        FleetAnalyticsMaintenanceOutcomeRecord::Succeeded
+                    } else {
+                        FleetAnalyticsMaintenanceOutcomeRecord::Failed
+                    },
+                    reason,
+                    occurred_at: now(),
+                })
+                .await
+                .map_err(source_error)?;
+            purge_result.map_err(source_error)?;
+        }
         Response::ok(connection_to_proto(record)?)
     }
 
@@ -926,13 +1803,17 @@ impl FleetService for FleetRpc {
             )
             .await?;
         require_mutation(&request.mutation)?;
+        let target_role = fleet_role_record(request.role.as_known())?;
+        self.authorizer
+            .require_fleet_role_dominance(&actor, kind, resource_id, target_role)
+            .await?;
         let record = self
             .store
             .upsert_fleet_role_binding(
                 required_uuid(request.operator_id, "operator_id")?,
                 kind,
                 resource_id,
-                fleet_role_record(request.role.as_known())?,
+                target_role,
                 required_uuid(request.mutation.request_id, "mutation.request_id")?,
                 actor.user.id,
                 safe_text(request.mutation.reason, "mutation.reason", 500, true)?,
@@ -964,6 +1845,14 @@ impl FleetService for FleetRpc {
             )
             .await?;
         require_mutation(&request.mutation)?;
+        self.authorizer
+            .require_fleet_role_dominance(
+                &actor,
+                binding.resource_kind,
+                binding.resource_id,
+                binding.role,
+            )
+            .await?;
         let record = self
             .store
             .revoke_fleet_role_binding(
@@ -1227,6 +2116,16 @@ fn connection_state_proto(state: FleetConnectionStateRecord) -> ConnectionState 
     }
 }
 
+fn connector_connection_usable(record: &FleetConnectionRecord) -> bool {
+    record.revoked_at.is_none()
+        && matches!(
+            record.state,
+            FleetConnectionStateRecord::Healthy
+                | FleetConnectionStateRecord::Degraded
+                | FleetConnectionStateRecord::Offline
+        )
+}
+
 fn resource_kind_record(
     kind: Option<ResourceKind>,
 ) -> Result<FleetResourceKindRecord, ConnectError> {
@@ -1308,9 +2207,9 @@ fn safe_management_endpoint(
 /// service, or cloud instance metadata. Public-endpoint mode is deliberately
 /// internet-routable; private realms use the outbound connector instead.
 ///
-/// This is a validation boundary, not the only SSRF control. Production
-/// deployments must also deny private/link-local egress at the network layer so
-/// a permitted DNS name cannot later be rebound to an internal address.
+/// The outbound client separately validates every resolved address and pins the
+/// accepted set into its connector. Production deployments must still deny
+/// private/link-local egress at the network layer as independent containment.
 fn public_management_host(host: &str) -> bool {
     if let Ok(address) = host.parse::<IpAddr>() {
         return match address {
@@ -1384,23 +2283,97 @@ fn safe_secret(
     Ok(SecretString::from(value.to_owned()))
 }
 
-fn management_client(
+#[derive(Clone)]
+struct PinnedManagementTransport(reqwest::Client);
+
+#[derive(Debug, thiserror::Error)]
+enum PinnedTransportError {
+    #[error("encode management request body: {0}")]
+    RequestBody(String),
+    #[error("send pinned management request: {0}")]
+    Request(#[from] reqwest::Error),
+    #[error("management response exceeds the configured byte limit")]
+    ResponseTooLarge,
+    #[error("construct management response: {0}")]
+    Response(#[from] http::Error),
+}
+
+impl ClientTransport for PinnedManagementTransport {
+    type ResponseBody = Full<Bytes>;
+    type Error = PinnedTransportError;
+
+    fn send(
+        &self,
+        request: http::Request<connectrpc::client::ClientBody>,
+    ) -> BoxFuture<'static, Result<http::Response<Self::ResponseBody>, Self::Error>> {
+        let client = self.0.clone();
+        Box::pin(async move {
+            let (parts, body) = request.into_parts();
+            let body = body
+                .collect()
+                .await
+                .map_err(|error| PinnedTransportError::RequestBody(error.to_string()))?
+                .to_bytes();
+            let response = client
+                .request(parts.method, parts.uri.to_string())
+                .headers(parts.headers)
+                .body(body)
+                .send()
+                .await?;
+            let status = response.status();
+            let version = response.version();
+            let headers = response.headers().clone();
+            if response
+                .content_length()
+                .is_some_and(|length| length > MANAGEMENT_RESPONSE_MAX_BYTES as u64)
+            {
+                return Err(PinnedTransportError::ResponseTooLarge);
+            }
+            let mut stream = response.bytes_stream();
+            let mut body = BytesMut::new();
+            while let Some(chunk) = stream.next().await {
+                let chunk = chunk?;
+                if body.len().saturating_add(chunk.len()) > MANAGEMENT_RESPONSE_MAX_BYTES {
+                    return Err(PinnedTransportError::ResponseTooLarge);
+                }
+                body.extend_from_slice(&chunk);
+            }
+            let mut response = http::Response::builder().status(status).version(version);
+            *response
+                .headers_mut()
+                .expect("HTTP response builder exposes headers before body") = headers;
+            Ok(response.body(Full::new(body.freeze()))?)
+        })
+    }
+}
+
+async fn management_client(
     endpoint: &str,
-) -> Result<RealmManagementServiceClient<HttpClient>, ConnectError> {
-    let url = Url::parse(endpoint).map_err(|_| invalid("stored management endpoint is invalid"))?;
-    let transport = match url.scheme() {
-        "http" => HttpClient::plaintext(),
-        "https" => {
-            let roots = connectrpc::rustls::RootCertStore::from_iter(
-                webpki_roots::TLS_SERVER_ROOTS.iter().cloned(),
-            );
-            let tls = connectrpc::rustls::ClientConfig::builder()
-                .with_root_certificates(roots)
-                .with_no_client_auth();
-            HttpClient::with_tls(Arc::new(tls))
-        }
-        _ => return Err(invalid("stored management endpoint has invalid scheme")),
-    };
+    environment: &RuntimeEnvironment,
+) -> Result<RealmManagementServiceClient<PinnedManagementTransport>, ConnectError> {
+    let url = safe_management_endpoint(endpoint, environment)?;
+    let host = url
+        .host_str()
+        .ok_or_else(|| invalid("stored management endpoint has no host"))?;
+    let port = url
+        .port_or_known_default()
+        .ok_or_else(|| invalid("stored management endpoint has no port"))?;
+    let addresses = tokio::time::timeout(
+        MANAGEMENT_DNS_TIMEOUT,
+        tokio::net::lookup_host((host, port)),
+    )
+    .await
+    .map_err(|_| ConnectError::new(ErrorCode::Unavailable, "management endpoint DNS timed out"))?
+    .map_err(|_| ConnectError::new(ErrorCode::Unavailable, "management endpoint DNS failed"))?
+    .collect::<Vec<_>>();
+    let addresses = validated_management_addresses(addresses, environment)?;
+    let transport = reqwest::Client::builder()
+        .redirect(reqwest::redirect::Policy::none())
+        .connect_timeout(MANAGEMENT_DNS_TIMEOUT)
+        .timeout(MANAGEMENT_TIMEOUT)
+        .resolve_to_addrs(host, &addresses)
+        .build()
+        .map_err(|_| ConnectError::new(ErrorCode::Internal, "build pinned management transport"))?;
     let config = ClientConfig::new(
         endpoint
             .parse()
@@ -1408,10 +2381,37 @@ fn management_client(
     )
     .with_protocol(Protocol::Connect)
     .with_default_timeout(MANAGEMENT_TIMEOUT);
-    Ok(RealmManagementServiceClient::new(transport, config))
+    Ok(RealmManagementServiceClient::new(
+        PinnedManagementTransport(transport),
+        config,
+    ))
 }
 
-fn seal_fleet_credential(
+fn validated_management_addresses(
+    mut addresses: Vec<SocketAddr>,
+    environment: &RuntimeEnvironment,
+) -> Result<Vec<SocketAddr>, ConnectError> {
+    addresses.sort_unstable();
+    addresses.dedup();
+    if addresses.is_empty() {
+        return Err(ConnectError::new(
+            ErrorCode::Unavailable,
+            "management endpoint DNS returned no addresses",
+        ));
+    }
+    if environment == &RuntimeEnvironment::Production
+        && addresses
+            .iter()
+            .any(|address| !public_management_host(&address.ip().to_string()))
+    {
+        return Err(invalid(
+            "management endpoint DNS resolved to a non-public address",
+        ));
+    }
+    Ok(addresses)
+}
+
+pub(crate) fn seal_fleet_credential(
     keys: &KeyRing,
     connection_id: Uuid,
     credential: &SecretString,
@@ -1437,7 +2437,7 @@ fn seal_fleet_credential(
     })
 }
 
-fn open_fleet_credential(
+pub(crate) fn open_fleet_credential(
     keys: &KeyRing,
     connection_id: Uuid,
     encrypted: &EncryptedFleetCredential,
@@ -1481,8 +2481,9 @@ async fn revoke_remote_connection(
     connection_id: &str,
     request_id: &str,
     reason: &str,
+    environment: &RuntimeEnvironment,
 ) -> Result<(), ConnectError> {
-    let mut client = management_client(endpoint)?;
+    let mut client = management_client(endpoint, environment).await?;
     let authorized_config = client.config().clone().with_default_header(
         http::header::AUTHORIZATION,
         format!("Bearer {}", credential.expose_secret()),
@@ -1500,6 +2501,27 @@ async fn revoke_remote_connection(
         )
         .await?;
     Ok(())
+}
+
+async fn rotate_remote_connection(
+    endpoint: &str,
+    credential: &SecretString,
+    request: RotateFleetCredentialRequest,
+    environment: &RuntimeEnvironment,
+) -> Result<PairingGrant, ConnectError> {
+    let mut client = management_client(endpoint, environment).await?;
+    let authorized_config = client.config().clone().with_default_header(
+        http::header::AUTHORIZATION,
+        format!("Bearer {}", credential.expose_secret()),
+    );
+    *client.config_mut() = authorized_config;
+    client
+        .rotate_fleet_credential_with_options(
+            request,
+            CallOptions::default().with_timeout(MANAGEMENT_TIMEOUT),
+        )
+        .await
+        .map(|response| response.into_owned())
 }
 
 fn management_error(error: ConnectError) -> ConnectError {
@@ -1556,6 +2578,7 @@ fn safe_text(
     allow_empty: bool,
 ) -> Result<String, ConnectError> {
     let value = value.trim();
+    let allow_empty = allow_empty && field != "mutation.reason";
     if (!allow_empty && value.is_empty())
         || value.len() > maximum
         || value.chars().any(char::is_control)
@@ -1572,6 +2595,55 @@ fn safe_text(
     Ok(value.to_owned())
 }
 
+fn safe_remote_reason(value: &str) -> Result<String, ConnectError> {
+    let value = value.trim();
+    if !(10..=500).contains(&value.len()) || value.chars().any(char::is_control) {
+        return Err(invalid(
+            "remote mutation reason must contain 10-500 safe characters",
+        ));
+    }
+    Ok(value.to_owned())
+}
+
+fn safe_remote_target(value: &str, maximum: usize) -> Result<String, ConnectError> {
+    let value = value.trim();
+    if value.is_empty()
+        || value.len() > maximum
+        || value.chars().any(char::is_whitespace)
+        || value.chars().any(char::is_control)
+    {
+        return Err(invalid("remote mutation target is invalid"));
+    }
+    Ok(value.to_owned())
+}
+
+fn validate_remote_expiry(value: &str) -> Result<(), ConnectError> {
+    let value = OffsetDateTime::parse(value, &Rfc3339)
+        .map_err(|_| invalid("remote mutation expiry must be an RFC 3339 timestamp"))?;
+    let value = u64::try_from(value.unix_timestamp())
+        .map_err(|_| invalid("remote mutation expiry is invalid"))?;
+    let current = now();
+    if value <= current || value > current.saturating_add(5 * 60) {
+        return Err(invalid(
+            "remote mutation expiry must be in the next five minutes",
+        ));
+    }
+    Ok(())
+}
+
+const fn remote_mutation_action(operation: RemoteMutationOperation) -> &'static str {
+    match operation {
+        RemoteMutationOperation::Unspecified => "unspecified",
+        RemoteMutationOperation::RevokeUserPasskey => "revoke-user-passkey",
+        RemoteMutationOperation::SetServiceAccountEnabled => "set-service-account-enabled",
+        RemoteMutationOperation::RevokeServiceAccountCredential => {
+            "revoke-service-account-credential"
+        }
+        RemoteMutationOperation::PauseWebhook => "pause-webhook",
+        RemoteMutationOperation::DeleteWebhook => "delete-webhook",
+    }
+}
+
 fn required_uuid(value: &str, field: &'static str) -> Result<Uuid, ConnectError> {
     Uuid::parse_str(value).map_err(|_| invalid_uuid(field))
 }
@@ -1581,6 +2653,47 @@ fn optional_uuid(value: &str, field: &'static str) -> Result<Option<Uuid>, Conne
         return Ok(None);
     }
     required_uuid(value, field).map(Some)
+}
+
+fn optional_realm_id(value: &str) -> Result<Option<String>, ConnectError> {
+    let value = value.trim();
+    if value.is_empty() {
+        return Ok(None);
+    }
+    if value.len() > 128
+        || !value
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.'))
+    {
+        return Err(invalid("realm_id is invalid"));
+    }
+    Ok(Some(value.to_owned()))
+}
+
+fn analytics_range(starts_at: &str, ends_at: &str) -> Result<(i64, i64), ConnectError> {
+    let parse = |value: &str| {
+        OffsetDateTime::parse(value, &Rfc3339)
+            .map_err(|_| invalid("analytics range must contain RFC 3339 timestamps"))?
+            .unix_timestamp()
+            .checked_mul(1_000)
+            .ok_or_else(|| invalid("analytics range is outside the supported timestamp range"))
+    };
+    let starts_at = parse(starts_at)?;
+    let ends_at = parse(ends_at)?;
+    const MAX_RANGE_MILLISECONDS: i64 = 28 * 24 * 60 * 60 * 1_000;
+    if ends_at <= starts_at || ends_at.saturating_sub(starts_at) > MAX_RANGE_MILLISECONDS {
+        return Err(invalid(
+            "analytics range must be positive and no longer than 28 days",
+        ));
+    }
+    let future_limit = i64::try_from(now())
+        .unwrap_or(i64::MAX / 1_000)
+        .saturating_add(5 * 60)
+        .saturating_mul(1_000);
+    if ends_at > future_limit {
+        return Err(invalid("analytics range ends too far in the future"));
+    }
+    Ok((starts_at, ends_at))
 }
 
 fn invalid_uuid(field: &'static str) -> ConnectError {
@@ -1632,11 +2745,50 @@ fn format_timestamp(value: u64) -> Result<String, ConnectError> {
         .map_err(|_| ConnectError::new(ErrorCode::Internal, "format Fleet timestamp"))
 }
 
+fn format_millisecond_timestamp(value: i64) -> Result<String, ConnectError> {
+    OffsetDateTime::from_unix_timestamp(value.div_euclid(1_000))
+        .map_err(|_| ConnectError::new(ErrorCode::DataLoss, "stored timestamp is invalid"))?
+        .format(&Rfc3339)
+        .map_err(|_| ConnectError::new(ErrorCode::Internal, "format Fleet timestamp"))
+}
+
 fn format_optional_timestamp(value: Option<u64>) -> Result<String, ConnectError> {
     value
         .map(format_timestamp)
         .transpose()
         .map(Option::unwrap_or_default)
+}
+
+fn add_analytics_count(total: &mut u64, value: u64) -> Result<(), ConnectError> {
+    *total = total.checked_add(value).ok_or_else(|| {
+        ConnectError::new(
+            ErrorCode::DataLoss,
+            "Fleet analytics counter exceeds the V1 numeric range",
+        )
+    })?;
+    Ok(())
+}
+
+fn analytics_cardinality(value: usize) -> Result<u64, ConnectError> {
+    u64::try_from(value).map_err(|_| {
+        ConnectError::new(
+            ErrorCode::DataLoss,
+            "Fleet analytics cardinality exceeds the V1 numeric range",
+        )
+    })
+}
+
+fn analytics_reporting_status(
+    last_bucket_at: Option<i64>,
+    stale_before: i64,
+    connection_state: FleetConnectionStateRecord,
+) -> (bool, bool) {
+    let stale = last_bucket_at.is_none_or(|timestamp| timestamp < stale_before)
+        || matches!(
+            connection_state,
+            FleetConnectionStateRecord::Degraded | FleetConnectionStateRecord::Offline
+        );
+    (!stale, stale)
 }
 
 fn invalid(message: &'static str) -> ConnectError {
@@ -1705,6 +2857,55 @@ mod tests {
     }
 
     #[test]
+    fn analytics_scope_and_range_are_bounded_before_ledger_access() {
+        assert_eq!(
+            optional_realm_id("realm.prod_1").unwrap().as_deref(),
+            Some("realm.prod_1")
+        );
+        assert!(optional_realm_id("realm/escape").is_err());
+        assert!(analytics_range("2026-08-08T00:00:00Z", "2026-08-09T00:00:00Z").is_ok());
+        assert!(analytics_range("2026-01-01T00:00:00Z", "2026-08-09T00:00:00Z").is_err());
+        assert!(analytics_range("2026-08-09T00:00:00Z", "2026-08-08T00:00:00Z").is_err());
+    }
+
+    #[test]
+    fn analytics_counts_fail_closed_instead_of_saturating() {
+        let mut total = u64::MAX - 1;
+        add_analytics_count(&mut total, 1).unwrap();
+        assert_eq!(total, u64::MAX);
+        assert!(add_analytics_count(&mut total, 1).is_err());
+    }
+
+    #[test]
+    fn analytics_reporting_and_stale_coverage_are_disjoint() {
+        let stale_before = 1_000;
+        assert_eq!(
+            analytics_reporting_status(
+                Some(stale_before),
+                stale_before,
+                FleetConnectionStateRecord::Healthy,
+            ),
+            (true, false)
+        );
+        assert_eq!(
+            analytics_reporting_status(
+                Some(stale_before - 1),
+                stale_before,
+                FleetConnectionStateRecord::Healthy,
+            ),
+            (false, true)
+        );
+        assert_eq!(
+            analytics_reporting_status(
+                Some(stale_before),
+                stale_before,
+                FleetConnectionStateRecord::Offline,
+            ),
+            (false, true)
+        );
+    }
+
+    #[test]
     fn insecure_management_endpoints_are_confined_to_local_development() {
         assert!(
             safe_management_endpoint(
@@ -1770,5 +2971,28 @@ mod tests {
                 "{endpoint} must not pass the public-endpoint SSRF boundary"
             );
         }
+    }
+
+    #[test]
+    fn dns_results_are_all_public_deduplicated_and_fail_closed() {
+        let public: SocketAddr = "1.1.1.1:443".parse().unwrap();
+        let private: SocketAddr = "169.254.169.254:443".parse().unwrap();
+        assert_eq!(
+            validated_management_addresses(vec![public, public], &RuntimeEnvironment::Production)
+                .unwrap(),
+            vec![public]
+        );
+        assert!(
+            validated_management_addresses(vec![public, private], &RuntimeEnvironment::Production)
+                .is_err(),
+            "one private answer poisons the entire pinned resolution set"
+        );
+        assert!(
+            validated_management_addresses(Vec::new(), &RuntimeEnvironment::Production).is_err()
+        );
+        assert!(
+            validated_management_addresses(vec![private], &RuntimeEnvironment::Development).is_ok(),
+            "loopback/private Compose endpoints remain available only in development"
+        );
     }
 }

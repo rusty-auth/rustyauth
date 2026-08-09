@@ -17,6 +17,11 @@ pub struct Session {
     pub current_credential_id: Option<String>,
     pub session_version: u64,
     pub created_at: u64,
+    /// Last time a passkey ceremony explicitly verified the account holder.
+    /// Old sessions deserialize as `None` and must step up before a sensitive
+    /// mutation; session creation time is not silently treated as proof.
+    #[serde(default)]
+    pub step_up_at: Option<u64>,
     pub last_seen_at: u64,
     pub absolute_expires_at: u64,
 }
@@ -34,6 +39,12 @@ pub enum SessionOrigin {
     Passkey {
         credential_id: String,
     },
+    /// A short-lived native-console handoff minted from a freshly verified
+    /// passkey session. Keeping the credential binding means revoking the
+    /// passkey also revokes every device token derived from it.
+    Device {
+        credential_id: String,
+    },
     /// A local agent handoff. No credential produced it, so passkey revocation
     /// does not apply.
     Agent,
@@ -43,13 +54,21 @@ impl SessionOrigin {
     fn auth_method(&self) -> &'static str {
         match self {
             Self::Passkey { .. } => "passkey",
+            Self::Device { .. } => "device",
             Self::Agent => "agent",
+        }
+    }
+
+    fn token_prefix(&self) -> &'static str {
+        match self {
+            Self::Device { .. } => "rdt_",
+            Self::Passkey { .. } | Self::Agent => "",
         }
     }
 
     fn credential_id(self) -> Option<String> {
         match self {
-            Self::Passkey { credential_id } => Some(credential_id),
+            Self::Passkey { credential_id } | Self::Device { credential_id } => Some(credential_id),
             Self::Agent => None,
         }
     }
@@ -63,9 +82,13 @@ impl Store {
         absolute_seconds: u64,
     ) -> Result<(String, Session)> {
         let auth_method = origin.auth_method();
+        let token_prefix = origin.token_prefix();
         let current_credential_id = origin.credential_id();
         let _snapshot = self.snapshot_gate.read().await;
-        let token = URL_SAFE_NO_PAD.encode(rand::random::<[u8; 32]>());
+        let token = format!(
+            "{token_prefix}{}",
+            URL_SAFE_NO_PAD.encode(rand::random::<[u8; 32]>())
+        );
         let current = now();
         let session = Session {
             id: Uuid::new_v4(),
@@ -74,6 +97,10 @@ impl Store {
             current_credential_id,
             session_version: user.session_version,
             created_at: current,
+            // A device session can only be minted immediately after a browser
+            // passkey step-up. It carries that assurance for the remainder of
+            // the same five-minute administrative window, never beyond it.
+            step_up_at: matches!(auth_method, "passkey" | "device").then_some(current),
             last_seen_at: current,
             absolute_expires_at: current.saturating_add(absolute_seconds),
         };
@@ -135,6 +162,52 @@ impl Store {
         let _snapshot = self.snapshot_gate.read().await;
         self.delete(&session_key(token)).await
     }
+
+    pub async fn mark_session_step_up(
+        &self,
+        token: &str,
+        expected_session_id: Uuid,
+        credential_id: String,
+    ) -> Result<Session> {
+        let _snapshot = self.snapshot_gate.read().await;
+        let _guard = self.mutation.lock().await;
+        let key = session_key(token);
+        let mut session = self
+            .get_json::<Session>(&key)
+            .await?
+            .filter(|session| session.id == expected_session_id)
+            .ok_or_else(|| anyhow::anyhow!("session is missing or changed"))?;
+        let current = now();
+        if session.absolute_expires_at <= current {
+            self.delete(&key).await?;
+            return Err(anyhow::anyhow!("session has expired"));
+        }
+        session.auth_method = "passkey".into();
+        session.current_credential_id = Some(credential_id);
+        session.step_up_at = Some(current);
+        session.last_seen_at = current;
+        self.set_json_ex(&key, &session, session.absolute_expires_at - current)
+            .await?;
+        self.append_event_within_snapshot("session.step_up.completed", Some(session.user_id))
+            .await?;
+        Ok(session)
+    }
+
+    /// Invalidates every browser session for an account through the durable
+    /// session-version boundary. Individual session keys are deliberately not
+    /// scanned; each is rejected and reclaimed on its next request.
+    pub async fn revoke_all_sessions(&self, user_id: Uuid) -> Result<User> {
+        let _snapshot = self.snapshot_gate.read().await;
+        let _guard = self.mutation.lock().await;
+        let mut user = self
+            .user(user_id)
+            .await?
+            .ok_or_else(|| anyhow::anyhow!("account is missing"))?;
+        user.session_version = user.session_version.saturating_add(1);
+        self.persist_user_with_event(&user, "session.revoked_all", "revoke every account session")
+            .await?;
+        Ok(user)
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -191,6 +264,7 @@ mod tests {
             current_credential_id: current_credential_id.map(str::to_owned),
             session_version: 3,
             created_at: 1_000,
+            step_up_at: Some(1_000),
             last_seen_at: 1_000,
             absolute_expires_at: 10_000,
         }
@@ -227,6 +301,37 @@ mod tests {
         // An agent handoff has no credential, and must survive revocation.
         assert_eq!(SessionOrigin::Agent.auth_method(), "agent");
         assert_eq!(SessionOrigin::Agent.credential_id(), None);
+    }
+
+    #[test]
+    fn a_device_session_is_passkey_bound_and_uses_a_distinct_token_namespace() {
+        let device = SessionOrigin::Device {
+            credential_id: "cred-a".to_owned(),
+        };
+        assert_eq!(device.auth_method(), "device");
+        assert_eq!(device.token_prefix(), "rdt_");
+        assert_eq!(device.credential_id(), Some("cred-a".to_owned()));
+    }
+
+    /// Sessions written before credential-scoped revocation and explicit
+    /// step-up existed must keep authenticating, but must not inherit either
+    /// assurance from their creation timestamp during an upgrade.
+    #[test]
+    fn a_legacy_session_loads_without_fabricating_credential_or_step_up_proof() {
+        let legacy = serde_json::json!({
+            "id": Uuid::new_v4(),
+            "userId": Uuid::new_v4(),
+            "authMethod": "passkey",
+            "sessionVersion": 3,
+            "createdAt": 1_000,
+            "lastSeenAt": 1_100,
+            "absoluteExpiresAt": 10_000,
+        });
+        let decoded: Session =
+            serde_json::from_value(legacy).expect("a pre-upgrade session still decodes");
+        assert_eq!(decoded.current_credential_id, None);
+        assert_eq!(decoded.step_up_at, None);
+        assert_eq!(decoded.created_at, 1_000);
     }
 
     /// The expiry pre-check must agree with the verdict, or a session would be
