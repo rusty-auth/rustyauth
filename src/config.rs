@@ -66,6 +66,7 @@ const CONFIGURATION_NAMES: &[&str] = &[
     "AUTH_BACKUP_RPO_SECONDS",
     "AUTH_BACKUP_RETENTION_DAYS",
     "AUTH_BACKUP_ALERT_AFTER_FAILURES",
+    "AUTH_BACKUP_STORAGE_PROFILE",
     "AUTH_BACKUP_SSE",
     "AUTH_BACKUP_SSE_KMS_KEY_ID",
     "AUTH_BACKUP_URL_STYLE",
@@ -450,6 +451,7 @@ pub struct BackupConfig {
     pub rpo_seconds: u64,
     pub retention_days: u64,
     pub alert_after_failures: u64,
+    pub storage_profile: BackupStorageProfile,
     pub server_side_encryption: BackupServerSideEncryption,
     pub sse_kms_key_id: Option<String>,
 }
@@ -463,9 +465,29 @@ pub struct AnalyticsConfig {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum BackupStorageProfile {
+    /// Require provider version IDs, compliance-mode Object Lock retention and
+    /// the configured server-side encryption posture for every new object.
+    Immutable,
+    /// Rely on the authenticated application envelope, unique object keys and
+    /// read-after-write verification when the provider lacks immutable S3 APIs.
+    Portable,
+}
+
+impl BackupStorageProfile {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Immutable => "immutable",
+            Self::Portable => "portable",
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum BackupServerSideEncryption {
-    /// The compatible provider owns its at-rest encryption policy. Application
-    /// encryption and Object Lock/versioning are still mandatory.
+    /// The provider owns its at-rest encryption policy and does not report an
+    /// AWS-style encryption value. The storage profile independently controls
+    /// whether versioning and Object Lock are mandatory.
     Provider,
     Aes256,
     AwsKms,
@@ -1038,6 +1060,7 @@ impl BackupConfig {
             "AUTH_BACKUP_RPO_SECONDS",
             "AUTH_BACKUP_RETENTION_DAYS",
             "AUTH_BACKUP_ALERT_AFTER_FAILURES",
+            "AUTH_BACKUP_STORAGE_PROFILE",
             "AUTH_BACKUP_SSE",
             "AUTH_BACKUP_SSE_KMS_KEY_ID",
             "AUTH_BACKUP_URL_STYLE",
@@ -1083,6 +1106,17 @@ impl BackupConfig {
             interval_seconds,
             2_592_000,
         )?;
+        let storage_profile = match values
+            .optional("AUTH_BACKUP_STORAGE_PROFILE")
+            .as_deref()
+            .unwrap_or("immutable")
+        {
+            "immutable" => BackupStorageProfile::Immutable,
+            "portable" => BackupStorageProfile::Portable,
+            other => {
+                bail!("AUTH_BACKUP_STORAGE_PROFILE must be immutable or portable, got {other}")
+            }
+        };
         let server_side_encryption = match values
             .optional("AUTH_BACKUP_SSE")
             .as_deref()
@@ -1118,6 +1152,7 @@ impl BackupConfig {
             rpo_seconds,
             retention_days: integer(values, "AUTH_BACKUP_RETENTION_DAYS", 90, 1, 3_650)?,
             alert_after_failures: integer(values, "AUTH_BACKUP_ALERT_AFTER_FAILURES", 2, 1, 100)?,
+            storage_profile,
             server_side_encryption,
             sse_kms_key_id,
         }))

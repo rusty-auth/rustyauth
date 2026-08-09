@@ -27,7 +27,7 @@ const commands = [
 ];
 ---
 
-<DocsLayout title="Backups and disaster recovery" eyebrow="Recovery operations" intro="How RustyAuth captures a complete Realm or Fleet workspace, seals it as a compact binary object, verifies immutable S3 storage and restores it safely.">
+<DocsLayout title="Backups and disaster recovery" eyebrow="Recovery operations" intro="How RustyAuth captures a complete Realm or Fleet workspace, seals it as a compact binary object, verifies its configured storage profile and restores it safely.">
   <div class="doc-callout">
     <strong>A backup is successful only after recovery checks</strong>
     <p>RustyAuth does not treat <code>PutObject</code> as proof. It reads the object back, checks its version, compliance retention and provider encryption, decrypts it, validates every manifest and ownership invariant, and only then records success.</p>
@@ -80,7 +80,8 @@ const commands = [
   <h2>S3 object and immutability contract</h2>
   <pre><code>rustyauth-backups/v3/&lt;tenant-id&gt;/&lt;capture-time&gt;-&lt;snapshot-uuid&gt;.rauth</code></pre>
   <p>The v3 object uses content type <code>application/vnd.rustyauth.backup.v3</code> and records non-secret snapshot ID, derived key ID, format version and <code>complete-server-workspace</code> scope metadata. Reads are confined to the configured tenant's v2/v3 prefixes.</p>
-  <p>Every new object must return a version ID, <code>COMPLIANCE</code> Object Lock, retention through at least capture time plus the configured policy, and the configured SSE mode. With <code>aws-kms</code>, RustyAuth can also require the exact KMS key ID returned by the provider. <code>provider</code> mode skips only the exact SSE-header comparison; versioning, compliance retention and application AES encryption remain mandatory.</p>
+  <p>The default <code>immutable</code> profile requires every new object to return a version ID, <code>COMPLIANCE</code> Object Lock, retention through at least capture time plus the configured policy, and the configured SSE mode. With <code>aws-kms</code>, RustyAuth can also require the exact KMS key ID returned by the provider. <code>provider</code> encryption skips only the exact SSE-header comparison.</p>
+  <p>The explicit <code>portable</code> profile supports providers without Versioning or Object Lock. It retains unique keys, the authenticated application envelope, checksum, manifest validation and decrypting read-back, but it does not claim WORM retention.</p>
   <div class="doc-callout"><strong>Bucket defaults own retention and SSE</strong><p>RustyAuth does not need permission to change retention. Its S3 policy should contain only <code>ListBucket</code>, <code>GetObject</code> and <code>PutObject</code>, with no delete, legal-hold, retention-change or bypass capability. The checked-in AWS stack also limits KMS use to requests made through S3.</p></div>
   <p>Deploy the repository's <a href="https://github.com/rusty-auth/rustyauth/blob/main/infra/aws/backup-bucket.yaml">immutable AWS bucket stack</a>, or reproduce the same guarantees with a compatible provider. Legacy v2 compatibility does not prove that an old object had these storage controls.</p>
 
@@ -92,6 +93,7 @@ const commands = [
     region: eu-west-2
     bucket: example-rustyauth-backups
     urlStyle: virtual
+    storageProfile: immutable
     serverSideEncryption:
       mode: aws-kms
       kmsKeyId: arn:aws:kms:eu-west-2:123456789012:key/<key-id>
@@ -106,7 +108,7 @@ const commands = [
 
   <h2>Operator commands and receipts</h2>
   <div class="doc-table-wrap"><table><thead><tr><th>Command</th><th>Behavior</th></tr></thead><tbody>{commands.map(([command, behavior]) => <tr><td><code>rustyauth {command}</code></td><td>{behavior}</td></tr>)}</tbody></table></div>
-  <p>Create and verify return JSON containing format version, snapshot/object identifiers, capture time, record and envelope sizes, derived encryption-key ID, provider version ID, retain-until time and reported SSE mode. Retain these receipts with deployment and drill evidence.</p>
+  <p>Create and verify return JSON containing format version, snapshot/object identifiers, capture time, record and envelope sizes, derived encryption-key ID, storage profile, provider version ID, retain-until time and reported SSE mode. Retain these receipts with deployment and drill evidence.</p>
 
   <h2>Scheduler health and alerting</h2>
   <p>The first scheduler tick runs after startup and later ticks use delay semantics, so a stalled provider does not create a burst of catch-up uploads. Health survives restarts in an operational SableDB record excluded from snapshots. It tracks running state, last attempt/success, last object, consecutive failures, RPO, retention, overdue and alerting.</p>

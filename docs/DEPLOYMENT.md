@@ -96,7 +96,8 @@ digest in a terminal `SUCCESS` deployment. Mutable `latest` tags are never used 
 
 Rollouts are serialized across the state boundaries:
 
-1. The realm API runs the target image's `rustyauth doctor` as a Railway pre-deploy command, then reaches
+1. The realm API creates and verifies a fresh recovery point and then runs the target image's
+   `rustyauth doctor` as Railway pre-deploy commands, then reaches
    `/healthz` and `/readyz` on the application API origin.
 2. The stateless dashboard deploys and reaches both probes through its public origin, including its private
    upstream readiness check.
@@ -224,9 +225,11 @@ deliberately excluded. An unknown future durable key family fails snapshot creat
 producing an incomplete backup.
 
 New objects are compact binary, compressed with Zstandard and protected with application-level AES-256-GCM.
-The destination must additionally provide Versioning, a default compliance-mode Object Lock rule and the
-configured server-side encryption. Upload succeeds only after a read-after-write decrypt, manifest check,
-version-ID check, retention check and server-side-encryption check. For AWS, deploy
+The default immutable destination must additionally provide Versioning, a default compliance-mode Object Lock
+rule and the configured server-side encryption. Upload succeeds only after a read-after-write decrypt,
+manifest check, version-ID check, retention check and server-side-encryption check. Providers without those
+APIs must select the explicit portable profile; it keeps application encryption and read-back verification
+but does not claim WORM retention. For AWS, deploy
 `infra/aws/backup-bucket.yaml`; its application policy permits only list/get/put and explicitly denies delete
 and retention bypass.
 

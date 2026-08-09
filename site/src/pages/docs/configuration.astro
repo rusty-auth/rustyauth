@@ -134,6 +134,7 @@ configs:
     endpoint: https://s3.eu-west-2.amazonaws.com
     region: eu-west-2
     bucket: example-rustyauth-backups
+    storageProfile: immutable
     serverSideEncryption:
       mode: aws-kms
       kmsKeyId: arn:aws:kms:eu-west-2:123456789012:key/<key-id>
@@ -142,7 +143,7 @@ configs:
     recoveryPointObjective: 6h
   retention: 90d
   alertAfterFailures: 2`}</code></pre>
-  <p>Storage credentials and the portable encryption key remain secret inputs. The bucket must separately enforce Versioning, compliance-mode Object Lock and the configured provider-side encryption policy. Use the exact KMS key ID returned by the provider; the checked-in AWS stack exposes its key ARN as an output.</p>
+  <p>Storage credentials and the portable encryption key remain secret inputs. The default <code>immutable</code> profile requires the bucket to enforce Versioning, compliance-mode Object Lock and the configured provider-side encryption policy. The explicit <code>portable</code> profile retains application encryption and read-back verification for providers without those APIs, but does not claim WORM retention.</p>
   <p>Continue to <a href="/docs/recovery">Backups and disaster recovery</a> for snapshot coverage, the binary <code>.rauth</code> format, S3 verification, alerting and the clean-room restore procedure.</p>
 
   <h2>Complete reference</h2>

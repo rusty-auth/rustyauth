@@ -309,6 +309,11 @@
         "region": { "type": "string", "minLength": 1 },
         "bucket": { "type": "string", "minLength": 1 },
         "urlStyle": { "enum": ["virtual", "path"], "default": "virtual" },
+        "storageProfile": {
+          "enum": ["immutable", "portable"],
+          "default": "immutable",
+          "description": "Immutable requires provider versioning and compliance-mode Object Lock; portable retains application encryption and read-after-write verification for compatible providers without those APIs."
+        },
         "serverSideEncryption": { "$ref": "#/$defs/serverSideEncryption" }
       }
     },

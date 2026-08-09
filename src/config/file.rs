@@ -170,6 +170,8 @@ struct BackupDestination {
     #[serde(default)]
     url_style: Option<String>,
     #[serde(default)]
+    storage_profile: Option<String>,
+    #[serde(default)]
     server_side_encryption: Option<ServerSideEncryption>,
 }
 
@@ -554,6 +556,19 @@ impl Backups {
                 "spec.backups.destination.urlStyle",
             );
         }
+        if let Some(profile) = destination.storage_profile {
+            if !matches!(profile.as_str(), "immutable" | "portable") {
+                bail!(
+                    "{source_name}: spec.backups.destination.storageProfile must be immutable or portable, got {profile}"
+                );
+            }
+            insert(
+                values,
+                "AUTH_BACKUP_STORAGE_PROFILE",
+                profile,
+                "spec.backups.destination.storageProfile",
+            );
+        }
         if let Some(encryption) = destination.server_side_encryption {
             let mode = match encryption.mode.as_str() {
                 "provider" => "provider",
@@ -694,6 +709,18 @@ spec:
             .unwrap_err()
             .to_string();
         assert!(error.contains("spec.backups is disabled"));
+    }
+
+    #[test]
+    fn portable_backup_storage_profile_maps_to_runtime_policy() {
+        let yaml = format!(
+            "{VALID_REALM}\n  backups:\n    enabled: true\n    destination:\n      endpoint: http://localhost:9000\n      region: local\n      bucket: backups\n      urlStyle: path\n      storageProfile: portable\n      serverSideEncryption:\n        mode: provider\n"
+        );
+        let values = values_from_yaml(&yaml, "test configuration").unwrap();
+        assert_eq!(
+            values.optional("AUTH_BACKUP_STORAGE_PROFILE").as_deref(),
+            Some("portable")
+        );
     }
 
     #[test]

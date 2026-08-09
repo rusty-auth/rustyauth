@@ -34,7 +34,7 @@ flowchart LR
 ```
 
 A `PutObject` response alone is not success. RustyAuth reports success only after the stored object has been
-read back, decrypted, validated against its manifest and checked for the configured immutable-storage posture.
+read back, decrypted, validated against its manifest and checked against the configured storage profile.
 
 ## What is recoverable
 
@@ -209,9 +209,9 @@ metadata:
 Object-key validation confines reads to the configured tenant's v2 or v3 prefix, requires the `.rauth` suffix,
 and rejects traversal or control characters. Listing is paginated and combines the v3 and legacy v2 prefixes.
 
-### Required provider posture
+### Storage profiles and provider posture
 
-Every new v3 object must prove all of the following on `GetObject`:
+The default `immutable` profile requires every new v3 object to prove all of the following on `GetObject`:
 
 1. a non-empty object version ID;
 2. Object Lock mode `COMPLIANCE`;
@@ -233,8 +233,15 @@ Object Lock, bucket-default SSE-KMS, key rotation, public-access blocking, TLS e
 least-privilege bucket policy. Deployment instructions are in [infra/aws/README.md](../infra/aws/README.md).
 
 `serverSideEncryption.mode: provider` is for a compatible provider that owns its encryption policy and does
-not return an AWS-style SSE value. It skips only the exact SSE-header comparison; application AES encryption,
-version IDs and compliance-mode retention remain mandatory.
+not return an AWS-style SSE value. In the immutable profile it skips only the exact SSE-header comparison;
+application AES encryption, version IDs and compliance-mode retention remain mandatory.
+
+The explicit `portable` profile supports S3-compatible providers that do not implement Versioning, Object
+Lock or AWS-style server-side encryption metadata. It keeps unique tenant-scoped object keys, the authenticated
+AES-256-GCM application envelope, SHA-256 upload checksum, bounded download, manifest validation and
+read-after-write decryption. It does not claim WORM retention: a provider administrator can still delete an
+object. Use it only when that reduced recovery boundary is understood, and migrate production recovery points
+to `immutable` storage when a compatible bucket is available.
 
 Legacy v2 objects remain recoverable even if they predate the v3 storage-posture checks. Treat that as a
 compatibility path, not evidence that an old object has WORM protection.
@@ -252,6 +259,7 @@ spec:
       region: eu-west-2
       bucket: example-rustyauth-backups
       urlStyle: virtual
+      storageProfile: immutable
       serverSideEncryption:
         mode: aws-kms
         kmsKeyId: arn:aws:kms:eu-west-2:123456789012:key/00000000-0000-0000-0000-000000000000
@@ -283,6 +291,7 @@ Defaults and bounds are:
 | Recovery point objective          |  interval | interval–30 days                  |
 | Immutable retention               |   90 days | 1–3,650 whole days                |
 | Consecutive failures before alert |         2 | 1–100                             |
+| Storage profile                    | `immutable` | `immutable` or explicit `portable` |
 | Server-side encryption            | `aws-kms` | `aws-kms`, `aes256` or `provider` |
 
 Production S3 endpoints must use HTTPS. Path-style addressing is available for compatible providers through
@@ -331,6 +340,7 @@ A create or verify receipt contains:
   "recordCount": 0,
   "envelopeBytes": 0,
   "encryptionKeyId": "backup-<derived-id>",
+  "storageProfile": "immutable",
   "objectVersionId": "<provider-version>",
   "retainedUntil": 0,
   "serverSideEncryption": "aws:kms"
