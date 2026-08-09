@@ -233,6 +233,7 @@ Deno.test("rollout is idempotent when the exact successful digest is already act
 });
 
 Deno.test("rollout fails closed on a terminal failed deployment", async () => {
+  const receiptPath = await Deno.makeTempFile();
   const outputs = [
     JSON.stringify([deployment("old", "SUCCESS", false)]),
     JSON.stringify({ data: { serviceInstanceUpdate: true } }),
@@ -240,27 +241,37 @@ Deno.test("rollout fails closed on a terminal failed deployment", async () => {
   ];
   const runner: RailwayRunner = () =>
     Promise.resolve({ code: 0, stdout: outputs.shift() ?? "[]", stderr: "" });
-  let error = "";
   try {
-    await rolloutRailwayImage(
-      {
-        project: "project",
-        environment: "production",
-        service: "api",
-        profile: "realm",
-        image,
-        digest,
-        healthUrls: [],
-        timeoutMs: 100,
-        pollMs: 1,
-      },
-      runner,
-      () => Promise.resolve(),
-      () => new Date(0),
-      () => Promise.resolve(),
-    );
-  } catch (caught) {
-    error = caught instanceof Error ? caught.message : String(caught);
+    let error = "";
+    try {
+      await rolloutRailwayImage(
+        {
+          project: "project",
+          environment: "production",
+          service: "api",
+          profile: "realm",
+          image,
+          digest,
+          healthUrls: [],
+          receipt: receiptPath,
+          timeoutMs: 100,
+          pollMs: 1,
+        },
+        runner,
+        () => Promise.resolve(),
+        () => new Date(0),
+        () => Promise.resolve(),
+      );
+    } catch (caught) {
+      error = caught instanceof Error ? caught.message : String(caught);
+    }
+    assert(error.includes("ended in FAILED"), `unexpected error: ${error}`);
+    const receipt = JSON.parse(await Deno.readTextFile(receiptPath)) as Record<string, unknown>;
+    assertEquals(receipt.changed, true);
+    assertEquals(receipt.status, "PENDING");
+    assertEquals(receipt.deploymentId, null);
+    assertEquals(receipt.previousDeploymentId, "old");
+  } finally {
+    await Deno.remove(receiptPath);
   }
-  assert(error.includes("ended in FAILED"), `unexpected error: ${error}`);
 });

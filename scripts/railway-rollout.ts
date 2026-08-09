@@ -42,14 +42,14 @@ export interface RailwayRolloutReceipt {
   previousDeploymentId: string | null;
   previousImage: string | null;
   previousDigest: string | null;
-  deploymentId: string;
+  deploymentId: string | null;
   image: string;
   sourceImage: string;
   digest: string;
-  status: "SUCCESS";
+  status: "PENDING" | "SUCCESS";
   changed: boolean;
   healthUrls: string[];
-  deploymentSucceededAt: string;
+  deploymentSucceededAt: string | null;
   healthVerifiedAt: string | null;
 }
 
@@ -285,8 +285,31 @@ export async function rolloutRailwayImage(
   const previous = baseline[0];
   const current = previous && matchingDeployment([previous], sourceImage, digest);
 
+  const receipt: RailwayRolloutReceipt = {
+    project: options.project,
+    environment: options.environment,
+    service: options.service,
+    profile: options.profile,
+    previousDeploymentId: previous?.id ?? null,
+    previousImage: previous?.meta?.image ?? null,
+    previousDigest: previous?.meta?.imageDigest ?? null,
+    deploymentId: null,
+    image: options.image,
+    sourceImage,
+    digest,
+    status: "PENDING",
+    changed: false,
+    healthUrls: options.healthUrls,
+    deploymentSucceededAt: null,
+    healthVerifiedAt: null,
+  };
+  const writeReceipt = async (): Promise<void> => {
+    if (options.receipt) {
+      await Deno.writeTextFile(options.receipt, `${JSON.stringify(receipt, null, 2)}\n`);
+    }
+  };
+
   let deployment: RailwayDeployment | undefined;
-  let changed = false;
   if (current?.status === "SUCCESS" && deploymentMatchesProfile(current, options.profile)) {
     deployment = current;
   } else {
@@ -297,7 +320,8 @@ export async function rolloutRailwayImage(
     if (update.errors?.length || update.data?.serviceInstanceUpdate !== true) {
       fail("Railway rejected the service image/configuration update");
     }
-    changed = true;
+    receipt.changed = true;
+    await writeReceipt();
 
     const baselineIds = new Set(baseline.map((existing) => existing.id));
     const deadline = now().getTime() + options.timeoutMs;
@@ -330,33 +354,13 @@ export async function rolloutRailwayImage(
   }
 
   if (!deployment) fail("Railway rollout completed without a deployment");
-  const receipt: RailwayRolloutReceipt = {
-    project: options.project,
-    environment: options.environment,
-    service: options.service,
-    profile: options.profile,
-    previousDeploymentId: previous?.id ?? null,
-    previousImage: previous?.meta?.image ?? null,
-    previousDigest: previous?.meta?.imageDigest ?? null,
-    deploymentId: deployment.id,
-    image: options.image,
-    sourceImage,
-    digest,
-    status: "SUCCESS",
-    changed,
-    healthUrls: options.healthUrls,
-    deploymentSucceededAt: now().toISOString(),
-    healthVerifiedAt: null,
-  };
-
-  if (options.receipt) {
-    await Deno.writeTextFile(options.receipt, `${JSON.stringify(receipt, null, 2)}\n`);
-  }
+  receipt.deploymentId = deployment.id;
+  receipt.status = "SUCCESS";
+  receipt.deploymentSucceededAt = now().toISOString();
+  await writeReceipt();
   await healthCheck(options.healthUrls);
   receipt.healthVerifiedAt = now().toISOString();
-  if (options.receipt) {
-    await Deno.writeTextFile(options.receipt, `${JSON.stringify(receipt, null, 2)}\n`);
-  }
+  await writeReceipt();
   return receipt;
 }
 
