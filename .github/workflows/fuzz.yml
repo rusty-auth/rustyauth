@@ -1,7 +1,8 @@
 name: Protocol fuzzing
 
 on:
-  pull_request:
+  push:
+    branches: [main]
     paths:
       - ".github/workflows/fuzz.yml"
       - "fuzz/**"
@@ -14,6 +15,10 @@ on:
   schedule:
     - cron: "17 3 * * 1"
   workflow_dispatch:
+
+concurrency:
+  group: fuzz-${{ github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: read

@@ -15,6 +15,7 @@
     "native:check": "deno run --allow-read scripts/check-native-packaging.ts",
     "railway:check": "deno check scripts/railway-rollout.ts",
     "railway:test": "deno test --allow-read --allow-write scripts/railway-rollout.test.ts scripts/railway-workflow.test.ts",
+    "ci:test": "deno test --allow-read scripts/ci-changes.test.ts scripts/ci-workflow.test.ts",
     "release:check": "deno run --allow-read scripts/check-release-readiness.ts",
     "release:test": "deno test --allow-read scripts/check-release-readiness.test.ts",
     "console:dev": "cd console && dx serve --web",

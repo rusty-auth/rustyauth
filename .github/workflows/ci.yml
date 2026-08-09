@@ -8,10 +8,52 @@ on:
 permissions:
   contents: read
 
+# A superseded PR run has no release value. Cancelling it also prevents several
+# Rust and container builds competing for the same caches and runner capacity.
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
+  changes:
+    name: Changed areas
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    outputs:
+      workflow: ${{ steps.select.outputs.workflow }}
+      protocol: ${{ steps.select.outputs.protocol }}
+      client: ${{ steps.select.outputs.client }}
+      site: ${{ steps.select.outputs.site }}
+      policy: ${{ steps.select.outputs.policy }}
+      infrastructure: ${{ steps.select.outputs.infrastructure }}
+      rust: ${{ steps.select.outputs.rust }}
+      console: ${{ steps.select.outputs.console }}
+      api_image: ${{ steps.select.outputs.api_image }}
+      dashboard_image: ${{ steps.select.outputs.dashboard_image }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - uses: denoland/setup-deno@22d081ff2d3a40755e97629de92e3bcbfa7cf2ed # v2
+        with:
+          deno-version: 2.9.3
+      - name: Test the change classifier
+        run: deno task ci:test
+      - name: Select required checks
+        id: select
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: >-
+          deno run --allow-env=BASE_SHA,HEAD_SHA --allow-run=git
+          scripts/ci-changes.ts >> "${GITHUB_OUTPUT}"
+
   workflow-lint:
     name: GitHub Actions syntax and semantics
+    needs: changes
+    if: needs.changes.outputs.workflow == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
@@ -22,7 +64,10 @@ jobs:
 
   protocol:
     name: Protocol compatibility
+    needs: changes
+    if: needs.changes.outputs.protocol == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -37,9 +82,12 @@ jobs:
           push: false
           pr_comment: false
 
-  site:
-    name: Site checks
+  client:
+    name: TypeScript client
+    needs: changes
+    if: needs.changes.outputs.client == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: denoland/setup-deno@22d081ff2d3a40755e97629de92e3bcbfa7cf2ed # v2
@@ -48,18 +96,46 @@ jobs:
       - run: deno install --frozen
       - run: deno task connect:check
       - run: deno task connect:test
+
+  site:
+    name: Web site
+    needs: changes
+    if: needs.changes.outputs.site == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: denoland/setup-deno@22d081ff2d3a40755e97629de92e3bcbfa7cf2ed # v2
+        with:
+          deno-version: 2.9.3
+      - run: deno install --frozen
       - run: deno task docs:check
       - run: deno task gateway:check
+      - run: deno task site:check
+      - run: deno task site:test
+
+  release-policy:
+    name: Release and deployment policy
+    needs: changes
+    if: needs.changes.outputs.policy == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: denoland/setup-deno@22d081ff2d3a40755e97629de92e3bcbfa7cf2ed # v2
+        with:
+          deno-version: 2.9.3
       - run: deno task native:check
       - run: deno task railway:check
       - run: deno task railway:test
       - run: deno task release:test
-      - run: deno task site:check
-      - run: deno task site:test
 
   infrastructure:
-    name: Infrastructure checks
+    name: Infrastructure correctness
+    needs: changes
+    if: needs.changes.outputs.infrastructure == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 8
     defaults:
       run:
         working-directory: infra/cloudflare
@@ -72,22 +148,13 @@ jobs:
       - run: test -z "$(gofmt -l .)"
       - run: go vet ./...
       - run: go test ./...
-      # The Rust service is gated by cargo-deny, but this module was audited by
-      # nothing — GitHub reported 31 advisories here while `cargo audit` was clean,
-      # because the two cover different ecosystems. govulncheck is used rather than
-      # a version matcher because it reports only vulnerabilities this code can
-      # actually reach.
-      - name: Go vulnerabilities
-        run: |
-          go install golang.org/x/vuln/cmd/govulncheck@v1.6.0
-          "$(go env GOPATH)/bin/govulncheck" ./...
 
-  # Lint and test are independent lanes: neither waits on the other, and each keeps
-  # its own incremental cache. The release build is covered by the container job,
-  # which compiles the same --locked --release profile inside the image.
   rust-lint:
     name: Rust format and lints
+    needs: changes
+    if: needs.changes.outputs.rust == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 12
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Install pinned Rust toolchain
@@ -98,7 +165,10 @@ jobs:
 
   rust-test:
     name: Rust tests
+    needs: changes
+    if: needs.changes.outputs.rust == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 12
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Install pinned Rust toolchain
@@ -106,9 +176,12 @@ jobs:
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
       - run: cargo test --locked
 
-  console:
-    name: Dioxus console checks
+  console-web:
+    name: Dashboard web correctness
+    needs: changes
+    if: needs.changes.outputs.console == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 12
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Install pinned Rust toolchain
@@ -118,212 +191,58 @@ jobs:
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
         with:
           workspaces: console -> target
-      - name: Install Linux native console dependencies
-        run: >-
-          sudo apt-get update && sudo apt-get install -y --no-install-recommends
-          libwebkit2gtk-4.1-dev libxdo-dev libssl-dev
-          libayatana-appindicator3-dev librsvg2-dev
+          key: console-web
       - run: cargo fmt --manifest-path console/Cargo.toml --check
       - run: >-
           cargo clippy --manifest-path console/Cargo.toml --locked
           --target wasm32-unknown-unknown --no-default-features --features web -- -D warnings
-      - run: >-
-          cargo check --manifest-path console/Cargo.toml --locked
-          --no-default-features --features desktop
-      - run: >-
-          cargo test --manifest-path console/Cargo.toml --locked
-          --no-default-features --features desktop
-      - run: >-
-          cargo check --manifest-path console/Cargo.toml --locked
-          --no-default-features --features mobile
 
-  supply-chain:
-    name: Dependency policy
+  console-test:
+    name: Dashboard tests
+    needs: changes
+    if: needs.changes.outputs.console == 'true'
     runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      # Every advisory ignore must carry an unexpired `# expires:` comment. Counting
-      # entries against comments is what makes this enforceable: checking only the
-      # entries that volunteer a date lets a new ignore be permanent and silent.
-      - name: Every advisory ignore is dated and unexpired
-        run: |
-          test -f deny.toml || { echo "::error::deny.toml is missing"; exit 1; }
-          ignores="$(grep -c '{ *id *= *"RUSTSEC' deny.toml || true)"
-          dated="$(grep -c '# expires: [0-9]\{4\}-[0-9]\{2\}-[0-9]\{2\}' deny.toml || true)"
-          if [[ "${ignores}" -ne "${dated}" ]]; then
-            echo "::error file=deny.toml::${ignores} advisory ignores but ${dated} '# expires:' comments; every ignore needs one"
-            exit 1
-          fi
-          today="$(date -u +%F)"
-          status=0
-          while IFS= read -r expiry; do
-            if [[ "${expiry}" < "${today}" ]]; then
-              echo "::error file=deny.toml::an advisory ignore expired on ${expiry}; re-run the reachability analysis before extending the date"
-              status=1
-            fi
-          done < <(sed -n 's/.*# expires: \([0-9]\{4\}-[0-9]\{2\}-[0-9]\{2\}\).*/\1/p' deny.toml)
-          exit "${status}"
-      - uses: EmbarkStudios/cargo-deny-action@3c6349835b2b7b196a839186cb8b78e02f7b5f25 # v2.1.1
-        with:
-          rust-version: 1.94.1
-          command: check advisories bans licenses sources
-          # --locked, or the job audits a graph it resolved itself rather than the
-          # Cargo.lock that actually ships.
-          arguments: --all-features --locked
-      - name: Audit independently locked Rust dependency graphs
-        run: |
-          cargo install cargo-audit --version 0.22.2 --locked
-          cargo audit --file console/Cargo.lock
-          cargo audit --file sabledb/Cargo.lock
-
-  recovery-integration:
-    name: Backup and recovery integration
-    runs-on: ubuntu-latest
+    timeout-minutes: 12
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Install pinned Rust toolchain
         run: rustup toolchain install 1.94.1 --profile minimal
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
-      - uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
-      # SableDB compiles a whole database from source; build it through the layer
-      # cache once per pinned revision instead of from scratch every run, and load
-      # the tag compose.integration.yaml expects so compose skips its own build.
-      - name: Build the SableDB image through the layer cache
-        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
         with:
-          context: .
-          file: ./sabledb/Dockerfile
-          load: true
-          tags: rustyauth-sabledb:ci
-          cache-from: type=gha,scope=sabledb-image
-          cache-to: type=gha,scope=sabledb-image,mode=max
-      - name: Install checksum-pinned image scanner
-        run: ./scripts/install-trivy.sh "${RUNNER_TEMP}/trivy"
-      - name: Reject HIGH or CRITICAL SableDB image findings
+          workspaces: console -> target
+          key: console-test
+      - name: Install Linux console test dependencies
         run: >-
-          "${RUNNER_TEMP}/trivy/trivy" image --quiet --scanners vuln
-          --severity HIGH,CRITICAL --exit-code 1 rustyauth-sabledb:ci
-      - name: Start real SableDB and S3-compatible services
-        run: >-
-          docker compose -f compose.integration.yaml up -d --wait
-          source-sabledb destination-sabledb minio greptimedb
-      - name: Create the private integration bucket
-        run: docker compose -f compose.integration.yaml run --rm minio-init
-      - name: Run clean-room recovery drill
-        env:
-          RUSTYAUTH_TEST_SOURCE_SABLEDB_URL: redis://127.0.0.1:16379
-          RUSTYAUTH_TEST_DESTINATION_SABLEDB_URL: redis://127.0.0.1:16380
-          RUSTYAUTH_TEST_S3_ENDPOINT: http://127.0.0.1:19000
-          RUSTYAUTH_TEST_S3_BUCKET: rustyauth-integration
-          RUSTYAUTH_TEST_S3_ACCESS_KEY: rustyauth-test
-          RUSTYAUTH_TEST_S3_SECRET_KEY: rustyauth-test-secret
-        run: >-
-          cargo test --locked --test integration_tests clean_room_backup_restore_and_rotation
-          -- --ignored --exact --nocapture
-      - name: Run Fleet telemetry outage and replay qualification
-        env:
-          RUSTYAUTH_TEST_SOURCE_SABLEDB_URL: redis://127.0.0.1:16379
-        run: >-
-          cargo test --locked --test integration_tests
-          telemetry_survives_24_hour_outage_restart_and_exact_replay
-          -- --ignored --exact --nocapture
-      - name: Run authenticated gRPC telemetry connector qualification
-        env:
-          RUSTYAUTH_TEST_SOURCE_SABLEDB_URL: redis://127.0.0.1:16379
-          RUSTYAUTH_TEST_GREPTIME_URL: http://127.0.0.1:14000
-        run: >-
-          cargo test --locked --lib
-          telemetry::live_tests::grpc_connector_authenticates_persists_and_exactly_acknowledges
-          -- --ignored --exact --nocapture
-      - name: Run canonical, materialized correction and isolation-purge qualification
-        env:
-          RUSTYAUTH_TEST_GREPTIME_URL: http://127.0.0.1:14000
-        run: >-
-          cargo test --locked --lib
-          analytics_store::tests::live_greptime_reduces_wide_metrics_and_replaces_corrections
-          -- --ignored --exact --nocapture
-      - name: Run signed Parquet recovery convergence qualification
-        env:
-          RUSTYAUTH_TEST_SOURCE_SABLEDB_URL: redis://127.0.0.1:16379
-          RUSTYAUTH_TEST_GREPTIME_URL: http://127.0.0.1:14000
-        run: >-
-          cargo test --locked --lib
-          analytics_archive::tests::signed_archive_import_is_idempotent_and_product_queryable
-          -- --ignored --exact --nocapture
-      - name: Run medium Fleet Analytics performance gate
-        env:
-          RUSTYAUTH_TEST_GREPTIME_URL: http://127.0.0.1:14000
-          RUSTYAUTH_RUN_MEDIUM_ANALYTICS_QUALIFICATION: "1"
-        run: >-
-          cargo test --locked --lib
-          analytics_store::tests::medium_tier_organization_query_meets_the_two_second_p95_target
-          -- --ignored --exact --nocapture
-      - name: Run Fleet hierarchy isolation qualification
-        env:
-          RUSTYAUTH_TEST_SOURCE_SABLEDB_URL: redis://127.0.0.1:16379
-        run: >-
-          cargo test --locked --test integration_tests
-          fleet_hierarchy_rejects_cross_organization_and_project_access
-          -- --ignored --exact --nocapture
-      - name: Run pinned-SableDB writer-lease renewal qualification
-        env:
-          RUSTYAUTH_TEST_SOURCE_SABLEDB_URL: redis://127.0.0.1:16379
-        run: >-
-          cargo test --locked --lib
-          store::live_store_tests::writer_lease_renews_on_pinned_sabledb_and_fences_a_replaced_owner
-          -- --ignored --exact --nocapture
-      - name: Run shared SableDB rate-limit qualification
-        env:
-          RUSTYAUTH_TEST_SOURCE_SABLEDB_URL: redis://127.0.0.1:16379
-        run: >-
-          cargo test --locked --lib
-          rate_limit::tests::sabledb_counter_survives_process_replacement_and_is_shared
-          -- --ignored --exact --nocapture
-      - name: Run remote-mutation replay qualification
-        env:
-          RUSTYAUTH_TEST_SOURCE_SABLEDB_URL: redis://127.0.0.1:16379
-        run: >-
-          cargo test --locked --test integration_tests
-          remote_mutation_replay_fencing_survives_restart
-          -- --ignored --exact --nocapture
-      - name: Run remote management boundary qualification
-        env:
-          RUSTYAUTH_TEST_SOURCE_SABLEDB_URL: redis://127.0.0.1:16379
-        run: >-
-          cargo test --locked --lib
-          management_rpc::live_tests::remote_management_rpc_is_dual_bound_and_restart_safe
-          -- --ignored --exact --nocapture
-      - name: Show service logs after failure
-        if: failure()
-        run: docker compose -f compose.integration.yaml logs
-      - name: Stop integration services
-        if: always()
-        run: docker compose -f compose.integration.yaml down --volumes
+          sudo apt-get update && sudo apt-get install -y --no-install-recommends
+          libwebkit2gtk-4.1-dev libxdo-dev libssl-dev
+          libayatana-appindicator3-dev librsvg2-dev
+      - run: >-
+          cargo test --manifest-path console/Cargo.toml --locked
+          --no-default-features --features desktop
 
-  container:
+  api-container:
     name: Rust API container build
+    needs: changes
+    if: needs.changes.outputs.api_image == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
       - uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
         with:
           context: .
-          load: true
           push: false
           tags: rustyauth:ci
           cache-from: type=gha,scope=rustyauth-image
           cache-to: type=gha,scope=rustyauth-image,mode=max
-      - name: Install checksum-pinned image scanner
-        run: ./scripts/install-trivy.sh "${RUNNER_TEMP}/trivy"
-      - name: Reject HIGH or CRITICAL API image findings
-        run: >-
-          "${RUNNER_TEMP}/trivy/trivy" image --quiet --scanners vuln
-          --severity HIGH,CRITICAL --exit-code 1 rustyauth:ci
 
   dashboard-container:
-    name: Dioxus dashboard container build
+    name: Dashboard container build
+    needs: changes
+    if: needs.changes.outputs.dashboard_image == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
@@ -331,17 +250,22 @@ jobs:
         with:
           context: .
           file: Dockerfile.dashboard
-          load: true
           push: false
           tags: rustyauth-dashboard:ci
           cache-from: type=gha,scope=dashboard-image
           cache-to: type=gha,scope=dashboard-image,mode=max
-      - name: Install checksum-pinned image scanner
-        run: ./scripts/install-trivy.sh "${RUNNER_TEMP}/trivy"
-      - name: Reject HIGH or CRITICAL dashboard image findings
-        run: >-
-          "${RUNNER_TEMP}/trivy/trivy" image --quiet --scanners vuln
-          --severity HIGH,CRITICAL --exit-code 1 rustyauth-dashboard:ci
+
+  deployment-templates:
+    name: Deployment template validation
+    needs: changes
+    if: >-
+      needs.changes.outputs.policy == 'true' ||
+      needs.changes.outputs.api_image == 'true' ||
+      needs.changes.outputs.dashboard_image == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Validate three-service Compose templates
         env:
           AUTH_MASTER_KEY_HEX: compose-validation-only
@@ -353,3 +277,34 @@ jobs:
         run: |
           docker compose -f compose.yaml config --quiet
           docker compose -f compose.fleet.yaml config --quiet
+
+  result:
+    name: CI result
+    if: always()
+    needs:
+      - changes
+      - workflow-lint
+      - protocol
+      - client
+      - site
+      - release-policy
+      - infrastructure
+      - rust-lint
+      - rust-test
+      - console-web
+      - console-test
+      - api-container
+      - dashboard-container
+      - deployment-templates
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Require every selected correctness check
+        env:
+          NEEDS_JSON: ${{ toJSON(needs) }}
+        run: |
+          failures="$(jq -r 'to_entries[] | select(.value.result != "success" and .value.result != "skipped") | "\(.key)=\(.value.result)"' <<<"${NEEDS_JSON}")"
+          if [[ -n "${failures}" ]]; then
+            echo "${failures}"
+            exit 1
+          fi
