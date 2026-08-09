@@ -120,6 +120,11 @@ jobs:
       - uses: Swatinem/rust-cache@49a0bdc70d2e1b713ca9e2869b211fcce03d3c1c # v2
         with:
           workspaces: console -> target
+      - name: Install Linux native console dependencies
+        run: >-
+          sudo apt-get update && sudo apt-get install -y --no-install-recommends
+          libwebkit2gtk-4.1-dev libxdo-dev libssl-dev
+          libayatana-appindicator3-dev librsvg2-dev
       - run: cargo fmt --manifest-path console/Cargo.toml --check
       - run: >-
           cargo clippy --manifest-path console/Cargo.toml --locked
@@ -153,12 +158,12 @@ jobs:
           fi
           today="$(date -u +%F)"
           status=0
-          for expiry in $(sed -n 's/.*# expires: \([0-9]\{4\}-[0-9]\{2\}-[0-9]\{2\}\).*/\1/p' deny.toml); do
+          while IFS= read -r expiry; do
             if [[ "${expiry}" < "${today}" ]]; then
               echo "::error file=deny.toml::an advisory ignore expired on ${expiry}; re-run the reachability analysis before extending the date"
               status=1
             fi
-          done
+          done < <(sed -n 's/.*# expires: \([0-9]\{4\}-[0-9]\{2\}-[0-9]\{2\}\).*/\1/p' deny.toml)
           exit "${status}"
       - uses: EmbarkStudios/cargo-deny-action@3c6349835b2b7b196a839186cb8b78e02f7b5f25 # v2.1.1
         with:
