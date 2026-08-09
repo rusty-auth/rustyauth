@@ -171,6 +171,43 @@ export function parseDeployments(raw: string): RailwayDeployment[] {
   });
 }
 
+export function configuredServiceImage(
+  raw: string,
+  environment: string,
+  service: string,
+): string | null {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    fail("Railway status did not return valid JSON");
+  }
+  if (!parsed || typeof parsed !== "object") fail("Railway status was not an object");
+  const environments = (parsed as {
+    environments?: { edges?: Array<{ node?: Record<string, unknown> }> };
+  }).environments?.edges;
+  if (!Array.isArray(environments)) fail("Railway status is missing environments");
+
+  for (const edge of environments) {
+    const environmentNode = edge.node;
+    if (!environmentNode) continue;
+    if (environmentNode.id !== environment && environmentNode.name !== environment) continue;
+    const instances = (environmentNode.serviceInstances as {
+      edges?: Array<{ node?: Record<string, unknown> }>;
+    } | undefined)?.edges;
+    if (!Array.isArray(instances)) fail("Railway status is missing service instances");
+    const instance = instances
+      .map((candidate) => candidate.node)
+      .find((candidate) => candidate?.serviceId === service || candidate?.serviceName === service);
+    if (!instance) fail(`Railway status is missing service ${service}`);
+    const image = (instance.source as { image?: unknown } | undefined)?.image;
+    if (image === null || image === undefined) return null;
+    if (typeof image !== "string") fail(`Railway service ${service} has an invalid source image`);
+    return image;
+  }
+  fail(`Railway status is missing environment ${environment}`);
+}
+
 export function matchingDeployment(
   deployments: RailwayDeployment[],
   image: string,
@@ -223,6 +260,32 @@ function deploymentListArgs(options: RailwayRolloutOptions): string[] {
     options.service,
     "--limit",
     "20",
+    "--json",
+  ];
+}
+
+function projectStatusArgs(options: RailwayRolloutOptions): string[] {
+  return [
+    "status",
+    "--project",
+    options.project,
+    "--environment",
+    options.environment,
+    "--json",
+  ];
+}
+
+function redeployArgs(options: RailwayRolloutOptions): string[] {
+  return [
+    "redeploy",
+    "--project",
+    options.project,
+    "--environment",
+    options.environment,
+    "--service",
+    options.service,
+    "--from-source",
+    "--yes",
     "--json",
   ];
 }
@@ -313,12 +376,21 @@ export async function rolloutRailwayImage(
   if (current?.status === "SUCCESS" && deploymentMatchesProfile(current, options.profile)) {
     deployment = current;
   } else {
-    const update = JSON.parse(await runJson(runner, updateArgs(options, sourceImage))) as {
-      data?: { serviceInstanceUpdate?: boolean };
-      errors?: unknown[];
-    };
-    if (update.errors?.length || update.data?.serviceInstanceUpdate !== true) {
-      fail("Railway rejected the service image/configuration update");
+    const configuredImage = configuredServiceImage(
+      await runJson(runner, projectStatusArgs(options)),
+      options.environment,
+      options.service,
+    );
+    if (configuredImage === sourceImage) {
+      await runJson(runner, redeployArgs(options));
+    } else {
+      const update = JSON.parse(await runJson(runner, updateArgs(options, sourceImage))) as {
+        data?: { serviceInstanceUpdate?: boolean };
+        errors?: unknown[];
+      };
+      if (update.errors?.length || update.data?.serviceInstanceUpdate !== true) {
+        fail("Railway rejected the service image/configuration update");
+      }
     }
     receipt.changed = true;
     await writeReceipt();
