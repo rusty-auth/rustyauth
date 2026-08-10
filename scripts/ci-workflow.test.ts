@@ -11,6 +11,9 @@ Deno.test("blocking CI is change-aware and exposes one stable result", () => {
   assertStringIncludes(ci, "name: Changed areas");
   assertStringIncludes(ci, "name: CI result");
   assertStringIncludes(ci, "cancel-in-progress: true");
+  assertStringIncludes(ci, "name: Resolve the last qualified comparison base");
+  assertStringIncludes(ci, "actions/workflows/ci.yml/runs?branch=main&status=success");
+  assertStringIncludes(ci, "BASE_SHA: ${{ steps.comparison.outputs.base_sha }}");
   assertStringIncludes(ci, "needs.changes.outputs.rust == 'true'");
   assertStringIncludes(ci, "needs.changes.outputs.console == 'true'");
   assertStringIncludes(ci, "scope=rustyauth-image");

@@ -6,6 +6,7 @@ on:
     branches: [main]
 
 permissions:
+  actions: read
   contents: read
 
 # A superseded PR run has no release value. Cancelling it also prevents several
@@ -40,10 +41,27 @@ jobs:
           deno-version: 2.9.3
       - name: Test the change classifier
         run: deno task ci:test
+      - name: Resolve the last qualified comparison base
+        id: comparison
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          if [ "${GITHUB_EVENT_NAME}" = "pull_request" ]; then
+            base_sha="${PR_BASE_SHA}"
+          else
+            base_sha="$(
+              gh api \
+                -H 'X-GitHub-Api-Version: 2022-11-28' \
+                "/repos/${GITHUB_REPOSITORY}/actions/workflows/ci.yml/runs?branch=main&status=success&event=push&per_page=20" \
+                --jq '.workflow_runs[0].head_sha // empty'
+            )"
+          fi
+          printf 'base_sha=%s\n' "${base_sha:-0000000000000000000000000000000000000000}" >> "${GITHUB_OUTPUT}"
       - name: Select required checks
         id: select
         env:
-          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+          BASE_SHA: ${{ steps.comparison.outputs.base_sha }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
         run: >-
           deno run --allow-env=BASE_SHA,HEAD_SHA --allow-run=git
