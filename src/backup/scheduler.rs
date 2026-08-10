@@ -1,7 +1,7 @@
 //! Scheduled backup worker: single-flight lease acquisition, run status
 //! bookkeeping and the shutdown-aware interval loop.
 
-use std::panic::AssertUnwindSafe;
+use std::{panic::AssertUnwindSafe, time::Duration};
 
 use anyhow::{Context, Result};
 use futures::FutureExt;
@@ -179,8 +179,24 @@ impl BackupStore {
         master_keys: KeyRing,
         mut shutdown: watch::Receiver<bool>,
     ) {
-        let mut interval =
-            tokio::time::interval(std::time::Duration::from_secs(self.interval_seconds));
+        // Railway and the supported rollout path create a verified recovery
+        // point before replacing the serving process. A fresh Tokio interval
+        // ticks immediately, which previously made the replacement take a
+        // second full backup seconds later. Besides wasting storage and I/O,
+        // that duplicate scan could dominate SableDB long enough to breach
+        // authentication latency gates. Resume the persisted schedule from the
+        // last successful backup; only a missing or overdue recovery point runs
+        // immediately.
+        self.hydrate_status(&store).await;
+        let initial_delay = {
+            let status = self.status.read().await;
+            scheduler_initial_delay_seconds(&status, now(), self.interval_seconds)
+        };
+        let period = Duration::from_secs(self.interval_seconds);
+        let mut interval = tokio::time::interval_at(
+            tokio::time::Instant::now() + Duration::from_secs(initial_delay),
+            period,
+        );
         interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
         loop {
             tokio::select! {
@@ -197,6 +213,18 @@ impl BackupStore {
             }
         }
     }
+}
+
+fn scheduler_initial_delay_seconds(
+    status: &BackupStatus,
+    current_time: u64,
+    interval_seconds: u64,
+) -> u64 {
+    let Some(last_success_at) = status.last_success_at else {
+        return 0;
+    };
+    let elapsed = current_time.saturating_sub(last_success_at);
+    interval_seconds.saturating_sub(elapsed.min(interval_seconds))
 }
 
 fn storage_profile_transition_pending(
@@ -216,6 +244,27 @@ fn storage_profile_transition_pending(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn scheduler_resumes_after_a_recent_success_instead_of_backing_up_twice() {
+        let status = BackupStatus {
+            last_success_at: Some(1_000),
+            ..BackupStatus::default()
+        };
+        assert_eq!(
+            scheduler_initial_delay_seconds(&status, 1_007, 21_600),
+            21_593
+        );
+        assert_eq!(scheduler_initial_delay_seconds(&status, 22_600, 21_600), 0);
+    }
+
+    #[test]
+    fn scheduler_runs_immediately_without_a_persisted_success() {
+        assert_eq!(
+            scheduler_initial_delay_seconds(&BackupStatus::default(), 1_000, 21_600),
+            0
+        );
+    }
 
     #[test]
     fn storage_profile_transitions_are_explicit_without_erasing_legacy_strict_failures() {

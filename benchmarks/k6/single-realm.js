@@ -4,6 +4,7 @@ import exec from "k6/execution";
 import { check } from "k6";
 import { SharedArray } from "k6/data";
 import { Counter, Rate, Trend } from "k6/metrics";
+import { utf8 } from "./utf8.js";
 
 const fixtures = new SharedArray(
   "single-realm-fixtures",
@@ -86,38 +87,44 @@ export function authenticatedRead() {
 }
 
 export async function signIn() {
-  const fixture = fixtureForIteration();
   const started = Date.now();
-  const optionsResponse = http.post(
-    `${__ENV.TARGET_URL}/v1/passkeys/authentication/options`,
-    JSON.stringify({ email: fixture.email }),
-    { headers: jsonHeaders, tags: { operation: "signin_options" } },
-  );
-  if (optionsResponse.status !== 200) {
-    recordSignInFailure(optionsResponse, started, "options");
-    return;
-  }
-
-  let ceremony;
+  let observedRequestDuration = 0;
   try {
-    ceremony = optionsResponse.json();
-  } catch (_) {
-    signInFailures.add(true);
-    signInDuration.add(Date.now() - started);
-    return;
-  }
+    const fixture = fixtureForIteration();
+    const optionsResponse = http.post(
+      `${__ENV.TARGET_URL}/v1/passkeys/authentication/options`,
+      JSON.stringify({ email: fixture.email }),
+      { headers: jsonHeaders, tags: { operation: "signin_options" } },
+    );
+    observedRequestDuration += optionsResponse.timings.duration;
+    if (optionsResponse.status !== 200) {
+      recordSignInFailure(optionsResponse, started, observedRequestDuration, "options");
+      return;
+    }
 
-  const assertion = await webauthnAssertion(fixture, ceremony.options);
-  const verifyResponse = http.post(
-    `${__ENV.TARGET_URL}/v1/passkeys/authentication/verify`,
-    JSON.stringify({ ceremonyId: ceremony.ceremonyId, response: assertion }),
-    { headers: jsonHeaders, tags: { operation: "signin_verify" } },
-  );
-  const failed = verifyResponse.status !== 200;
-  signInDuration.add(Date.now() - started);
-  signInFailures.add(failed);
-  if (verifyResponse.status >= 500) unplanned5xx.add(1);
-  check(verifyResponse, { "passkey sign-in returned 200": (value) => value.status === 200 });
+    const ceremony = optionsResponse.json();
+    const assertion = await webauthnAssertion(fixture, ceremony.options);
+    const verifyResponse = http.post(
+      `${__ENV.TARGET_URL}/v1/passkeys/authentication/verify`,
+      JSON.stringify({ ceremonyId: ceremony.ceremonyId, response: assertion }),
+      { headers: jsonHeaders, tags: { operation: "signin_verify" } },
+    );
+    observedRequestDuration += verifyResponse.timings.duration;
+    const failed = verifyResponse.status !== 200;
+    signInDuration.add(signInElapsed(started, observedRequestDuration));
+    signInFailures.add(failed);
+    if (verifyResponse.status >= 500) unplanned5xx.add(1);
+    check(verifyResponse, { "passkey sign-in returned 200": (value) => value.status === 200 });
+  } catch (error) {
+    // Runner-side WebAuthn and fixture failures must be threshold failures too.
+    // Without a Rate sample, k6 considers an empty sign-in metric successful.
+    signInFailures.add(true);
+    signInDuration.add(signInElapsed(started, observedRequestDuration));
+    check(error, { "passkey assertion completed": () => false });
+    if (exec.scenario.iterationInTest < 3) {
+      console.error(`passkey assertion failed: ${error}`);
+    }
+  }
 }
 
 function fixtureForIteration() {
@@ -126,11 +133,15 @@ function fixtureForIteration() {
   return fixtures[index];
 }
 
-function recordSignInFailure(response, started, stage) {
+function recordSignInFailure(response, started, observedRequestDuration, stage) {
   signInFailures.add(true);
-  signInDuration.add(Date.now() - started);
+  signInDuration.add(signInElapsed(started, observedRequestDuration));
   if (response.status >= 500) unplanned5xx.add(1);
   check(response, { [`passkey ${stage} returned 200`]: (value) => value.status === 200 });
+}
+
+function signInElapsed(started, observedRequestDuration) {
+  return Math.max(1, Date.now() - started, observedRequestDuration);
 }
 
 async function webauthnAssertion(fixture, options) {
@@ -170,10 +181,6 @@ async function webauthnAssertion(fixture, options) {
     },
     clientExtensionResults: {},
   };
-}
-
-function utf8(value) {
-  return new TextEncoder().encode(value);
 }
 
 function concat(...parts) {

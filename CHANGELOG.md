@@ -14,6 +14,12 @@ supported `1.x` contract.
 
 ### Fixed
 
+- Encode WebAuthn benchmark payloads without unavailable browser globals and count every runner-side
+  ceremony error as a threshold failure, preventing an empty passkey measurement from being accepted as
+  successful.
+- Resume the scheduled-backup interval from the most recent persisted success. A verified pre-deploy backup
+  no longer triggers a duplicate full startup backup seconds later, avoiding datastore contention and severe
+  long-tail authentication latency during an otherwise healthy rollout.
 - Stop archiving obsolete SableDB write-ahead logs on supported single-writer realms. The prior 24-hour WAL
   retention could turn a megabyte-scale account dataset into tens of gigabytes of volume usage; image
   qualification now replays production-shaped transactions, restarts the database, verifies durability and

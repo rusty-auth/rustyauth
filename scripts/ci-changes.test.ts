@@ -71,6 +71,8 @@ Deno.test("benchmark runner changes do not rebuild production images or product 
     "Dockerfile.benchmark",
     "src/bin/rustyauth-benchmark.rs",
     "benchmarks/k6/single-realm.js",
+    "benchmarks/k6/utf8.js",
+    "benchmarks/k6/utf8.test.ts",
     "benchmarks/run-starter-baseline.sh",
     "railway.benchmark.json",
   ]);
