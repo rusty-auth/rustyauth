@@ -13,6 +13,12 @@ keywords = ["authentication", "passkeys", "webauthn", "sabledb", "jwt"]
 categories = ["authentication", "web-programming::http-server"]
 publish = false
 
+[features]
+default = []
+# Compiles deterministic synthetic WebAuthn tooling used only by the isolated
+# benchmark runner. The production server image never enables this feature.
+benchmark-tools = ["dep:ciborium"]
+
 [dependencies]
 aes-gcm = "0.11"
 anyhow = "1"
@@ -38,6 +44,7 @@ aws-sdk-s3 = { version = "1.141", default-features = false, features = [
 axum = "0.8"
 bytes = "1"
 base64 = "0.23"
+ciborium = { version = "0.2", optional = true }
 # ConnectRPC 0.8.1's generated/runtime traits are bound to Buffa 0.8. A direct 0.9 dependency creates two
 # incompatible Message implementations. Keep this exact until ConnectRPC publishes its 0.9-compatible work.
 buffa = "=0.8.1"
@@ -84,6 +91,11 @@ protoc-bin-vendored = "3"
 ciborium = "0.2"
 connectrpc = { version = "0.8.1", features = ["client"] }
 tower = { version = "0.5", features = ["util"] }
+
+[[bin]]
+name = "rustyauth-benchmark"
+path = "src/bin/rustyauth-benchmark.rs"
+required-features = ["benchmark-tools"]
 
 [profile.release]
 codegen-units = 1

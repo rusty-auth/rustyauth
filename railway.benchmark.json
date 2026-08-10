@@ -1,0 +1,25 @@
+{
+  "$schema": "https://railway.app/railway.schema.json",
+  "build": {
+    "builder": "DOCKERFILE",
+    "dockerfilePath": "Dockerfile.benchmark",
+    "watchPatterns": [
+      "/Dockerfile.benchmark",
+      "/railway.benchmark.json",
+      "/Cargo.toml",
+      "/Cargo.lock",
+      "/build.rs",
+      "/proto/**",
+      "/src/**",
+      "/benchmarks/**",
+      "/rustyauth.example.yaml",
+      "/rustyauth.fleet.example.yaml"
+    ]
+  },
+  "deploy": {
+    "numReplicas": 1,
+    "restartPolicyType": "ON_FAILURE",
+    "restartPolicyMaxRetries": 3,
+    "startCommand": "sleep infinity"
+  }
+}

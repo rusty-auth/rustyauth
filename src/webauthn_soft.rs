@@ -1,9 +1,10 @@
-//! Software WebAuthn authenticator for tests.
+//! Software WebAuthn authenticator for tests and isolated synthetic benchmarks.
 //!
 //! Produces the exact bytes a browser hands back from `navigator.credentials`,
 //! so registration and authentication ceremonies can be driven end to end
 //! against the real `webauthn-rs` verifier instead of being asserted only at
-//! their edges. Test-only: this module is never compiled into the binary.
+//! their edges. It is absent from normal builds and available only to tests or
+//! the explicit `benchmark-tools` binary feature.
 
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use ciborium::value::{Integer, Value as Cbor};
@@ -58,6 +59,49 @@ impl SoftAuthenticator {
             credential_id,
             next_counter: 1,
         }
+    }
+
+    /// Creates a reproducible synthetic credential for benchmark fixtures.
+    ///
+    /// This constructor is compiled only for tests or with `benchmark-tools`;
+    /// production server images cannot derive these credentials. The seed is
+    /// intentionally synthetic and must never be reused for a real account.
+    pub fn from_seed(seed: &str, index: u64) -> Self {
+        let mut attempt = 0_u64;
+        let key = loop {
+            let digest = Sha256::digest(
+                format!("rustyauth-benchmark-key\0{seed}\0{index}\0{attempt}").as_bytes(),
+            );
+            if let Ok(key) = SigningKey::from_slice(&digest) {
+                break key;
+            }
+            attempt = attempt.saturating_add(1);
+        };
+        let credential_id =
+            Sha256::digest(format!("rustyauth-benchmark-credential\0{seed}\0{index}").as_bytes())
+                .to_vec();
+        Self {
+            key,
+            credential_id,
+            next_counter: 1,
+        }
+    }
+
+    /// Exports the synthetic private key in the standard JWK form accepted by
+    /// k6 WebCrypto. The value belongs only in the isolated runner volume.
+    pub fn private_jwk(&self) -> Value {
+        let point = self.key.verifying_key().to_sec1_point(false);
+        let x = point.x().expect("uncompressed point has an x coordinate");
+        let y = point.y().expect("uncompressed point has a y coordinate");
+        json!({
+            "kty": "EC",
+            "crv": "P-256",
+            "x": URL_SAFE_NO_PAD.encode(x),
+            "y": URL_SAFE_NO_PAD.encode(y),
+            "d": URL_SAFE_NO_PAD.encode(self.key.to_bytes()),
+            "key_ops": ["sign"],
+            "ext": true,
+        })
     }
 
     pub fn credential_id(&self) -> &[u8] {
@@ -376,6 +420,19 @@ mod tests {
             .unwrap();
 
         assert!(!result.user_verified());
+    }
+
+    #[test]
+    fn benchmark_credentials_are_reproducible_and_separated_by_index() {
+        let first = SoftAuthenticator::from_seed("run-a", 7);
+        let repeated = SoftAuthenticator::from_seed("run-a", 7);
+        let next = SoftAuthenticator::from_seed("run-a", 8);
+
+        assert_eq!(first.credential_id(), repeated.credential_id());
+        assert_eq!(first.private_jwk(), repeated.private_jwk());
+        assert_ne!(first.credential_id(), next.credential_id());
+        assert_ne!(first.private_jwk(), next.private_jwk());
+        assert_eq!(first.private_jwk()["key_ops"], serde_json::json!(["sign"]));
     }
 
     #[test]

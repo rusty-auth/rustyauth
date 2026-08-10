@@ -48,6 +48,10 @@ catalogue update publishes the marketing page and causes the next dashboard imag
 A runner must never push an unreviewed capacity claim directly to `main`; the single-realm programme remains
 `awaiting-baseline` until that runner and its first report have both passed review.
 
+The maintained runner, synthetic fixture boundary and exact Starter ladder are documented in
+[`benchmarks/README.md`](../benchmarks/README.md). The runner is a fourth service only in the dedicated
+benchmark project; it is intentionally absent from the installable Railway template.
+
 ## User-capacity model
 
 An idle authenticated session and an actively requesting user are different capacity dimensions. Reports

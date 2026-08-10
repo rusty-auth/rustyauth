@@ -27,8 +27,8 @@ pub mod rpc;
 pub mod service_account_rpc;
 pub mod store;
 pub mod telemetry;
-#[cfg(test)]
-mod webauthn_soft;
+#[cfg(any(test, feature = "benchmark-tools"))]
+pub mod webauthn_soft;
 pub mod webhook;
 mod webhook_rpc;
 

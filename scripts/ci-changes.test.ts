@@ -66,6 +66,24 @@ Deno.test("benchmark catalogue changes rebuild only its two published surfaces",
   assertEquals(selected.infrastructure, false);
 });
 
+Deno.test("benchmark runner changes do not rebuild production images or product surfaces", () => {
+  const selected = classifyCiChanges([
+    "Dockerfile.benchmark",
+    "benchmarks/k6/single-realm.js",
+    "benchmarks/run-starter-baseline.sh",
+    "railway.benchmark.json",
+  ]);
+  assertEquals(selected.policy, true);
+  assertEquals(selected.supply_chain, true);
+  assertEquals(selected.site, false);
+  assertEquals(selected.console, false);
+  assertEquals(selected.rust, false);
+  assertEquals(selected.recovery, false);
+  assertEquals(selected.api_image, false);
+  assertEquals(selected.dashboard_image, false);
+  assertEquals(selected.sabledb_image, false);
+});
+
 Deno.test("dependency and protocol changes fan out to every consumer", () => {
   const selected = classifyCiChanges(["Cargo.lock", "proto/rustyauth/fleet/v1/fleet.proto"]);
   assertEquals(selected.protocol, true);
