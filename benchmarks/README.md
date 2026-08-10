@@ -43,7 +43,9 @@ and verifies the final account/session cardinalities before the fixture set can 
 Each run renews only the synthetic sessions' idle and absolute boundaries before preflight, then validates the
 first and last fixtures through the production session model. This preserves the expensive account and passkey
 dataset between monthly runs without accepting expired session keys as valid workload fixtures. The runner's
-`BENCHMARK_SESSION_IDLE_SECONDS` must exactly match the realm's `AUTH_SESSION_IDLE_SECONDS`.
+`BENCHMARK_SESSION_IDLE_SECONDS` must exactly match the realm's `AUTH_SESSION_IDLE_SECONDS`. If an earlier
+preflight caused the API to delete an idle-expired synthetic session, the runner reconstructs only that
+deterministic session from its persisted account and single registered passkey and records the repair count.
 
 The runner image is built from `Dockerfile.benchmark`, stays private, has no public domain and connects to
 SableDB through Railway private networking. k6 alone calls the public target domain so gateway latency is

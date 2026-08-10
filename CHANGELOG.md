@@ -18,7 +18,8 @@ supported `1.x` contract.
   ceremony error as a threshold failure, preventing an empty passkey measurement from being accepted as
   successful.
 - Renew retained synthetic benchmark sessions immediately before preflight and validate boundary fixtures
-  through the production session model, preventing idle-expired keys from being reported as valid sessions.
+  through the production session model. Missing idle-expired synthetic sessions are reconstructed from their
+  deterministic account/passkey fixture and reported, preventing expired keys from being treated as valid.
 - Resume the scheduled-backup interval from the most recent persisted success. A verified pre-deploy backup
   no longer triggers a duplicate full startup backup seconds later, avoiding datastore contention and severe
   long-tail authentication latency during an otherwise healthy rollout.

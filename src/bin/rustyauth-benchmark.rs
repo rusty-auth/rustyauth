@@ -61,6 +61,7 @@ struct SeedSummary {
 #[serde(rename_all = "camelCase")]
 struct SessionRefreshSummary {
     refreshed_sessions: u64,
+    recreated_sessions: u64,
     refreshed_at: u64,
     idle_seconds: u64,
     absolute_seconds: u64,
@@ -387,13 +388,14 @@ async fn refresh_sessions() -> Result<()> {
     let mut raw = redis.clone();
     let accounts = scan_count(&mut raw, "auth:user:*").await?;
     let sessions = scan_count(&mut raw, "auth:session:*").await?;
-    if accounts != account_count || sessions != account_count {
+    if accounts != account_count || sessions > account_count {
         bail!(
-            "benchmark refresh requires exactly {account_count} accounts and sessions; found {accounts} accounts and {sessions} sessions"
+            "benchmark refresh requires exactly {account_count} accounts and no extra sessions; found {accounts} accounts and {sessions} sessions"
         );
     }
 
     let current = now();
+    let mut recreated_sessions = 0_u64;
     for batch_start in (0..account_count).step_by(SEED_BATCH_SIZE as usize) {
         let batch_end = account_count.min(batch_start.saturating_add(SEED_BATCH_SIZE));
         let keys: Vec<_> = (batch_start..batch_end)
@@ -415,9 +417,14 @@ async fn refresh_sessions() -> Result<()> {
         write_pipeline.atomic();
         for (offset, (key, value)) in keys.iter().zip(values).enumerate() {
             let index = batch_start.saturating_add(offset as u64);
-            let value = value.with_context(|| format!("synthetic session {index} is missing"))?;
-            let mut session: Session = serde_json::from_str(&value)
-                .with_context(|| format!("decode synthetic session {index}"))?;
+            let mut session = match value {
+                Some(value) => serde_json::from_str(&value)
+                    .with_context(|| format!("decode synthetic session {index}"))?,
+                None => {
+                    recreated_sessions = recreated_sessions.saturating_add(1);
+                    recreate_session(&mut raw, &seed, index, current).await?
+                }
+            };
             if session.id != deterministic_uuid("session", &seed, index)
                 || session.user_id != deterministic_uuid("user", &seed, index)
             {
@@ -456,12 +463,45 @@ async fn refresh_sessions() -> Result<()> {
         "{}",
         serde_json::to_string_pretty(&SessionRefreshSummary {
             refreshed_sessions: account_count,
+            recreated_sessions,
             refreshed_at: current,
             idle_seconds,
             absolute_seconds: SESSION_SECONDS,
         })?
     );
     Ok(())
+}
+
+async fn recreate_session(
+    redis: &mut redis::aio::ConnectionManager,
+    seed: &str,
+    index: u64,
+    current: u64,
+) -> Result<Session> {
+    let user_id = deterministic_uuid("user", seed, index);
+    let value: Option<String> = redis::cmd("GET")
+        .arg(format!("auth:user:{user_id}"))
+        .query_async(redis)
+        .await
+        .with_context(|| format!("read synthetic account {index} for session recovery"))?;
+    let user: User = serde_json::from_str(
+        &value.with_context(|| format!("synthetic account {index} is missing"))?,
+    )
+    .with_context(|| format!("decode synthetic account {index}"))?;
+    if user.id != user_id || user.passkeys.len() != 1 {
+        bail!("synthetic account {index} cannot reconstruct its passkey session");
+    }
+    Ok(Session {
+        id: deterministic_uuid("session", seed, index),
+        user_id,
+        auth_method: "passkey".to_owned(),
+        current_credential_id: Some(user.passkeys[0].id.clone()),
+        session_version: user.session_version,
+        created_at: current,
+        step_up_at: Some(current),
+        last_seen_at: current,
+        absolute_expires_at: current.saturating_add(SESSION_SECONDS),
+    })
 }
 
 fn refresh_session(session: &mut Session, current: u64) {
