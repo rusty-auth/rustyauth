@@ -40,6 +40,11 @@ the production storage contract without turning 10,000-account preparation into 
 durability barriers. Seeding refuses to run when identity/event records or an active writer lease are present,
 and verifies the final account/session cardinalities before the fixture set can be used by k6.
 
+Each run renews only the synthetic sessions' idle and absolute boundaries before preflight, then validates the
+first and last fixtures through the production session model. This preserves the expensive account and passkey
+dataset between monthly runs without accepting expired session keys as valid workload fixtures. The runner's
+`BENCHMARK_SESSION_IDLE_SECONDS` must exactly match the realm's `AUTH_SESSION_IDLE_SECONDS`.
+
 The runner image is built from `Dockerfile.benchmark`, stays private, has no public domain and connects to
 SableDB through Railway private networking. k6 alone calls the public target domain so gateway latency is
 included. Raw run evidence is downloaded, sanitised, checksummed and reviewed before the catalogue is changed.

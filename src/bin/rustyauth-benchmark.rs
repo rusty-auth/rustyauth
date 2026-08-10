@@ -57,14 +57,26 @@ struct SeedSummary {
     origin: String,
 }
 
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct SessionRefreshSummary {
+    refreshed_sessions: u64,
+    refreshed_at: u64,
+    idle_seconds: u64,
+    absolute_seconds: u64,
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
     let command = env::args().nth(1).unwrap_or_else(|| "seed".to_owned());
     match command.as_str() {
         "seed" => seed().await,
+        "refresh-sessions" => refresh_sessions().await,
         "count" => count().await,
         "reset" => reset().await,
-        other => bail!("unknown benchmark command {other:?}; expected seed, count, or reset"),
+        other => bail!(
+            "unknown benchmark command {other:?}; expected seed, refresh-sessions, count, or reset"
+        ),
     }
 }
 
@@ -357,6 +369,106 @@ async fn count() -> Result<()> {
     Ok(())
 }
 
+async fn refresh_sessions() -> Result<()> {
+    require_isolated_project()?;
+    let account_count = optional_u64("BENCHMARK_ACCOUNTS", DEFAULT_ACCOUNTS)?;
+    let idle_seconds = required_u64("BENCHMARK_SESSION_IDLE_SECONDS")?;
+    if account_count == 0 || account_count > 1_000_000 {
+        bail!("BENCHMARK_ACCOUNTS must be between 1 and 1,000,000");
+    }
+    if idle_seconds == 0 || idle_seconds >= SESSION_SECONDS {
+        bail!(
+            "BENCHMARK_SESSION_IDLE_SECONDS must be positive and shorter than the benchmark absolute session lifetime"
+        );
+    }
+    let seed = required("BENCHMARK_SEED")?;
+    let tenant_id = required("AUTH_TENANT_ID")?;
+    let redis = connection().await?;
+    let mut raw = redis.clone();
+    let accounts = scan_count(&mut raw, "auth:user:*").await?;
+    let sessions = scan_count(&mut raw, "auth:session:*").await?;
+    if accounts != account_count || sessions != account_count {
+        bail!(
+            "benchmark refresh requires exactly {account_count} accounts and sessions; found {accounts} accounts and {sessions} sessions"
+        );
+    }
+
+    let current = now();
+    for batch_start in (0..account_count).step_by(SEED_BATCH_SIZE as usize) {
+        let batch_end = account_count.min(batch_start.saturating_add(SEED_BATCH_SIZE));
+        let keys: Vec<_> = (batch_start..batch_end)
+            .map(|index| session_key(&deterministic_session_token(&seed, index)))
+            .collect();
+        let mut read_pipeline = redis::pipe();
+        for key in &keys {
+            read_pipeline.cmd("GET").arg(key);
+        }
+        let values: Vec<Option<String>> = read_pipeline
+            .query_async(&mut raw)
+            .await
+            .with_context(|| format!("read synthetic session batch {batch_start}..{batch_end}"))?;
+        if values.len() != keys.len() {
+            bail!("SableDB returned an incomplete synthetic session batch");
+        }
+
+        let mut write_pipeline = redis::pipe();
+        write_pipeline.atomic();
+        for (offset, (key, value)) in keys.iter().zip(values).enumerate() {
+            let index = batch_start.saturating_add(offset as u64);
+            let value = value.with_context(|| format!("synthetic session {index} is missing"))?;
+            let mut session: Session = serde_json::from_str(&value)
+                .with_context(|| format!("decode synthetic session {index}"))?;
+            if session.id != deterministic_uuid("session", &seed, index)
+                || session.user_id != deterministic_uuid("user", &seed, index)
+            {
+                bail!("synthetic session {index} does not match its deterministic fixture");
+            }
+            refresh_session(&mut session, current);
+            write_pipeline
+                .cmd("SETEX")
+                .arg(key)
+                .arg(SESSION_SECONDS)
+                .arg(serde_json::to_string(&session)?)
+                .ignore();
+        }
+        write_pipeline
+            .query_async::<()>(&mut raw)
+            .await
+            .with_context(|| {
+                format!("refresh synthetic session batch {batch_start}..{batch_end}")
+            })?;
+    }
+
+    // Hydrate boundary fixtures through the production session model so the
+    // refresh cannot report success with a missing account, revoked passkey or
+    // mismatched session version.
+    let store = Store::new(redis, tenant_id);
+    for index in [0, account_count - 1] {
+        let token = deterministic_session_token(&seed, index);
+        store
+            .session(&token, idle_seconds)
+            .await
+            .with_context(|| format!("validate refreshed synthetic session {index}"))?
+            .with_context(|| format!("refreshed synthetic session {index} is invalid"))?;
+    }
+
+    println!(
+        "{}",
+        serde_json::to_string_pretty(&SessionRefreshSummary {
+            refreshed_sessions: account_count,
+            refreshed_at: current,
+            idle_seconds,
+            absolute_seconds: SESSION_SECONDS,
+        })?
+    );
+    Ok(())
+}
+
+fn refresh_session(session: &mut Session, current: u64) {
+    session.last_seen_at = current;
+    session.absolute_expires_at = current.saturating_add(SESSION_SECONDS);
+}
+
 async fn reset() -> Result<()> {
     require_isolated_project()?;
     if required("BENCHMARK_RESET_CONFIRM")? != RESET_CONFIRMATION {
@@ -456,6 +568,12 @@ fn optional_u64(name: &str, default: u64) -> Result<u64> {
     }
 }
 
+fn required_u64(name: &str) -> Result<u64> {
+    required(name)?
+        .parse()
+        .with_context(|| format!("{name} must be an unsigned integer"))
+}
+
 fn deterministic_uuid(domain: &str, seed: &str, index: u64) -> Uuid {
     let digest =
         Sha256::digest(format!("rustyauth-benchmark-{domain}\0{seed}\0{index}").as_bytes());
@@ -531,5 +649,28 @@ mod tests {
         assert_eq!(first, deterministic_session_token("seed", 7));
         assert_ne!(first, deterministic_session_token("seed", 8));
         assert_eq!(first.len(), 43);
+    }
+
+    #[test]
+    fn session_refresh_renews_idle_and_absolute_boundaries_only() {
+        let credential_id = "credential-a".to_owned();
+        let mut session = Session {
+            id: Uuid::new_v4(),
+            user_id: Uuid::new_v4(),
+            auth_method: "passkey".to_owned(),
+            current_credential_id: Some(credential_id.clone()),
+            session_version: 7,
+            created_at: 100,
+            step_up_at: Some(100),
+            last_seen_at: 100,
+            absolute_expires_at: 200,
+        };
+        refresh_session(&mut session, 1_000);
+        assert_eq!(session.last_seen_at, 1_000);
+        assert_eq!(session.absolute_expires_at, 1_000 + SESSION_SECONDS);
+        assert_eq!(session.created_at, 100);
+        assert_eq!(session.step_up_at, Some(100));
+        assert_eq!(session.current_credential_id, Some(credential_id));
+        assert_eq!(session.session_version, 7);
     }
 }

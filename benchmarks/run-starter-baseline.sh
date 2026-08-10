@@ -8,6 +8,7 @@ set -eu
 run_dir="/data/runs/${RUN_ID}"
 mkdir -p "${run_dir}"
 
+/usr/local/bin/rustyauth-benchmark refresh-sessions > "${run_dir}/session-refresh.json"
 /usr/local/bin/rustyauth-benchmark count > "${run_dir}/dataset.json"
 
 run_k6() {

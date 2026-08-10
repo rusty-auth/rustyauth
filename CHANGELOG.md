@@ -17,6 +17,8 @@ supported `1.x` contract.
 - Encode WebAuthn benchmark payloads without unavailable browser globals and count every runner-side
   ceremony error as a threshold failure, preventing an empty passkey measurement from being accepted as
   successful.
+- Renew retained synthetic benchmark sessions immediately before preflight and validate boundary fixtures
+  through the production session model, preventing idle-expired keys from being reported as valid sessions.
 - Resume the scheduled-backup interval from the most recent persisted success. A verified pre-deploy backup
   no longer triggers a duplicate full startup backup seconds later, avoiding datastore contention and severe
   long-tail authentication latency during an otherwise healthy rollout.
