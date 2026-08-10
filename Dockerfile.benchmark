@@ -11,8 +11,8 @@ COPY Cargo.toml Cargo.lock build.rs ./
 COPY proto ./proto
 COPY rustyauth.example.yaml rustyauth.fleet.example.yaml ./
 COPY src ./src
-RUN --mount=type=cache,id=rustyauth-benchmark-cargo-registry,target=/usr/local/cargo/registry \
-  --mount=type=cache,id=rustyauth-benchmark-target,target=/src/target \
+RUN --mount=type=cache,id=s/e0d03bd6-31ea-4575-9026-b825ffff24e2-/usr/local/cargo/registry,target=/usr/local/cargo/registry \
+  --mount=type=cache,id=s/e0d03bd6-31ea-4575-9026-b825ffff24e2-/src/target,target=/src/target \
   cargo build --locked --release --features benchmark-tools --bin rustyauth-benchmark \
   && cp /src/target/release/rustyauth-benchmark /usr/local/bin/rustyauth-benchmark
 
