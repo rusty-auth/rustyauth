@@ -535,8 +535,15 @@ impl BackupSnapshot {
                         bail!("backup contains duplicate Fleet audit records");
                     }
                 }
-                "event-min-sequence"
-                | "invitation"
+                "event-min-sequence" => {
+                    index.event_min_sequence_record = Some(
+                        record
+                            .value
+                            .parse::<u64>()
+                            .context("backup minimum event sequence record is invalid")?,
+                    );
+                }
+                "invitation"
                 | "invitation-code"
                 | "webhook"
                 | "webhook-cursor"
@@ -572,17 +579,18 @@ impl BackupSnapshot {
     }
 
     fn validate_event_sequence(&self, index: &SnapshotIndex) -> Result<()> {
-        if self.manifest.event_sequence > self.records.len() as u64 {
-            bail!("backup event sequence exceeds its bounded record count");
-        }
         if index.event_sequence_record.unwrap_or_default() != self.manifest.event_sequence
             || (self.manifest.event_sequence > 0 && index.event_sequence_record.is_none())
         {
             bail!("backup event sequence record does not match its manifest");
         }
-        let expected_events: BTreeSet<u64> = (1..=self.manifest.event_sequence).collect();
+        let minimum = index.event_min_sequence_record.unwrap_or(1);
+        if minimum == 0 || minimum > self.manifest.event_sequence.saturating_add(1) {
+            bail!("backup minimum event sequence is outside the retained window");
+        }
+        let expected_events: BTreeSet<u64> = (minimum..=self.manifest.event_sequence).collect();
         if index.event_numbers != expected_events {
-            bail!("backup event sequence is not contiguous");
+            bail!("backup retained event sequence is not contiguous");
         }
         Ok(())
     }
@@ -615,6 +623,7 @@ struct SnapshotIndex {
     realm_fleet_grant_secrets: HashMap<String, Uuid>,
     event_numbers: BTreeSet<u64>,
     event_sequence_record: Option<u64>,
+    event_min_sequence_record: Option<u64>,
     keyset_count: u8,
     fleet_organizations: HashMap<Uuid, FleetOrganizationRecord>,
     fleet_organization_slugs: HashMap<String, Uuid>,
@@ -1329,6 +1338,89 @@ mod tests {
             BackupSnapshot::decode_binary_v3(&encoded).unwrap(),
             snapshot
         );
+    }
+
+    #[test]
+    fn retained_event_window_is_valid_after_prefix_pruning() {
+        let mut records = vec![
+            StoreRecord {
+                key: "auth:event-min-sequence".into(),
+                value: "100".into(),
+                expires_at: None,
+            },
+            StoreRecord {
+                key: "auth:event-sequence".into(),
+                value: "102".into(),
+                expires_at: None,
+            },
+            StoreRecord {
+                key: KEYSET_KEY.into(),
+                value: keyset_value(),
+                expires_at: None,
+            },
+        ];
+        for sequence in 100..=102 {
+            let event = AuthEvent {
+                sequence,
+                id: Uuid::new_v4(),
+                tenant_id: "tenant-a".into(),
+                event_type: "session.validated".into(),
+                subject: None,
+                occurred_at: 1_000,
+                data: serde_json::json!({}),
+            };
+            records.push(StoreRecord {
+                key: format!("auth:event:{sequence}"),
+                value: serde_json::to_string(&event).unwrap(),
+                expires_at: None,
+            });
+        }
+        records.sort_unstable_by(|left, right| left.key.cmp(&right.key));
+
+        let snapshot = BackupSnapshot::from_records("tenant-a", 1_000, records).unwrap();
+        snapshot.validate("tenant-a").unwrap();
+    }
+
+    #[test]
+    fn retained_event_window_rejects_an_internal_gap() {
+        let mut records = vec![
+            StoreRecord {
+                key: "auth:event-min-sequence".into(),
+                value: "100".into(),
+                expires_at: None,
+            },
+            StoreRecord {
+                key: "auth:event-sequence".into(),
+                value: "102".into(),
+                expires_at: None,
+            },
+            StoreRecord {
+                key: KEYSET_KEY.into(),
+                value: keyset_value(),
+                expires_at: None,
+            },
+        ];
+        for sequence in [100, 102] {
+            let event = AuthEvent {
+                sequence,
+                id: Uuid::new_v4(),
+                tenant_id: "tenant-a".into(),
+                event_type: "session.validated".into(),
+                subject: None,
+                occurred_at: 1_000,
+                data: serde_json::json!({}),
+            };
+            records.push(StoreRecord {
+                key: format!("auth:event:{sequence}"),
+                value: serde_json::to_string(&event).unwrap(),
+                expires_at: None,
+            });
+        }
+        records.sort_unstable_by(|left, right| left.key.cmp(&right.key));
+
+        let error = BackupSnapshot::from_records("tenant-a", 1_000, records)
+            .expect_err("a gap inside the retained event window must fail");
+        assert!(error.to_string().contains("retained event sequence"));
     }
 
     #[test]
