@@ -61,6 +61,7 @@ struct SeedSummary {
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct SessionRefreshSummary {
+    validated_sessions: u64,
     refreshed_sessions: u64,
     recreated_sessions: u64,
     pruned_sessions: u64,
@@ -398,6 +399,7 @@ async fn refresh_sessions() -> Result<()> {
     let pruned_sessions = prune_extra_synthetic_sessions(&mut raw, &seed, account_count).await?;
 
     let current = now();
+    let mut refreshed_sessions = 0_u64;
     let mut recreated_sessions = 0_u64;
     for batch_start in (0..account_count).step_by(SEED_BATCH_SIZE as usize) {
         let batch_end = account_count.min(batch_start.saturating_add(SEED_BATCH_SIZE));
@@ -418,14 +420,19 @@ async fn refresh_sessions() -> Result<()> {
 
         let mut write_pipeline = redis::pipe();
         write_pipeline.atomic();
+        let mut batch_writes = 0_u64;
         for (offset, (key, value)) in keys.iter().zip(values).enumerate() {
             let index = batch_start.saturating_add(offset as u64);
-            let mut session = match value {
+            let (mut session, recreated) = match value {
                 Some(value) => serde_json::from_str(&value)
-                    .with_context(|| format!("decode synthetic session {index}"))?,
+                    .with_context(|| format!("decode synthetic session {index}"))
+                    .map(|session| (session, false))?,
                 None => {
                     recreated_sessions = recreated_sessions.saturating_add(1);
-                    recreate_session(&mut raw, &seed, index, current).await?
+                    (
+                        recreate_session(&mut raw, &seed, index, current).await?,
+                        true,
+                    )
                 }
             };
             if session.id != deterministic_uuid("session", &seed, index)
@@ -433,7 +440,12 @@ async fn refresh_sessions() -> Result<()> {
             {
                 bail!("synthetic session {index} does not match its deterministic fixture");
             }
+            if !recreated && !session_needs_refresh(&session, current, idle_seconds) {
+                continue;
+            }
             refresh_session(&mut session, current);
+            refreshed_sessions = refreshed_sessions.saturating_add(1);
+            batch_writes = batch_writes.saturating_add(1);
             write_pipeline
                 .cmd("SETEX")
                 .arg(key)
@@ -441,12 +453,14 @@ async fn refresh_sessions() -> Result<()> {
                 .arg(serde_json::to_string(&session)?)
                 .ignore();
         }
-        write_pipeline
-            .query_async::<()>(&mut raw)
-            .await
-            .with_context(|| {
-                format!("refresh synthetic session batch {batch_start}..{batch_end}")
-            })?;
+        if batch_writes != 0 {
+            write_pipeline
+                .query_async::<()>(&mut raw)
+                .await
+                .with_context(|| {
+                    format!("refresh synthetic session batch {batch_start}..{batch_end}")
+                })?;
+        }
     }
 
     let final_sessions = scan_count(&mut raw, "auth:session:*").await?;
@@ -472,7 +486,8 @@ async fn refresh_sessions() -> Result<()> {
     println!(
         "{}",
         serde_json::to_string_pretty(&SessionRefreshSummary {
-            refreshed_sessions: account_count,
+            validated_sessions: account_count,
+            refreshed_sessions,
             recreated_sessions,
             pruned_sessions,
             refreshed_at: current,
@@ -585,6 +600,16 @@ async fn recreate_session(
 fn refresh_session(session: &mut Session, current: u64) {
     session.last_seen_at = current;
     session.absolute_expires_at = current.saturating_add(SESSION_SECONDS);
+}
+
+fn session_needs_refresh(session: &Session, current: u64, idle_seconds: u64) -> bool {
+    let minimum_idle_remaining = idle_seconds / 2;
+    session
+        .last_seen_at
+        .saturating_add(idle_seconds)
+        .saturating_sub(current)
+        < minimum_idle_remaining
+        || session.absolute_expires_at.saturating_sub(current) < idle_seconds
 }
 
 async fn reset() -> Result<()> {
@@ -814,6 +839,23 @@ mod tests {
         assert_eq!(session.step_up_at, Some(100));
         assert_eq!(session.current_credential_id, Some(credential_id));
         assert_eq!(session.session_version, 7);
+    }
+
+    #[test]
+    fn fresh_sessions_are_validated_without_creating_compaction_work() {
+        let session = Session {
+            id: Uuid::new_v4(),
+            user_id: Uuid::new_v4(),
+            auth_method: "passkey".to_owned(),
+            current_credential_id: None,
+            session_version: 1,
+            created_at: 900,
+            step_up_at: Some(900),
+            last_seen_at: 900,
+            absolute_expires_at: 900 + SESSION_SECONDS,
+        };
+        assert!(!session_needs_refresh(&session, 1_000, 1_800));
+        assert!(session_needs_refresh(&session, 1_801, 1_800));
     }
 
     #[test]
