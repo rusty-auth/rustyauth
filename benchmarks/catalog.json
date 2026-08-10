@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "updatedAt": "2026-08-10T10:00:00Z",
+  "updatedAt": "2026-08-10T15:12:00Z",
   "publicationPolicy": {
     "summary": "Only synthetic, reproducible benchmark evidence is published. Customer data and production traffic are never used.",
     "isolation": "The load generator, seed data and result storage run in a separate template-derived Railway project and are not part of the installable RustyAuth template.",
@@ -10,7 +10,7 @@
     {
       "id": "single-realm-capacity",
       "title": "Single-realm capacity",
-      "state": "awaiting-baseline",
+      "state": "active",
       "summary": "Measures how many registered accounts, valid sessions, active authenticated users and passkey sign-ins one supported single-writer realm can serve within explicit latency and reliability gates.",
       "schedule": [
         "A fixed-rate regression run after every release",
@@ -79,6 +79,170 @@
     }
   ],
   "reports": [
+    {
+      "id": "single-realm-starter-2026-08-10",
+      "programId": "single-realm-capacity",
+      "title": "Starter single-realm Railway baseline",
+      "status": "passed",
+      "qualification": "Reviewed Railway production baseline",
+      "observedAt": "2026-08-10T15:06:24Z",
+      "release": "1.0.0",
+      "commit": "6a73d1ce366032ac13e65da45e5c8abecabcb1f4",
+      "environment": "Railway Starter: API 1 vCPU / 512 MB; SableDB 1 vCPU / 1 GB",
+      "methodologyVersion": "single-realm-v1",
+      "summary": "A template-derived single-writer realm passed every configured step through 800 authenticated requests per second, so this run establishes a lower bound rather than an absolute breakpoint. Across 141,764 authenticated reads and 31 complete passkey sign-ins there were zero failed requests, zero unplanned 5xx responses and zero dropped iterations.",
+      "imageDigests": {
+        "api": "sha256:507a5e5da1660ea780f2b894b2daaae99b8af6b1373ab0b6401bf5b6bf6af112",
+        "dashboard": "sha256:abc9f12bab4c12f62752697fbda39b2dc5d0c461fd335420a87c8809e855d005",
+        "sableDb": "sha256:83b665171d5994ac7f0d2456bb53a9ab2cc56b69763008d37994de84e2752a3a"
+      },
+      "dataset": [
+        {
+          "key": "authenticated_read_requests",
+          "label": "Authenticated reads",
+          "value": 141764,
+          "unit": "requests"
+        },
+        {
+          "key": "passkey_ceremonies",
+          "label": "Complete passkey sign-ins",
+          "value": 31,
+          "unit": "sign-ins"
+        }
+      ],
+      "results": [
+        {
+          "key": "registered_accounts",
+          "label": "Registered accounts",
+          "value": 10000,
+          "unit": "accounts",
+          "threshold": "10,000 seeded synthetic accounts",
+          "outcome": "pass"
+        },
+        {
+          "key": "valid_sessions",
+          "label": "Valid sessions",
+          "value": 10000,
+          "unit": "sessions",
+          "threshold": "Equal to registered accounts",
+          "outcome": "pass"
+        },
+        {
+          "key": "sustainable_authenticated_rps",
+          "label": "Authenticated read capacity",
+          "value": 800,
+          "unit": "RPS",
+          "threshold": "All gates at 800 RPS; breakpoint not reached",
+          "outcome": "pass"
+        },
+        {
+          "key": "supported_typical_active_users",
+          "label": "Typical active users",
+          "value": 5600,
+          "unit": "users",
+          "threshold": "30% headroom at 6 requests/minute",
+          "outcome": "pass"
+        },
+        {
+          "key": "signin_rps",
+          "label": "Passkey sign-in rate",
+          "value": 0.1033047791,
+          "unit": "sign-ins/s",
+          "threshold": "Below the 10 probes/minute source limit",
+          "outcome": "pass"
+        },
+        {
+          "key": "signin_p95_ms",
+          "label": "Passkey sign-in p95",
+          "value": 118,
+          "unit": "ms",
+          "threshold": "< 750 ms",
+          "outcome": "pass"
+        },
+        {
+          "key": "signin_p99_ms",
+          "label": "Passkey sign-in p99",
+          "value": 129.1,
+          "unit": "ms",
+          "threshold": "< 1,500 ms",
+          "outcome": "pass"
+        },
+        {
+          "key": "authenticated_read_p95_ms",
+          "label": "800 RPS read p95",
+          "value": 76.456158,
+          "unit": "ms",
+          "threshold": "< 250 ms",
+          "outcome": "pass"
+        },
+        {
+          "key": "authenticated_read_p99_ms",
+          "label": "800 RPS read p99",
+          "value": 130.792856,
+          "unit": "ms",
+          "threshold": "< 750 ms",
+          "outcome": "pass"
+        },
+        {
+          "key": "failed_requests",
+          "label": "Failed requests",
+          "value": 0,
+          "unit": "requests",
+          "threshold": "< 0.1%",
+          "outcome": "pass"
+        },
+        {
+          "key": "api_peak_vcpu",
+          "label": "API peak CPU",
+          "value": 0.1401467,
+          "unit": "vCPU",
+          "threshold": "≤ 1 vCPU",
+          "outcome": "pass"
+        },
+        {
+          "key": "api_peak_memory_mb",
+          "label": "API peak memory",
+          "value": 36.557553664,
+          "unit": "MB",
+          "threshold": "≤ 512 MB",
+          "outcome": "pass"
+        },
+        {
+          "key": "sable_peak_vcpu",
+          "label": "SableDB peak CPU",
+          "value": 0.3840858333,
+          "unit": "vCPU",
+          "threshold": "≤ 1 vCPU",
+          "outcome": "pass"
+        },
+        {
+          "key": "sable_peak_memory_mb",
+          "label": "SableDB peak memory",
+          "value": 133.722800128,
+          "unit": "MB",
+          "threshold": "≤ 1,024 MB",
+          "outcome": "pass"
+        }
+      ],
+      "evidence": [
+        {
+          "label": "Reviewed report",
+          "url": "https://github.com/rusty-auth/rustyauth/blob/main/release-evidence/benchmarks/starter-20260810T145154Z/REPORT.md"
+        },
+        {
+          "label": "Reviewed metrics and deployment artifacts",
+          "url": "https://github.com/rusty-auth/rustyauth/blob/main/release-evidence/benchmarks/starter-20260810T145154Z/reviewed-evidence.json"
+        },
+        {
+          "label": "Raw k6 summaries",
+          "url": "https://github.com/rusty-auth/rustyauth/blob/main/release-evidence/benchmarks/starter-20260810T145154Z/raw-k6-summaries.json"
+        },
+        {
+          "label": "Runner source checksums",
+          "url": "https://github.com/rusty-auth/rustyauth/blob/main/release-evidence/benchmarks/starter-20260810T145154Z/source-SHA256SUMS"
+        }
+      ]
+    },
     {
       "id": "fleet-analytics-medium-2026-08-09",
       "programId": "fleet-analytics-query",

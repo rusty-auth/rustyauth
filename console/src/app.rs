@@ -4429,7 +4429,7 @@ fn BenchmarksPage() -> Element {
 
             section { class: "benchmark-console-summary",
                 article { class: "panel benchmark-console-state",
-                    span { class: "status-badge warn", i {} "{state_label}" }
+                    span { class: if realm.state == "awaiting-baseline" { "status-badge warn" } else { "status-badge good" }, i {} "{state_label}" }
                     strong { "{realm_report_count}" }
                     small { "published single-realm runs" }
                     p { "{realm.summary}" }

@@ -52,7 +52,7 @@ const realmReports = catalogue.reports.filter((report) => report.programId === r
       <aside class="benchmark-status" aria-label="Single-realm benchmark publication status">
         <span class="benchmark-status-dot"></span>
         <small>Single-realm Railway capacity</small>
-        <strong>{realmProgram.state === "awaiting-baseline" ? "Awaiting first baseline" : realmProgram.state}</strong>
+        <strong>{realmProgram.state === "awaiting-baseline" ? "Awaiting first baseline" : "Active baseline"}</strong>
         <p>{realmProgram.summary}</p>
         <dl>
           <div><dt>Published realm runs</dt><dd>{realmReports.length}</dd></div>
@@ -121,7 +121,7 @@ const realmReports = catalogue.reports.filter((report) => report.programId === r
       <div class="shell">
         <header class="benchmark-section-heading">
           <p>04 / Published evidence</p>
-          <div><h2>Results already retained.</h2><p>Realm capacity remains pending. Existing source qualification is shown separately and must not be read as a Railway authentication-capacity result.</p></div>
+          <div><h2>Results retained and reviewable.</h2><p>The first Railway realm baseline is published alongside its raw summaries, immutable images, resource ceilings and review record. Source qualification remains a separate workload.</p></div>
         </header>
         <div class="benchmark-report-grid">
           {catalogue.reports.map((report) => (

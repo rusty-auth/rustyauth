@@ -133,20 +133,29 @@ Deno.test("publishes crawler controls and a real 404 document", async () => {
   assertMatch(notFound, /name="robots" content="noindex, follow"/);
 });
 
-Deno.test("renders the benchmark catalogue without inventing realm capacity", async () => {
+Deno.test("renders the reviewed single-realm capacity baseline", async () => {
   const html = await Deno.readTextFile(outputFor("/benchmarks"));
   assertMatch(html, /Benchmarks,/);
-  assertMatch(html, /Awaiting first baseline/);
+  assertMatch(html, /Active baseline/);
   assertMatch(html, /Separate benchmark project/);
+  assertMatch(html, /Starter single-realm Railway baseline/);
+  assertMatch(html, /5,600/);
+  assertMatch(html, /76\.4562/);
   assertMatch(html, /Medium-tier 28-day organization query/);
   assertMatch(html, /239\.5325/);
   assertMatch(html, /8,064,000/);
-  assertNotMatch(html, /A single realm supports [0-9]/i);
+  assertMatch(html, /lower bound rather than an absolute breakpoint/i);
   assertEquals(html.match(/<h1\b/g)?.length, 1);
 
   const catalogue = JSON.parse(await Deno.readTextFile("dist/benchmarks/catalog.json"));
   assertEquals(catalogue.schemaVersion, 1);
-  assertEquals(catalogue.programs[0].state, "awaiting-baseline");
+  assertEquals(catalogue.programs[0].state, "active");
+  assertEquals(
+    catalogue.reports[0].results.find((result: { key: string }) =>
+      result.key === "sustainable_authenticated_rps"
+    ).value,
+    800,
+  );
 });
 
 Deno.test("renders every industry solution route", async () => {

@@ -1,0 +1,150 @@
+{
+  "runId": "starter-20260810T145154Z",
+  "status": "passed",
+  "reviewedAt": "2026-08-10T15:12:00Z",
+  "interval": {
+    "startedAt": "2026-08-10T14:52:10Z",
+    "completedAt": "2026-08-10T15:06:24Z"
+  },
+  "dataset": {
+    "registeredAccounts": 10000,
+    "validSessions": 10000,
+    "sessionIdleSeconds": 1800,
+    "sessionAbsoluteSeconds": 86400,
+    "sessionsRecreatedDuringRun": 0
+  },
+  "authenticatedReadLadder": [
+    {
+      "targetRps": 1,
+      "requests": 10,
+      "actualRps": 0.9999701367,
+      "failures": 0,
+      "droppedIterations": 0,
+      "p95Ms": 71.0476344,
+      "p99Ms": 83.47446288
+    },
+    {
+      "targetRps": 25,
+      "requests": 2250,
+      "actualRps": 24.9996923691,
+      "failures": 0,
+      "droppedIterations": 0,
+      "p95Ms": 74.4825078,
+      "p99Ms": 108.21646818
+    },
+    {
+      "targetRps": 50,
+      "requests": 4501,
+      "actualRps": 49.9955337599,
+      "failures": 0,
+      "droppedIterations": 0,
+      "p95Ms": 65.139034,
+      "p99Ms": 99.226223
+    },
+    {
+      "targetRps": 100,
+      "requests": 9001,
+      "actualRps": 99.9864148088,
+      "failures": 0,
+      "droppedIterations": 0,
+      "p95Ms": 66.949184,
+      "p99Ms": 104.14369
+    },
+    {
+      "targetRps": 200,
+      "requests": 18000,
+      "actualRps": 199.8691775242,
+      "failures": 0,
+      "droppedIterations": 0,
+      "p95Ms": 73.31633,
+      "p99Ms": 113.83114789
+    },
+    {
+      "targetRps": 400,
+      "requests": 36001,
+      "actualRps": 399.8766126258,
+      "failures": 0,
+      "droppedIterations": 0,
+      "p95Ms": 75.495421,
+      "p99Ms": 112.36823
+    },
+    {
+      "targetRps": 800,
+      "requests": 72001,
+      "actualRps": 799.5992490344,
+      "failures": 0,
+      "droppedIterations": 0,
+      "p95Ms": 76.456158,
+      "p99Ms": 130.792856
+    }
+  ],
+  "authenticatedReadTotals": {
+    "requests": 141764,
+    "failures": 0,
+    "unplanned5xx": 0,
+    "droppedIterations": 0,
+    "highestPassingTargetRps": 800,
+    "breakpointReached": false
+  },
+  "passkeySignin": {
+    "ceremonies": 31,
+    "httpRequests": 62,
+    "actualCeremoniesPerSecond": 0.1033047791,
+    "failures": 0,
+    "droppedIterations": 0,
+    "p95Ms": 118,
+    "p99Ms": 129.1
+  },
+  "supportedActiveUsersWithThirtyPercentHeadroom": {
+    "lightSaasAtTwoRequestsPerMinute": 16800,
+    "typicalApplicationAtSixRequestsPerMinute": 5600,
+    "heavyAdministrationAtTwentyRequestsPerMinute": 1680
+  },
+  "railwayResources": {
+    "window": { "since": "2026-08-10T14:52:00Z", "until": "2026-08-10T15:07:00Z" },
+    "api": {
+      "limitVcpu": 1,
+      "limitMemoryMb": 511.99868928,
+      "averageVcpu": 0.021926896875,
+      "peakVcpu": 0.1401467,
+      "averageMemoryMb": 25.006964736,
+      "peakMemoryMb": 36.557553664
+    },
+    "sableDb": {
+      "limitVcpu": 1,
+      "limitMemoryMb": 1023.99737856,
+      "averageVcpu": 0.1793776614583333,
+      "peakVcpu": 0.3840858333333333,
+      "averageMemoryMb": 120.989810688,
+      "peakMemoryMb": 133.722800128,
+      "peakVolumeMb": 882.14601728,
+      "volumeLimitMb": 50000
+    }
+  },
+  "continuity": {
+    "readyAfterRun": { "api": true, "dashboard": true },
+    "applicationErrorsDuringRun": 0,
+    "listenerStartsDuringRun": 0,
+    "deploymentChangesDuringRun": 0
+  },
+  "artifacts": {
+    "runtimeCommit": "6a73d1ce366032ac13e65da45e5c8abecabcb1f4",
+    "runnerCommit": "8007503d64c9e2d6241e1da55f4b81039148f66a",
+    "api": {
+      "deploymentId": "db7988b9-5ede-4cf0-8b46-9daf20fa1686",
+      "imageDigest": "sha256:507a5e5da1660ea780f2b894b2daaae99b8af6b1373ab0b6401bf5b6bf6af112"
+    },
+    "dashboard": {
+      "deploymentId": "bfcf93f3-cefa-4945-90b5-79fb03263115",
+      "imageDigest": "sha256:abc9f12bab4c12f62752697fbda39b2dc5d0c461fd335420a87c8809e855d005"
+    },
+    "sableDb": {
+      "deploymentId": "660d321e-3f4c-4af0-9883-0737e3b95c05",
+      "imageDigest": "sha256:83b665171d5994ac7f0d2456bb53a9ab2cc56b69763008d37994de84e2752a3a"
+    },
+    "runner": {
+      "deploymentId": "3b20cc0a-33dd-43a4-a8ab-622f54b11c84",
+      "imageDigest": "sha256:0b80c89e2951969448693bd9ba18352836e7e166820c5b97add6cdf49a609a5a"
+    }
+  }
+}

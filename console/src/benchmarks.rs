@@ -101,7 +101,7 @@ mod tests {
     use super::catalogue;
 
     #[test]
-    fn embedded_catalogue_is_valid_and_honest_about_the_realm_baseline() {
+    fn embedded_catalogue_contains_the_reviewed_realm_baseline() {
         let catalogue = catalogue().expect("benchmark catalogue should parse");
         assert_eq!(catalogue.schema_version, 1);
         let realm = catalogue
@@ -109,12 +109,23 @@ mod tests {
             .iter()
             .find(|program| program.id == "single-realm-capacity")
             .expect("realm capacity programme");
-        assert_eq!(realm.state, "awaiting-baseline");
+        assert_eq!(realm.state, "active");
+        let report = catalogue
+            .reports
+            .iter()
+            .find(|report| report.program_id == realm.id && report.status == "passed")
+            .expect("passed single-realm report");
         assert!(
-            catalogue
-                .reports
+            report.results.iter().any(
+                |result| result.key == "sustainable_authenticated_rps" && result.value == 800.0
+            )
+        );
+        assert!(
+            report
+                .results
                 .iter()
-                .all(|report| report.program_id != realm.id)
+                .any(|result| result.key == "supported_typical_active_users"
+                    && result.value == 5600.0)
         );
     }
 }
