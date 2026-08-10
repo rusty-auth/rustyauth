@@ -75,7 +75,7 @@ pub use self::writer_lease::WriterLease;
 use self::writer_lease::{WRITER_LEASE_KEY, WRITER_LEASE_SECONDS};
 
 use std::{
-    collections::BTreeSet,
+    collections::{BTreeSet, HashSet},
     sync::Arc,
     time::{SystemTime, UNIX_EPOCH},
 };
@@ -85,7 +85,7 @@ use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use redis::AsyncCommands;
 use serde::{Serialize, de::DeserializeOwned};
 use sha2::{Digest, Sha256};
-use tokio::sync::{Mutex, RwLock};
+use tokio::sync::{Mutex, RwLock, Semaphore};
 use uuid::Uuid;
 use webauthn_rs::prelude::Passkey;
 
@@ -163,12 +163,15 @@ const MAX_IDENTIFIERS: usize = 20;
 // end of the results: it returns the last account it examined as its cursor, so
 // the caller pages on instead of losing everything past the budget.
 const MAX_SEARCH_CANDIDATES: usize = 2_000;
+const MAX_PENDING_SESSION_TOUCHES: usize = 1_024;
 
 #[derive(Clone)]
 pub struct Store {
     redis: MeasuredConnection,
     mutation: Arc<Mutex<()>>,
     snapshot_gate: SnapshotGate,
+    session_touch_permits: Arc<Semaphore>,
+    session_touches_pending: Arc<std::sync::Mutex<HashSet<String>>>,
     tenant_id: String,
 }
 
@@ -219,6 +222,8 @@ impl Store {
             redis: MeasuredConnection(redis),
             mutation: Arc::new(Mutex::new(())),
             snapshot_gate: Arc::new(RwLock::new(())),
+            session_touch_permits: Arc::new(Semaphore::new(MAX_PENDING_SESSION_TOUCHES)),
+            session_touches_pending: Arc::new(std::sync::Mutex::new(HashSet::new())),
             tenant_id,
         }
     }
@@ -367,10 +372,15 @@ fn identifier_key(identifier: &IdentifierValue) -> String {
 }
 
 fn session_key(token: &str) -> String {
-    format!(
-        "auth:session:{}",
-        hex::encode(Sha256::digest(token.as_bytes()))
-    )
+    format!("auth:session:{}", session_token_digest(token))
+}
+
+fn session_activity_key(token: &str) -> String {
+    format!("auth:session-activity:{}", session_token_digest(token))
+}
+
+fn session_token_digest(token: &str) -> String {
+    hex::encode(Sha256::digest(token.as_bytes()))
 }
 
 fn service_credential_key(secret: &str) -> String {

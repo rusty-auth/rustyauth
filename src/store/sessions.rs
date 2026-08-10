@@ -1,11 +1,12 @@
 //! Browser session records and the policy that ends them.
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
+use redis::AsyncCommands;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use super::{Store, User, now, session_key};
+use super::{Store, User, now, session_activity_key, session_key};
 
 // Persisting `last_seen_at` on every authenticated request turns the read path
 // into a write-heavy workload and drives avoidable LSM compaction. A session is
@@ -129,21 +130,34 @@ impl Store {
             return Ok(None);
         }
         let key = session_key(token);
-        let Some(mut session) = self.get_json::<Session>(&key).await? else {
+        let activity_key = session_activity_key(token);
+        let mut connection = self.redis.clone();
+        let (session_json, activity): (Option<String>, Option<u64>) = redis::pipe()
+            .get(&key)
+            .get(&activity_key)
+            .query_async(&mut connection)
+            .await?;
+        let Some(session_json) = session_json else {
             return Ok(None);
         };
+        let mut session: Session =
+            serde_json::from_str(&session_json).context("decode stored session JSON")?;
         let current = now();
+        // Activity is an isolated, write-behind timestamp. It can advance only
+        // to a time observed by an authenticated request and is ignored if a
+        // corrupt value claims to come from the future.
+        apply_session_activity(&mut session, activity, current);
         // Expiry is decided before the account is read. Reading first would spend a
         // datastore round trip on every request holding an already-dead session,
         // and would turn an expired session on a corrupt account — where `user`
         // fails closed — into a 500 that also leaves the dead key behind, instead
         // of the 401 and reclaim it should be.
         if session_expired(&session, idle_seconds, current) {
-            self.delete(&key).await?;
+            self.delete_session_records(&key, &activity_key).await?;
             return Ok(None);
         }
         let Some(user) = self.user(session.user_id).await? else {
-            self.delete(&key).await?;
+            self.delete_session_records(&key, &activity_key).await?;
             return Ok(None);
         };
         let verdict = {
@@ -161,21 +175,25 @@ impl Store {
             )
         };
         if verdict != SessionVerdict::Valid {
-            self.delete(&key).await?;
+            self.delete_session_records(&key, &activity_key).await?;
             return Ok(None);
         }
         let touch_due = session_touch_due(&session, idle_seconds, current);
         session.last_seen_at = current;
         if touch_due {
-            self.set_json_ex(&key, &session, session.absolute_expires_at - current)
-                .await?;
+            self.enqueue_session_touch(
+                activity_key,
+                current,
+                session.absolute_expires_at - current,
+            );
         }
         Ok(Some((session, user)))
     }
 
     pub async fn delete_session(&self, token: &str) -> Result<()> {
         let _snapshot = self.snapshot_gate.read().await;
-        self.delete(&session_key(token)).await
+        self.delete_session_records(&session_key(token), &session_activity_key(token))
+            .await
     }
 
     pub async fn mark_session_step_up(
@@ -201,11 +219,74 @@ impl Store {
         session.current_credential_id = Some(credential_id);
         session.step_up_at = Some(current);
         session.last_seen_at = current;
-        self.set_json_ex(&key, &session, session.absolute_expires_at - current)
+        let activity_key = session_activity_key(token);
+        let mut connection = self.redis.clone();
+        let _: () = redis::pipe()
+            .atomic()
+            .set_ex(
+                &key,
+                serde_json::to_string(&session)?,
+                session.absolute_expires_at - current,
+            )
+            .ignore()
+            .del(&activity_key)
+            .ignore()
+            .query_async(&mut connection)
             .await?;
         self.append_event_within_snapshot("session.step_up.completed", Some(session.user_id))
             .await?;
         Ok(session)
+    }
+
+    async fn delete_session_records(&self, key: &str, activity_key: &str) -> Result<()> {
+        let mut connection = self.redis.clone();
+        let _: () = redis::pipe()
+            .del(key)
+            .ignore()
+            .del(activity_key)
+            .ignore()
+            .query_async(&mut connection)
+            .await?;
+        Ok(())
+    }
+
+    /// Persists sliding activity outside the request's critical path.
+    ///
+    /// The activity key is deliberately separate from the session record: a
+    /// delayed write can never recreate a signed-out session or overwrite a
+    /// concurrent step-up/revocation mutation. A bounded, de-duplicated queue
+    /// prevents datastore failure from creating unbounded tasks. Dropping a
+    /// touch can end a session early, but can never extend either expiry bound.
+    fn enqueue_session_touch(&self, activity_key: String, observed_at: u64, ttl_seconds: u64) {
+        let Ok(permit) = self.session_touch_permits.clone().try_acquire_owned() else {
+            return;
+        };
+        {
+            let mut pending = self
+                .session_touches_pending
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            if !pending.insert(activity_key.clone()) {
+                return;
+            }
+        }
+
+        let store = self.clone();
+        tokio::spawn(async move {
+            let _permit = permit;
+            let mut connection = store.redis.clone();
+            let result: redis::RedisResult<()> = connection
+                .set_ex(&activity_key, observed_at, ttl_seconds)
+                .await;
+            store
+                .session_touches_pending
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .remove(&activity_key);
+            if let Err(error) = result {
+                tracing::warn!(%error, "could not persist deferred session activity");
+            }
+        });
     }
 
     /// Invalidates every browser session for an account through the durable
@@ -245,6 +326,12 @@ fn session_touch_interval(idle_seconds: u64) -> u64 {
 
 fn session_touch_due(session: &Session, idle_seconds: u64, now: u64) -> bool {
     now.saturating_sub(session.last_seen_at) >= session_touch_interval(idle_seconds)
+}
+
+fn apply_session_activity(session: &mut Session, activity: Option<u64>, now: u64) {
+    if let Some(activity) = activity.filter(|activity| *activity <= now) {
+        session.last_seen_at = session.last_seen_at.max(activity);
+    }
 }
 
 fn session_verdict(
@@ -411,6 +498,30 @@ mod tests {
         // Coalescing cannot change the expiry predicate: the persisted value
         // is never advanced into the future to buy performance headroom.
         assert!(session_expired(&session, 300, 1_300));
+    }
+
+    #[test]
+    fn deferred_activity_advances_only_to_an_observed_non_future_time() {
+        let mut candidate = session(None);
+        apply_session_activity(&mut candidate, Some(1_200), 1_250);
+        assert_eq!(candidate.last_seen_at, 1_200);
+
+        apply_session_activity(&mut candidate, Some(1_100), 1_250);
+        assert_eq!(candidate.last_seen_at, 1_200);
+
+        apply_session_activity(&mut candidate, Some(1_300), 1_250);
+        assert_eq!(candidate.last_seen_at, 1_200);
+    }
+
+    #[test]
+    fn deferred_activity_uses_a_distinct_key_with_the_same_token_digest() {
+        let token = "a-token-that-is-long-enough-for-a-session-key";
+        let session = session_key(token);
+        let activity = session_activity_key(token);
+        assert_eq!(
+            session.strip_prefix("auth:session:"),
+            activity.strip_prefix("auth:session-activity:")
+        );
     }
 
     #[test]

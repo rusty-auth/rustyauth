@@ -171,10 +171,11 @@ Every authenticated request checks:
 7. that the session's originating passkey is still attached to the account.
 
 Any failed check deletes the session record before rejecting the request, so a session invalidated once stays
-invalidated. Successful validation advances `last_seen_at`; durable touches are coalesced to a bounded cadence
-so the authenticated read path does not rewrite the session on every request. Coalescing may end an idle
-session by up to five minutes (or one sixth of a shorter idle window) early, but never extends its idle or
-absolute security boundary. Sign-out deletes
+invalidated. Successful validation advances `last_seen_at`; a single pipeline reads the session plus its
+separate activity key, and a bounded write-behind queue coalesces activity persistence. A delayed touch cannot
+recreate a signed-out session or overwrite a step-up mutation, so authentication does not wait for routine
+activity writes. A failed or dropped touch may end an idle session by up to five minutes (or one sixth of a
+shorter idle window) early, but never extends its idle or absolute security boundary. Sign-out deletes
 the current session. The data model supports invalidating sessions by advancing a user's session version; the
 public revoke-all operation uses that mechanism and requires a recent passkey-backed session.
 

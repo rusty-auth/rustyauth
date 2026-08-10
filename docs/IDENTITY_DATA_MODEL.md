@@ -159,12 +159,14 @@ A successful passkey authentication or development agent handoff creates a separ
 | `last_seen_at` | Sliding idle-expiry activity time |
 | `absolute_expires_at` | Non-extendable session deadline |
 
-The cookie contains a random bearer token. RustyAuth stores only its SHA-256 digest in the SableDB
-key, never the raw token. Successful authenticated requests advance the in-request `last_seen_at` value; the
-durable value is coalesced to at most one write per five minutes, or six writes per configured idle window when
-that is shorter. The stored timestamp is never moved into the future, so this can end a session by at most one
-coalescing interval early but cannot extend the security boundary. Expired, orphaned or version-mismatched
-sessions are deleted and rejected.
+The cookie contains a random bearer token. RustyAuth stores only its SHA-256 digest in SableDB keys,
+never the raw token. One pipeline reads the session and its separate activity timestamp. Successful requests
+advance the in-request `last_seen_at` value; a bounded, de-duplicated write-behind queue persists activity at
+most once per five minutes, or six times per configured idle window when that is shorter. Keeping activity
+separate means a delayed write cannot recreate a signed-out session or overwrite a concurrent step-up. A
+dropped touch can end a session by at most one coalescing interval early, but can never extend the idle or
+absolute security boundary. Expired, orphaned or version-mismatched sessions and their activity keys are
+deleted and rejected.
 
 `current_credential_id` is also an authorization input, not just metadata. When it names a passkey
 that is no longer in the account's `passkeys` list, the session is deleted and rejected on its next
@@ -176,8 +178,8 @@ Agent sessions can read account and credential metadata but cannot mutate profil
 passkeys. Sensitive identifier and credential changes require a passkey session created within five
 minutes. Profile and passkey-label changes require a passkey-authenticated session.
 
-Sessions appear in logical backups so an operator can explicitly preserve them, but restore skips
-them and increments every account's `session_version` by default.
+Sessions appear in logical backups so an operator can explicitly preserve them, but transient activity keys
+do not. Restore skips sessions and increments every account's `session_version` by default.
 
 ## One-time WebAuthn state
 

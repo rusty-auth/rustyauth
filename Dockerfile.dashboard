@@ -18,7 +18,10 @@ WORKDIR /src
 COPY console/Cargo.toml console/Cargo.lock console/build.rs console/Dioxus.toml ./console/
 COPY proto ./proto
 COPY console/assets ./console/assets
-COPY benchmarks ./benchmarks
+# The dashboard renders only the reviewed publication catalogue. Keeping the
+# load generators and runner scripts out of this layer means benchmark-harness
+# iterations cannot invalidate the expensive WebAssembly build cache.
+COPY benchmarks/catalog.json ./benchmarks/catalog.json
 COPY site/public/brand ./site/public/brand
 COPY console/src ./console/src
 WORKDIR /src/console

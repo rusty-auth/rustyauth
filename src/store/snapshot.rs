@@ -364,6 +364,7 @@ fn snapshot_key_policy(key: &str) -> Result<SnapshotKeyPolicy> {
             "auth:identifier-verification:",
             "auth:agent-handoff:",
             "auth:rate-limit:",
+            "auth:session-activity:",
             "auth:fleet-pairing:",
             "auth:backup:",
             OPERATOR_SEEN_PREFIX,
@@ -491,6 +492,10 @@ mod tests {
         );
         assert_eq!(
             snapshot_key_policy("auth:registration:123").unwrap(),
+            SnapshotKeyPolicy::Exclude
+        );
+        assert_eq!(
+            snapshot_key_policy("auth:session-activity:digest").unwrap(),
             SnapshotKeyPolicy::Exclude
         );
         assert_eq!(
