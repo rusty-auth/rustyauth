@@ -9,12 +9,15 @@ use super::{Store, User, now, session_key};
 
 // Persisting `last_seen_at` on every authenticated request turns the read path
 // into a write-heavy workload and drives avoidable LSM compaction. A session is
-// touched at most once per minute (and more frequently for short idle windows).
+// touched at most once per five minutes (and more frequently for short idle
+// windows). Six persisted observations per idle window keep the worst-case
+// early expiry bounded to one sixth of that operator-selected window while
+// preventing a large active population from turning reads into a write stream.
 // The stored timestamp can therefore trail real activity by this bounded
 // interval, which may end an idle session slightly early but never extends it
 // beyond the configured security boundary.
-const MAX_SESSION_TOUCH_INTERVAL_SECONDS: u64 = 60;
-const SESSION_TOUCHES_PER_IDLE_WINDOW: u64 = 20;
+const MAX_SESSION_TOUCH_INTERVAL_SECONDS: u64 = 5 * 60;
+const SESSION_TOUCHES_PER_IDLE_WINDOW: u64 = 6;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -396,13 +399,13 @@ mod tests {
     #[test]
     fn session_touches_are_coalesced_without_extending_the_idle_boundary() {
         let session = session(None);
-        assert_eq!(session_touch_interval(1_800), 60);
-        assert!(!session_touch_due(&session, 1_800, 1_059));
-        assert!(session_touch_due(&session, 1_800, 1_060));
+        assert_eq!(session_touch_interval(1_800), 300);
+        assert!(!session_touch_due(&session, 1_800, 1_299));
+        assert!(session_touch_due(&session, 1_800, 1_300));
 
-        // Short idle windows retain twenty persisted touch opportunities and
+        // Short idle windows retain six persisted touch opportunities and
         // never use a zero-second interval.
-        assert_eq!(session_touch_interval(300), 15);
+        assert_eq!(session_touch_interval(300), 50);
         assert_eq!(session_touch_interval(1), 1);
 
         // Coalescing cannot change the expiry predicate: the persisted value

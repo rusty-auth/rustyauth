@@ -28,6 +28,7 @@ sleep "${settle_seconds}"
 run_profile() {
   profile="$1"
   label="$2"
+  script_path="${BENCHMARK_SCRIPT_PATH:-/opt/rustyauth/benchmarks/k6/enterprise-realm.js}"
   set +e
   PROFILE="${profile}" \
   FIXTURES_PATH="${BENCHMARK_FIXTURES_PATH:-/data/fixtures.jsonl}" \
@@ -36,9 +37,13 @@ run_profile() {
   BENCHMARK_TIMING_ROOT_SECRET="${BENCHMARK_TIMING_ROOT_SECRET}" \
   SOAK_RATE="${SOAK_RATE:-560}" \
   SOAK_DURATION="${SOAK_DURATION:-1h}" \
+  TARGET_RATE="${TARGET_RATE:-250}" \
+  TARGET_DURATION="${TARGET_DURATION:-2m}" \
+  WARMUP_DURATION="${WARMUP_DURATION:-1m}" \
+  PHASE_NAME="${PHASE_NAME:-qualification}" \
     k6 run \
       --summary-export "${run_dir}/${label}.json" \
-      /opt/rustyauth/benchmarks/k6/enterprise-realm.js \
+      "${script_path}" \
       > "${run_dir}/${label}.txt" 2>&1
   status="$?"
   set -e

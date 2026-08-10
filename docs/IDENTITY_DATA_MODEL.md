@@ -161,7 +161,7 @@ A successful passkey authentication or development agent handoff creates a separ
 
 The cookie contains a random bearer token. RustyAuth stores only its SHA-256 digest in the SableDB
 key, never the raw token. Successful authenticated requests advance the in-request `last_seen_at` value; the
-durable value is coalesced to at most one write per minute, or twenty writes per configured idle window when
+durable value is coalesced to at most one write per five minutes, or six writes per configured idle window when
 that is shorter. The stored timestamp is never moved into the future, so this can end a session by at most one
 coalescing interval early but cannot extend the security boundary. Expired, orphaned or version-mismatched
 sessions are deleted and rejected.

@@ -16,8 +16,14 @@ const fixtures = new SharedArray(
       .map((line) => JSON.parse(line)),
 );
 
-if (!__ENV.TARGET_URL || !__ENV.RP_ORIGIN || !__ENV.BENCHMARK_TIMING_ROOT_SECRET) {
-  throw new Error("TARGET_URL, RP_ORIGIN and BENCHMARK_TIMING_ROOT_SECRET are required");
+const rpOrigin = __ENV.RP_ORIGIN || __ENV.WEBAUTHN_RP_ORIGIN;
+if (!__ENV.TARGET_URL || !rpOrigin || !__ENV.BENCHMARK_TIMING_ROOT_SECRET) {
+  const missing = [
+    !__ENV.TARGET_URL && "TARGET_URL",
+    !rpOrigin && "RP_ORIGIN/WEBAUTHN_RP_ORIGIN",
+    !__ENV.BENCHMARK_TIMING_ROOT_SECRET && "BENCHMARK_TIMING_ROOT_SECRET",
+  ].filter(Boolean);
+  throw new Error(`missing required environment: ${missing.join(", ")}`);
 }
 if (fixtures.length === 0) throw new Error("fixture dataset is empty");
 
@@ -29,7 +35,24 @@ const benchmarkTimingToken = crypto.sha256(
 );
 
 const profile = __ENV.PROFILE || "enterprise";
-const phases = profile === "smoke" ? [{ name: "smoke", rate: 5, duration: "10s" }] : profile === "soak"
+const singlePhase = {
+  name: __ENV.PHASE_NAME || "qualification",
+  rate: Number(__ENV.TARGET_RATE || 250),
+  duration: __ENV.TARGET_DURATION || "2m",
+};
+const singleWarmupDuration = __ENV.WARMUP_DURATION || "1m";
+if (!/^[a-z][a-z0-9_]*$/.test(singlePhase.name)) throw new Error("PHASE_NAME is not metric-safe");
+if (!Number.isInteger(singlePhase.rate) || singlePhase.rate <= 0) {
+  throw new Error("TARGET_RATE must be a positive integer");
+}
+durationSeconds(singlePhase.duration);
+durationSeconds(singleWarmupDuration);
+
+const phases = profile === "single"
+  ? [singlePhase]
+  : profile === "smoke"
+  ? [{ name: "smoke", rate: 5, duration: "10s" }]
+  : profile === "soak"
   ? [
     { name: "warmup", rate: 100, duration: "1m" },
     { name: "soak", rate: Number(__ENV.SOAK_RATE || 560), duration: __ENV.SOAK_DURATION || "1h" },
@@ -95,23 +118,27 @@ const phaseThresholds = Object.fromEntries(
 let startsAtSeconds = 0;
 const scenarios = {};
 for (const phase of phases) {
+  const preallocationRatio = profile === "single" ? 0.5 : 0.15;
+  const maximumRatio = profile === "single" ? 1 : 0.75;
+  const warmupSeconds = profile === "single" ? durationSeconds(singleWarmupDuration) : 0;
+  const executorSeconds = durationSeconds(phase.duration) + warmupSeconds;
   scenarios[phase.name] = {
     executor: "constant-arrival-rate",
     rate: phase.rate,
     timeUnit: "1s",
-    duration: phase.duration,
+    duration: `${executorSeconds}s`,
     startTime: `${startsAtSeconds}s`,
     // Sequential scenarios retain their initialized VU pools for the full run.
     // Allocate for the measured median path and allow bounded dynamic growth;
     // oversized pools can otherwise qualify the generator's memory, not the
     // realm under test.
-    preAllocatedVUs: Math.max(25, Math.ceil(phase.rate * 0.15)),
-    maxVUs: Math.max(100, Math.ceil(phase.rate * 0.75)),
+    preAllocatedVUs: Math.max(25, Math.ceil(phase.rate * preallocationRatio)),
+    maxVUs: Math.max(100, Math.ceil(phase.rate * maximumRatio)),
     gracefulStop: "20s",
     exec: "enterpriseJourney",
     tags: { phase: phase.name, target_rate: String(phase.rate) },
   };
-  startsAtSeconds += durationSeconds(phase.duration);
+  startsAtSeconds += executorSeconds;
 }
 
 export const options = {
@@ -134,7 +161,7 @@ export const options = {
 
 const jsonHeaders = {
   "Content-Type": "application/json",
-  Origin: __ENV.RP_ORIGIN,
+  Origin: rpOrigin,
   "X-RustyAuth-Benchmark-Timing": benchmarkTimingToken,
 };
 
@@ -149,30 +176,34 @@ export function enterpriseJourney() {
   const duration = response.timings.duration;
   const timing = parseServerTiming(response.headers["Server-Timing"] || response.headers["server-timing"]);
   const phase = phaseMetrics[exec.scenario.name];
+  const recording = profile !== "single" ||
+    exec.instance.currentTestRunDuration >= durationSeconds(singleWarmupDuration) * 1_000;
 
-  operationDuration[operation].add(duration);
-  endToEndDuration.add(duration);
-  phase.endToEnd.add(duration);
   const unsuccessful = failed || timing === null;
-  requestFailures.add(unsuccessful);
-  phase.failures.add(unsuccessful);
-  phase.completed.add(1);
-  phase.operations[operation].add(duration);
-  if (response.status >= 500) {
-    unplanned5xx.add(1);
-    phase.unplanned5xx.add(1);
-  } else {
-    phase.unplanned5xx.add(0);
-  }
+  if (recording) {
+    operationDuration[operation].add(duration);
+    endToEndDuration.add(duration);
+    phase.endToEnd.add(duration);
+    requestFailures.add(unsuccessful);
+    phase.failures.add(unsuccessful);
+    phase.completed.add(1);
+    phase.operations[operation].add(duration);
+    if (response.status >= 500) {
+      unplanned5xx.add(1);
+      phase.unplanned5xx.add(1);
+    } else {
+      phase.unplanned5xx.add(0);
+    }
 
-  if (timing) {
-    serverApplicationDuration.add(timing.app);
-    sabledbDuration.add(timing.sabledb);
-    nonStoreDuration.add(timing.nonstore);
-    externalPathDuration.add(Math.max(0, duration - timing.app));
-    sabledbRoundTrips.add(timing.roundTrips);
-    phase.application.add(timing.app);
-    phase.sabledb.add(timing.sabledb);
+    if (timing) {
+      serverApplicationDuration.add(timing.app);
+      sabledbDuration.add(timing.sabledb);
+      nonStoreDuration.add(timing.nonstore);
+      externalPathDuration.add(Math.max(0, duration - timing.app));
+      sabledbRoundTrips.add(timing.roundTrips);
+      phase.application.add(timing.app);
+      phase.sabledb.add(timing.sabledb);
+    }
   }
 
   check(response, {
