@@ -6,6 +6,12 @@ supported `1.x` contract.
 
 ## Unreleased
 
+### Changed
+
+- Build the bundled SableDB image from the exact `vendor/sabledb` gitlink in the public `rusty-auth/sabledb`
+  fork. Contributors can now test and publish SableDB fixes from inside a RustyAuth checkout, while recursive
+  CI checkout and targeted image/recovery qualification preserve reproducible releases.
+
 ### Fixed
 
 - Stop archiving obsolete SableDB write-ahead logs on supported single-writer realms. The prior 24-hour WAL

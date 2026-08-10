@@ -93,10 +93,14 @@ Read [Architecture](docs/ARCHITECTURE.md) for the trust boundaries, data model a
 Requirements: Docker with Compose, OpenSSL and `curl`.
 
 ```sh
-git clone https://github.com/rusty-auth/rustyauth.git
+git clone --recurse-submodules https://github.com/rusty-auth/rustyauth.git
 cd rustyauth
 scripts/local-stack standalone up
 ```
+
+If the repository was cloned without submodules, run `git submodule update --init --recursive` once before
+building the bundled SableDB image. RustyAuth records the exact reviewed revision of its public
+[`rusty-auth/sabledb`](https://github.com/rusty-auth/sabledb) fork at `vendor/sabledb`.
 
 The standalone command creates private secrets in the ignored `.env.standalone.local`, then starts the
 separate Dioxus dashboard, realm backend and private SableDB. It also derives an ignored local configuration

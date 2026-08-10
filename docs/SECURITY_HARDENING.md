@@ -33,8 +33,10 @@ namespace. DNS is not trusted by this application check; see the egress requirem
 ## Supply-chain baseline
 
 - Rust and build-tool images are pinned by digest; all three final runtime stages start from `scratch`.
-- The bundled SableDB image builds the pinned upstream commit recorded in `sabledb/Dockerfile`. Because that
-  upstream revision has no lockfile, RustyAuth owns `sabledb/Cargo.lock` and the build uses it with `--locked`.
+- The bundled SableDB image builds the pinned `vendor/sabledb` gitlink from the public RustyAuth fork. The
+  parent commit records the exact reviewed source revision instead of downloading a moving branch during the
+  build. Because that SableDB revision has no lockfile, RustyAuth owns `sabledb/Cargo.lock` and the build uses
+  it with `--locked`.
 - Its static entrypoint rejects symlinked volume paths, prepares only `/var/lib/sabledb`, `data` and `conf`,
   clears supplementary groups, drops to UID/GID 10002 and then replaces itself with SableDB. Kubernetes may
   instead start it directly as 10002 after applying `fsGroup`.

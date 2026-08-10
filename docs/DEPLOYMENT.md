@@ -187,10 +187,11 @@ after any promotion and as part of routine access review.
 
 ### SableDB service
 
-Use the repository root as the source root and `sabledb/Dockerfile` as the builder. The Docker build checks out
-the immutable SableDB revision declared by `SABLEDB_REVISION`, currently
-`8bebc4a60dee404e95608b40ec5c58799e7fa820`. That upstream revision does not commit a lockfile, so the image
-copies RustyAuth's reviewed `sabledb/Cargo.lock` before compiling with `--locked`.
+Use the repository root as the source root and `sabledb/Dockerfile` as the builder. The Docker build compiles
+the immutable SableDB revision recorded by the `vendor/sabledb` gitlink, currently
+`8bebc4a60dee404e95608b40ec5c58799e7fa820` in the public `rusty-auth/sabledb` fork. Clone with
+`--recurse-submodules` or run `git submodule update --init --recursive` before building. That revision does not
+commit a lockfile, so the image copies RustyAuth's reviewed `sabledb/Cargo.lock` before compiling with `--locked`.
 
 Requirements:
 

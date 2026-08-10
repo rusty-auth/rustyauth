@@ -89,6 +89,8 @@ const patterns: Record<CiArea, RegExp[]> = {
     /^deny\.toml$/,
     /^Dockerfile(?:\.dashboard|\.benchmark)?$/,
     /^sabledb\/Dockerfile$/,
+    /^\.gitmodules$/,
+    /^vendor\/sabledb(?:\/|$)/,
     ...sharedMetadata,
   ],
   recovery: [
@@ -100,6 +102,8 @@ const patterns: Record<CiArea, RegExp[]> = {
     /^proto\//,
     /^compose\.integration\.yaml$/,
     /^sabledb\//,
+    /^\.gitmodules$/,
+    /^vendor\/sabledb(?:\/|$)/,
   ],
   api_image: [
     /^Dockerfile$/,
@@ -121,6 +125,8 @@ const patterns: Record<CiArea, RegExp[]> = {
   ],
   sabledb_image: [
     /^sabledb\/(?:Cargo\.lock|Dockerfile|server\.ini)$/,
+    /^\.gitmodules$/,
+    /^vendor\/sabledb(?:\/|$)/,
     /^container-healthcheck\//,
     ...sharedMetadata,
   ],

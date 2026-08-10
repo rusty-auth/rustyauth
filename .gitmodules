@@ -1,0 +1,4 @@
+[submodule "vendor/sabledb"]
+	path = vendor/sabledb
+	url = https://github.com/rusty-auth/sabledb.git
+	branch = main

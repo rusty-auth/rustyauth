@@ -14,6 +14,17 @@ application feature, so changes are reviewed for failure behavior as well as the
 
 ## Development setup
 
+Clone the repository with its pinned SableDB source:
+
+```sh
+git clone --recurse-submodules https://github.com/rusty-auth/rustyauth.git
+cd rustyauth
+```
+
+For an existing clone, run `git submodule update --init --recursive`. See [Vendored source](vendor/README.md)
+when changing SableDB itself; the submodule's `origin` is the RustyAuth fork, while RustyAuth's gitlink keeps
+every parent commit reproducible.
+
 Requirements:
 
 - Rust `1.94.1`;

@@ -121,6 +121,28 @@ Deno.test("SableDB image changes select one dedicated container lane", () => {
   assertEquals(selected.site, false);
 });
 
+Deno.test("vendored SableDB revisions select image, supply-chain and recovery only", () => {
+  const selected = classifyCiChanges(["vendor/sabledb"]);
+  assertEquals(selected.sabledb_image, true);
+  assertEquals(selected.supply_chain, true);
+  assertEquals(selected.recovery, true);
+  assertEquals(selected.api_image, false);
+  assertEquals(selected.dashboard_image, false);
+  assertEquals(selected.rust, false);
+  assertEquals(selected.console, false);
+  assertEquals(selected.site, false);
+  assertEquals(selected.policy, false);
+});
+
+Deno.test("submodule configuration qualifies the pinned SableDB supply chain", () => {
+  const selected = classifyCiChanges([".gitmodules"]);
+  assertEquals(selected.sabledb_image, true);
+  assertEquals(selected.supply_chain, true);
+  assertEquals(selected.recovery, true);
+  assertEquals(selected.api_image, false);
+  assertEquals(selected.dashboard_image, false);
+});
+
 Deno.test("shared healthcheck code rebuilds each consuming runtime image", () => {
   const selected = classifyCiChanges(["container-healthcheck/sabledb-entrypoint/main.go"]);
   assertEquals(selected.sabledb_image, true);

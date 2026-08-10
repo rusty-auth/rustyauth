@@ -1,18 +1,15 @@
 # Both stages are digest-pinned so a RustyAuth release always rebuilds the
-# reviewed SableDB revision on the same base-image contents.
+# reviewed vendor/sabledb gitlink on the same base-image contents.
 FROM rust:1.97-slim-bookworm@sha256:96c0af8cf054fd006435089f0076729716784ec9be485bd655de59c55df105ce AS build
 
-ARG SABLEDB_REVISION=8bebc4a60dee404e95608b40ec5c58799e7fa820
 RUN apt-get update \
-  && apt-get install -y --no-install-recommends clang git libssl-dev pkg-config \
+  && apt-get install -y --no-install-recommends clang libssl-dev pkg-config \
   && rm -rf /var/lib/apt/lists/* \
   && cargo install cargo-auditable --version 0.7.5 --locked
 WORKDIR /src
+COPY vendor/sabledb/ ./
 COPY sabledb/Cargo.lock /rustyauth-sabledb.Cargo.lock
-RUN git clone --filter=blob:none https://github.com/sabledb-io/sabledb.git . \
-  && git checkout --detach "$SABLEDB_REVISION" \
-  && git submodule update --init --recursive \
-  && cp /rustyauth-sabledb.Cargo.lock Cargo.lock \
+RUN cp /rustyauth-sabledb.Cargo.lock Cargo.lock \
   && cargo auditable build --locked --release --bin sabledb
 RUN install -d /runtime-root/etc/ssl/certs \
   && install -d -m 1777 /runtime-root/tmp \
