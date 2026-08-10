@@ -26,6 +26,11 @@ const sharedMetadata = [
   /^about\.(?:hbs|toml)$/,
 ];
 
+// This feature-gated binary exists only in Dockerfile.benchmark. It must still
+// compile and lint in the Rust lane, but it cannot affect the production API
+// image or recovery drills because neither includes it.
+const productionRustSource = /^src\/(?!bin\/rustyauth-benchmark\.rs$)/;
+
 const patterns: Record<CiArea, RegExp[]> = {
   workflow: [/^\.github\//, /^scripts\/ci-changes(?:\.test)?\.ts$/],
   protocol: [/^proto\//, /^buf(?:\.gen)?\.yaml$/, /^packages\/protocol\//, /^build\.rs$/],
@@ -87,7 +92,7 @@ const patterns: Record<CiArea, RegExp[]> = {
     ...sharedMetadata,
   ],
   recovery: [
-    /^src\//,
+    productionRustSource,
     /^tests\//,
     /^Cargo\.(?:toml|lock)$/,
     /^rust-toolchain\.toml$/,
@@ -99,7 +104,7 @@ const patterns: Record<CiArea, RegExp[]> = {
   api_image: [
     /^Dockerfile$/,
     /^container-healthcheck\//,
-    /^src\//,
+    productionRustSource,
     /^Cargo\.(?:toml|lock)$/,
     /^rust-toolchain\.toml$/,
     /^build\.rs$/,

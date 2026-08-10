@@ -69,6 +69,7 @@ Deno.test("benchmark catalogue changes rebuild only its two published surfaces",
 Deno.test("benchmark runner changes do not rebuild production images or product surfaces", () => {
   const selected = classifyCiChanges([
     "Dockerfile.benchmark",
+    "src/bin/rustyauth-benchmark.rs",
     "benchmarks/k6/single-realm.js",
     "benchmarks/run-starter-baseline.sh",
     "railway.benchmark.json",
@@ -77,7 +78,7 @@ Deno.test("benchmark runner changes do not rebuild production images or product 
   assertEquals(selected.supply_chain, true);
   assertEquals(selected.site, false);
   assertEquals(selected.console, false);
-  assertEquals(selected.rust, false);
+  assertEquals(selected.rust, true);
   assertEquals(selected.recovery, false);
   assertEquals(selected.api_image, false);
   assertEquals(selected.dashboard_image, false);
