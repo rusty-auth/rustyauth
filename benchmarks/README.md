@@ -32,12 +32,13 @@ supported active users = sustainable authenticated RPS × 60 × 0.70
 
 `run-enterprise-profile.sh` adds a high-traffic product workload after the simple capacity floor is known. It
 uses one k6 run with named phases, so warm-up, sustained tiers, saturation, spike and recovery can be compared
-without rebuilding or restarting the realm between samples. Its deterministic traffic mix is 60% session-backed
-account reads, 20% user-token minting, 15% passkey inventory reads and 5% signing-key discovery.
+without rebuilding or restarting the realm between samples. Its deterministic traffic mix is 60%
+session-backed account reads, 20% user-token minting, 15% passkey inventory reads and 5% signing-key
+discovery.
 
-The runner authenticates a separate timing header with the realm's benchmark-only secret. RustyAuth then emits a
-standard `Server-Timing` response only for that authorized request. Every Redis command and pipeline issued by the
-API is measured below the store abstraction, allowing the run to split:
+The runner authenticates a separate timing header with the realm's benchmark-only secret. RustyAuth then emits
+a standard `Server-Timing` response only for that authorized request. Every Redis command and pipeline issued
+by the API is measured below the store abstraction, allowing the run to split:
 
 - total public runner-to-Railway response time;
 - external edge, transport and runner overhead (`end-to-end - app`);
@@ -45,22 +46,23 @@ API is measured below the store abstraction, allowing the run to split:
 - accumulated API-to-SableDB round-trip time and round-trip count; and
 - non-datastore application work (`app - SableDB`).
 
-Ordinary callers receive no internal timing header. The installable Railway template does not contain the runner,
-fixture keys or benchmark secret.
+Ordinary callers receive no internal timing header. The installable Railway template does not contain the
+runner, fixture keys or benchmark secret.
 
-The enterprise breakpoint profile steps from 250 to 2,000 mixed requests per second, applies a 2,400 RPS spike,
-then returns to 800 RPS to prove recovery. A separate one-hour soak runs at the reviewed 70%-headroom rate. A short
-breakpoint run is never promoted as a soak result.
+The enterprise breakpoint profile steps from 250 to 2,000 mixed requests per second, applies a 2,400 RPS
+spike, then returns to 800 RPS to prove recovery. A separate one-hour soak runs at the reviewed 70%-headroom
+rate. A short breakpoint run is never promoted as a soak result.
 
 ## Realm-cell extrapolation
 
-A realm is an independent capacity cell. If a pinned shape sustains `C` requests per second, `N` identically sized,
-independently sharded realms provide an initial planning model of `N × C`. Capacity is additive: one-to-two realms
-doubles the total; adding a third to two increases it by 50%.
+A realm is an independent capacity cell. If a pinned shape sustains `C` requests per second, `N` identically
+sized, independently sharded realms provide an initial planning model of `N × C`. Capacity is additive:
+one-to-two realms doubles the total; adding a third to two increases it by 50%.
 
-This arithmetic is labelled **extrapolated**, not measured. It assumes balanced routing, comparable datasets and no
-shared Fleet, network or regional bottleneck. Facebook-scale claims require separate multi-realm, Fleet-cardinality,
-global-routing and failure-domain tests; a large multiplication of one-realm results is not that proof.
+This arithmetic is labelled **extrapolated**, not measured. It assumes balanced routing, comparable datasets
+and no shared Fleet, network or regional bottleneck. Facebook-scale claims require separate multi-realm,
+Fleet-cardinality, global-routing and failure-domain tests; a large multiplication of one-realm results is not
+that proof.
 
 ## Isolation and safety
 
@@ -74,15 +76,18 @@ the production storage contract without turning 10,000-account preparation into 
 durability barriers. Seeding refuses to run when identity/event records or an active writer lease are present,
 and verifies the final account/session cardinalities before the fixture set can be used by k6.
 
-Each run validates every deterministic session, but renews it only when less than half its idle window remains;
-this avoids manufacturing an LSM compaction burst immediately before measurement. It prunes only superseded
+Each run validates every deterministic session and its separate deferred-activity record, but renews the base
+session only when the effective activity timestamp leaves less than half its idle window remaining; this
+avoids manufacturing an LSM compaction burst immediately before measurement. A future-dated or malformed
+activity record fails closed instead of extending a fixture session. The refresher prunes only superseded
 sessions owned by deterministic benchmark accounts, then validates the first and last fixtures through the
-production session model. This preserves the expensive account and passkey dataset between monthly runs without
-accepting expired session keys as valid workload fixtures. The runner's `BENCHMARK_SESSION_IDLE_SECONDS` must
-exactly match the realm's `AUTH_SESSION_IDLE_SECONDS`. If an earlier preflight caused the API to delete an
-idle-expired synthetic session, the runner reconstructs only that deterministic session from its persisted
-account and single registered passkey and records the repair count. A 60-second unmeasured settle window
-separates any necessary durable fixture writes from the smoke gate and measured profile.
+production session model. This preserves the expensive account and passkey dataset between monthly runs
+without accepting expired session keys as valid workload fixtures. The runner's
+`BENCHMARK_SESSION_IDLE_SECONDS` must exactly match the realm's `AUTH_SESSION_IDLE_SECONDS`. If an earlier
+preflight caused the API to delete an idle-expired synthetic session, the runner reconstructs only that
+deterministic session from its persisted account and single registered passkey and records the repair count. A
+60-second unmeasured settle window separates any necessary durable fixture writes from the smoke gate and
+measured profile.
 
 The runner image is built from `Dockerfile.benchmark`, stays private, has no public domain and connects to
 SableDB through Railway private networking. k6 alone calls the public target domain so gateway latency is

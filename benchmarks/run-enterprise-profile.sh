@@ -50,14 +50,49 @@ run_profile() {
   printf '%s\n' "${status}" > "${run_dir}/${label}.exit-code"
 }
 
-run_profile smoke enterprise-smoke
-if [ "$(cat "${run_dir}/enterprise-smoke.exit-code")" -ne 0 ]; then
-  (cd "${run_dir}" && sha256sum ./*.json ./*.txt > SHA256SUMS)
-  printf '%s\n' "${run_dir}"
-  exit 1
+smoke_attempt_limit="${BENCHMARK_SMOKE_ATTEMPTS:-10}"
+smoke_retry_seconds="${BENCHMARK_SMOKE_RETRY_SECONDS:-30}"
+validate_non_negative_integer() {
+  value="$1"
+  value_name="$2"
+  case "${value}" in
+    ''|*[!0-9]*)
+      printf '%s must be a non-negative integer\n' "${value_name}" >&2
+      exit 2
+      ;;
+  esac
+}
+validate_non_negative_integer "${smoke_attempt_limit}" BENCHMARK_SMOKE_ATTEMPTS
+validate_non_negative_integer "${smoke_retry_seconds}" BENCHMARK_SMOKE_RETRY_SECONDS
+if [ "${smoke_attempt_limit}" -lt 1 ]; then
+  printf '%s\n' "smoke_attempt_limit must be at least one" >&2
+  exit 2
 fi
 
+smoke_attempt=1
+while :; do
+  run_profile smoke enterprise-smoke
+  if [ "$(cat "${run_dir}/enterprise-smoke.exit-code")" -eq 0 ]; then
+    break
+  fi
+  if [ ! -s "${run_dir}/enterprise-smoke.json" ]; then
+    (cd "${run_dir}" && sha256sum ./*.json ./*.txt ./*.exit-code > SHA256SUMS)
+    printf '%s\n' "${run_dir}"
+    exit 1
+  fi
+  cp "${run_dir}/enterprise-smoke.json" "${run_dir}/enterprise-smoke-attempt-${smoke_attempt}.json"
+  cp "${run_dir}/enterprise-smoke.txt" "${run_dir}/enterprise-smoke-attempt-${smoke_attempt}.txt"
+  cp "${run_dir}/enterprise-smoke.exit-code" "${run_dir}/enterprise-smoke-attempt-${smoke_attempt}.exit-code"
+  if [ "${smoke_attempt}" -ge "${smoke_attempt_limit}" ]; then
+    (cd "${run_dir}" && sha256sum ./*.json ./*.txt ./*.exit-code > SHA256SUMS)
+    printf '%s\n' "${run_dir}"
+    exit 1
+  fi
+  sleep "${smoke_retry_seconds}"
+  smoke_attempt=$((smoke_attempt + 1))
+done
+
 run_profile "${PROFILE:-enterprise}" "${PROFILE:-enterprise}"
-(cd "${run_dir}" && sha256sum ./*.json ./*.txt > SHA256SUMS)
+(cd "${run_dir}" && sha256sum ./*.json ./*.txt ./*.exit-code > SHA256SUMS)
 printf '%s\n' "${run_dir}"
 exit "$(cat "${run_dir}/${PROFILE:-enterprise}.exit-code")"

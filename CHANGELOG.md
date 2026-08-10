@@ -14,6 +14,14 @@ supported `1.x` contract.
 
 ### Fixed
 
+- Distribute production datastore requests across four independent reconnecting SableDB connections instead of
+  cloning one multiplexed connection. This removes a single client-side head-of-line queue that left datastore
+  workers idle and inflated authenticated-request tail latency under concurrent load.
+- Make the enterprise benchmark preflight enforce the same latency and reliability gates as the measured run,
+  retain every failed retry with its exit status, and fail closed when structured k6 evidence is missing.
+- Reconcile deterministic benchmark sessions with the production deferred-activity record before deciding
+  whether to renew them. Active fixtures no longer create an avoidable base-session rewrite and malformed
+  activity data cannot silently extend a benchmark session.
 - Encode WebAuthn benchmark payloads without unavailable browser globals and count every runner-side
   ceremony error as a threshold failure, preventing an empty passkey measurement from being accepted as
   successful.

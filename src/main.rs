@@ -70,6 +70,10 @@ const SHUTDOWN_GRACE_SECONDS: u64 = 20;
 /// Distinct rate-limit subjects tracked at once. Bounds the memory a flood of
 /// unique addresses or identifiers can cause the limiter itself to consume.
 const RATE_LIMIT_TRACKING_CAPACITY: usize = 65_536;
+/// Independent multiplexed connections let SableDB distribute request work
+/// across its worker threads. Cloning one manager does not create a new TCP
+/// connection and would leave every authenticated request behind one queue.
+const STORE_CONNECTION_POOL_SIZE: usize = 4;
 
 #[derive(Serialize)]
 struct Health<'a> {
@@ -153,14 +157,29 @@ async fn main() -> Result<()> {
     let redis_client = redis::Client::open(config.sabledb_url.expose_secret().to_owned())
         .context("create SableDB client")?;
     let redis = redis::aio::ConnectionManager::new_with_config(
-        redis_client,
+        redis_client.clone(),
         redis::aio::ConnectionManagerConfig::new()
             .set_connection_timeout(Some(Duration::from_secs(3)))
             .set_response_timeout(Some(Duration::from_secs(3))),
     )
     .await
     .context("connect to SableDB")?;
-    let store = Store::new(redis.clone(), config.tenant_id.clone());
+    let mut store_connections = vec![redis.clone()];
+    if mode == ProcessMode::Serve {
+        for _ in 1..STORE_CONNECTION_POOL_SIZE {
+            store_connections.push(
+                redis::aio::ConnectionManager::new_with_config(
+                    redis_client.clone(),
+                    redis::aio::ConnectionManagerConfig::new()
+                        .set_connection_timeout(Some(Duration::from_secs(3)))
+                        .set_response_timeout(Some(Duration::from_secs(3))),
+                )
+                .await
+                .context("connect SableDB request pool")?,
+            );
+        }
+    }
+    let store = Store::new_with_connections(store_connections, config.tenant_id.clone());
     store.ensure_restore_complete().await?;
 
     match mode {

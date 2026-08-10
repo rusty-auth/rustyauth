@@ -102,46 +102,32 @@ const phaseMetrics = Object.fromEntries(
 );
 
 const phaseThresholds = Object.fromEntries(
-  phases.flatMap((phase) => {
-    const correctness = [
-      [`phase_${phase.name}_completed`, [`count>=${phase.rate * durationSeconds(phase.duration)}`]],
-      [`phase_${phase.name}_failures`, ["rate<0.001"]],
-      [`phase_${phase.name}_unplanned_5xx`, ["count==0"]],
-      [`phase_${phase.name}_end_to_end`, ["p(99)<750"]],
-    ];
-    if (profile === "smoke") return correctness;
-    return [
-      ...correctness,
-      [`phase_${phase.name}_end_to_end`, ["p(95)<300", "p(99)<750"]],
-      [`phase_${phase.name}_application`, ["p(95)<150", "p(99)<400"]],
-      [`phase_${phase.name}_sabledb`, ["p(95)<100", "p(99)<250"]],
-      [`phase_${phase.name}_account`, ["p(95)<250"]],
-      [`phase_${phase.name}_token`, ["p(95)<350"]],
-      [`phase_${phase.name}_credentials`, ["p(95)<250"]],
-      [`phase_${phase.name}_jwks`, ["p(95)<150"]],
-    ];
-  }),
+  phases.flatMap((phase) => [
+    [`phase_${phase.name}_completed`, [`count>=${phase.rate * durationSeconds(phase.duration)}`]],
+    [`phase_${phase.name}_failures`, ["rate<0.001"]],
+    [`phase_${phase.name}_unplanned_5xx`, ["count==0"]],
+    [`phase_${phase.name}_end_to_end`, ["p(95)<300", "p(99)<750"]],
+    [`phase_${phase.name}_application`, ["p(95)<150", "p(99)<400"]],
+    [`phase_${phase.name}_sabledb`, ["p(95)<100", "p(99)<250"]],
+    [`phase_${phase.name}_account`, ["p(95)<250"]],
+    [`phase_${phase.name}_token`, ["p(95)<350"]],
+    [`phase_${phase.name}_credentials`, ["p(95)<250"]],
+    [`phase_${phase.name}_jwks`, ["p(95)<150"]],
+  ]),
 );
 
-const globalThresholds = profile === "smoke"
-  ? {
-    enterprise_request_failures: ["rate<0.001"],
-    enterprise_unplanned_5xx: ["count==0"],
-    enterprise_end_to_end_duration: ["p(99)<750"],
-    dropped_iterations: ["count==0"],
-  }
-  : {
-    enterprise_request_failures: ["rate<0.001"],
-    enterprise_unplanned_5xx: ["count==0"],
-    enterprise_end_to_end_duration: ["p(95)<300", "p(99)<750"],
-    server_application_duration: ["p(95)<150", "p(99)<400"],
-    sabledb_duration: ["p(95)<100", "p(99)<250"],
-    account_duration: ["p(95)<250"],
-    token_duration: ["p(95)<350"],
-    credentials_duration: ["p(95)<250"],
-    jwks_duration: ["p(95)<150"],
-    ...(profile === "single" ? {} : { dropped_iterations: ["count==0"] }),
-  };
+const globalThresholds = {
+  enterprise_request_failures: ["rate<0.001"],
+  enterprise_unplanned_5xx: ["count==0"],
+  enterprise_end_to_end_duration: ["p(95)<300", "p(99)<750"],
+  server_application_duration: ["p(95)<150", "p(99)<400"],
+  sabledb_duration: ["p(95)<100", "p(99)<250"],
+  account_duration: ["p(95)<250"],
+  token_duration: ["p(95)<350"],
+  credentials_duration: ["p(95)<250"],
+  jwks_duration: ["p(95)<150"],
+  ...(profile === "single" ? {} : { dropped_iterations: ["count==0"] }),
+};
 
 let startsAtSeconds = 0;
 const scenarios = {};
@@ -199,6 +185,15 @@ export function enterpriseJourney() {
     Date.now() - exec.scenario.startTime >= durationSeconds(singleWarmupDuration) * 1_000;
 
   const unsuccessful = failed || timing === null;
+  if (__ENV.BENCHMARK_DEBUG_SAMPLE === "true" && exec.scenario.iterationInTest < 20) {
+    console.log(JSON.stringify({
+      operation,
+      status: response.status,
+      serverTiming: response.headers["Server-Timing"] || response.headers["server-timing"] || null,
+      responseHeaders: Object.keys(response.headers).sort(),
+      timingParsed: timing !== null,
+    }));
+  }
   if (!recording) phase.warmupCompleted.add(1);
   if (recording) {
     operationDuration[operation].add(duration);

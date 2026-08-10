@@ -63,6 +63,7 @@ struct SeedSummary {
 struct SessionRefreshSummary {
     validated_sessions: u64,
     refreshed_sessions: u64,
+    activity_backed_sessions: u64,
     recreated_sessions: u64,
     pruned_sessions: u64,
     refreshed_at: u64,
@@ -400,31 +401,44 @@ async fn refresh_sessions() -> Result<()> {
 
     let current = now();
     let mut refreshed_sessions = 0_u64;
+    let mut activity_backed_sessions = 0_u64;
     let mut recreated_sessions = 0_u64;
     for batch_start in (0..account_count).step_by(SEED_BATCH_SIZE as usize) {
         let batch_end = account_count.min(batch_start.saturating_add(SEED_BATCH_SIZE));
         let keys: Vec<_> = (batch_start..batch_end)
             .map(|index| session_key(&deterministic_session_token(&seed, index)))
             .collect();
+        let activity_keys: Vec<_> = (batch_start..batch_end)
+            .map(|index| session_activity_key(&deterministic_session_token(&seed, index)))
+            .collect();
         let mut read_pipeline = redis::pipe();
-        for key in &keys {
-            read_pipeline.cmd("GET").arg(key);
+        for (key, activity_key) in keys.iter().zip(&activity_keys) {
+            read_pipeline
+                .cmd("GET")
+                .arg(key)
+                .cmd("GET")
+                .arg(activity_key);
         }
         let values: Vec<Option<String>> = read_pipeline
             .query_async(&mut raw)
             .await
             .with_context(|| format!("read synthetic session batch {batch_start}..{batch_end}"))?;
-        if values.len() != keys.len() {
+        if values.len() != keys.len().saturating_mul(2) {
             bail!("SableDB returned an incomplete synthetic session batch");
         }
 
         let mut write_pipeline = redis::pipe();
         write_pipeline.atomic();
         let mut batch_writes = 0_u64;
-        for (offset, (key, value)) in keys.iter().zip(values).enumerate() {
+        for (offset, ((key, activity_key), values)) in keys
+            .iter()
+            .zip(&activity_keys)
+            .zip(values.chunks_exact(2))
+            .enumerate()
+        {
             let index = batch_start.saturating_add(offset as u64);
-            let (mut session, recreated) = match value {
-                Some(value) => serde_json::from_str(&value)
+            let (mut session, recreated) = match &values[0] {
+                Some(value) => serde_json::from_str(value)
                     .with_context(|| format!("decode synthetic session {index}"))
                     .map(|session| (session, false))?,
                 None => {
@@ -440,7 +454,15 @@ async fn refresh_sessions() -> Result<()> {
             {
                 bail!("synthetic session {index} does not match its deterministic fixture");
             }
-            if !recreated && !session_needs_refresh(&session, current, idle_seconds) {
+            let activity = values[1]
+                .as_deref()
+                .map(str::parse::<u64>)
+                .transpose()
+                .with_context(|| format!("decode synthetic session activity {index}"))?;
+            if effective_session_last_seen(&session, activity, current) > session.last_seen_at {
+                activity_backed_sessions = activity_backed_sessions.saturating_add(1);
+            }
+            if !recreated && !session_needs_refresh(&session, activity, current, idle_seconds) {
                 continue;
             }
             refresh_session(&mut session, current);
@@ -451,6 +473,9 @@ async fn refresh_sessions() -> Result<()> {
                 .arg(key)
                 .arg(SESSION_SECONDS)
                 .arg(serde_json::to_string(&session)?)
+                .ignore()
+                .cmd("DEL")
+                .arg(activity_key)
                 .ignore();
         }
         if batch_writes != 0 {
@@ -488,6 +513,7 @@ async fn refresh_sessions() -> Result<()> {
         serde_json::to_string_pretty(&SessionRefreshSummary {
             validated_sessions: account_count,
             refreshed_sessions,
+            activity_backed_sessions,
             recreated_sessions,
             pruned_sessions,
             refreshed_at: current,
@@ -602,10 +628,22 @@ fn refresh_session(session: &mut Session, current: u64) {
     session.absolute_expires_at = current.saturating_add(SESSION_SECONDS);
 }
 
-fn session_needs_refresh(session: &Session, current: u64, idle_seconds: u64) -> bool {
+fn effective_session_last_seen(session: &Session, activity: Option<u64>, current: u64) -> u64 {
+    activity
+        .filter(|activity| *activity <= current)
+        .map_or(session.last_seen_at, |activity| {
+            session.last_seen_at.max(activity)
+        })
+}
+
+fn session_needs_refresh(
+    session: &Session,
+    activity: Option<u64>,
+    current: u64,
+    idle_seconds: u64,
+) -> bool {
     let minimum_idle_remaining = idle_seconds / 2;
-    session
-        .last_seen_at
+    effective_session_last_seen(session, activity, current)
         .saturating_add(idle_seconds)
         .saturating_sub(current)
         < minimum_idle_remaining
@@ -764,6 +802,13 @@ fn session_key(token: &str) -> String {
     )
 }
 
+fn session_activity_key(token: &str) -> String {
+    format!(
+        "auth:session-activity:{}",
+        hex::encode(Sha256::digest(token.as_bytes()))
+    )
+}
+
 fn next_event(
     sequence: &mut u64,
     tenant_id: &str,
@@ -854,8 +899,10 @@ mod tests {
             last_seen_at: 900,
             absolute_expires_at: 900 + SESSION_SECONDS,
         };
-        assert!(!session_needs_refresh(&session, 1_000, 1_800));
-        assert!(session_needs_refresh(&session, 1_801, 1_800));
+        assert!(!session_needs_refresh(&session, None, 1_000, 1_800));
+        assert!(session_needs_refresh(&session, None, 1_801, 1_800));
+        assert!(!session_needs_refresh(&session, Some(1_700), 1_801, 1_800));
+        assert!(session_needs_refresh(&session, Some(1_900), 1_801, 1_800));
     }
 
     #[test]

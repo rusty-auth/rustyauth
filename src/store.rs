@@ -76,7 +76,10 @@ use self::writer_lease::{WRITER_LEASE_KEY, WRITER_LEASE_SECONDS};
 
 use std::{
     collections::{BTreeSet, HashSet},
-    sync::Arc,
+    sync::{
+        Arc,
+        atomic::{AtomicUsize, Ordering},
+    },
     time::{SystemTime, UNIX_EPOCH},
 };
 
@@ -180,16 +183,46 @@ pub struct Store {
 /// connection trait keeps the measurement below every command and pipeline,
 /// including store modules that do not pass through the convenience helpers.
 #[derive(Clone)]
-pub struct MeasuredConnection(redis::aio::ConnectionManager);
+pub struct MeasuredConnection {
+    connections: Arc<[redis::aio::ConnectionManager]>,
+    next: Arc<AtomicUsize>,
+}
+
+impl MeasuredConnection {
+    fn new(connections: Vec<redis::aio::ConnectionManager>) -> Self {
+        assert!(
+            !connections.is_empty(),
+            "the SableDB connection pool must not be empty"
+        );
+        Self {
+            connections: connections.into(),
+            next: Arc::new(AtomicUsize::new(0)),
+        }
+    }
+
+    fn pick(&self) -> redis::aio::ConnectionManager {
+        let index = connection_pool_index(
+            self.next.fetch_add(1, Ordering::Relaxed),
+            self.connections.len(),
+        );
+        self.connections[index].clone()
+    }
+}
+
+fn connection_pool_index(sequence: usize, connections: usize) -> usize {
+    debug_assert!(connections > 0);
+    sequence % connections
+}
 
 impl redis::aio::ConnectionLike for MeasuredConnection {
     fn req_packed_command<'a>(
         &'a mut self,
         command: &'a redis::Cmd,
     ) -> redis::RedisFuture<'a, redis::Value> {
+        let mut connection = self.pick();
         Box::pin(async move {
             let started = std::time::Instant::now();
-            let result = self.0.req_packed_command(command).await;
+            let result = connection.req_packed_command(command).await;
             crate::request_timing::record_sabledb_round_trip(started.elapsed());
             result
         })
@@ -201,16 +234,19 @@ impl redis::aio::ConnectionLike for MeasuredConnection {
         offset: usize,
         count: usize,
     ) -> redis::RedisFuture<'a, Vec<redis::Value>> {
+        let mut connection = self.pick();
         Box::pin(async move {
             let started = std::time::Instant::now();
-            let result = self.0.req_packed_commands(pipeline, offset, count).await;
+            let result = connection
+                .req_packed_commands(pipeline, offset, count)
+                .await;
             crate::request_timing::record_sabledb_round_trip(started.elapsed());
             result
         })
     }
 
     fn get_db(&self) -> i64 {
-        self.0.get_db()
+        self.connections[0].get_db()
     }
 }
 
@@ -218,8 +254,15 @@ pub type SnapshotGate = Arc<RwLock<()>>;
 
 impl Store {
     pub fn new(redis: redis::aio::ConnectionManager, tenant_id: String) -> Self {
+        Self::new_with_connections(vec![redis], tenant_id)
+    }
+
+    pub fn new_with_connections(
+        redis: Vec<redis::aio::ConnectionManager>,
+        tenant_id: String,
+    ) -> Self {
         Self {
-            redis: MeasuredConnection(redis),
+            redis: MeasuredConnection::new(redis),
             mutation: Arc::new(Mutex::new(())),
             snapshot_gate: Arc::new(RwLock::new(())),
             session_touch_permits: Arc::new(Semaphore::new(MAX_PENDING_SESSION_TOUCHES)),
@@ -395,6 +438,19 @@ fn handoff_key(code: &str) -> String {
         "auth:agent-handoff:{}",
         hex::encode(Sha256::digest(code.as_bytes()))
     )
+}
+
+#[cfg(test)]
+mod connection_pool_tests {
+    use super::connection_pool_index;
+
+    #[test]
+    fn request_connections_are_selected_round_robin() {
+        let selected: Vec<_> = (0..10)
+            .map(|sequence| connection_pool_index(sequence, 4))
+            .collect();
+        assert_eq!(selected, [0, 1, 2, 3, 0, 1, 2, 3, 0, 1]);
+    }
 }
 
 /// Store behaviour that only a real SableDB can answer.

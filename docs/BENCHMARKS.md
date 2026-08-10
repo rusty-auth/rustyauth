@@ -66,6 +66,23 @@ The catalogue defines light, typical and heavy profiles. The headline single-rea
 profile; all three remain visible so an integrator can map the result to its own traffic. Sign-in throughput
 is reported independently from session-backed API throughput.
 
+## Realm-cell scaling model
+
+Each supported realm is an independent deployment cell with its own API process, SableDB process and durable
+data. If a qualified resource tier sustains `C` authenticated requests per second, `N` equally sized and
+independently deployed realms have an initial planning envelope of:
+
+```text
+fleet authenticated request envelope = N × C × 0.70
+```
+
+The 30% factor is operating headroom, not additional measured capacity. Adding an equivalent realm therefore
+adds approximately one realm's qualified envelope; it does not make an existing realm multi-writer and does
+not increase the capacity of shared ingress, Fleet routing, observability, backup storage or a Railway region.
+Those shared layers require their own load tests and limits. Reports show both the linear realm-cell projection
+and these unqualified shared boundaries so the projection cannot be presented as evidence of arbitrary global
+or hyperscale operation.
+
 ## Cadence
 
 - Merges continue to run correctness and deployment probes, not load benchmarks.
