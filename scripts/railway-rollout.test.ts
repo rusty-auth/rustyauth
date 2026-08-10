@@ -107,8 +107,8 @@ Deno.test("a historical matching image is not mistaken for the active deployment
   const outputs = [
     JSON.stringify([deployment("current", "SUCCESS", false), deployment("historical", "SUCCESS")]),
     projectStatus(),
-    JSON.stringify({ data: { serviceInstanceUpdate: true } }),
     "",
+    JSON.stringify({ data: { serviceInstanceUpdate: true } }),
     JSON.stringify({ id: "requested" }),
     JSON.stringify([deployment("new", "SUCCESS"), deployment("current", "SUCCESS", false)]),
   ];
@@ -143,8 +143,8 @@ Deno.test("rollout waits for the exact digest to reach terminal success before h
   const outputs = [
     JSON.stringify([deployment("old", "SUCCESS", false)]),
     projectStatus(),
-    JSON.stringify({ data: { serviceInstanceUpdate: true } }),
     "",
+    JSON.stringify({ data: { serviceInstanceUpdate: true } }),
     JSON.stringify({ id: "requested" }),
     JSON.stringify([deployment("queued", "QUEUED"), deployment("old", "SUCCESS", false)]),
     JSON.stringify([deployment("new", "DEPLOYING"), deployment("old", "SUCCESS", false)]),
@@ -188,8 +188,10 @@ Deno.test("rollout waits for the exact digest to reach terminal success before h
   assertEquals(healthChecks, 1);
   assert(commands.some((args) => args[0] === "api"), "service update mutation was not invoked");
   const down = commands.findIndex((args) => args[0] === "down");
+  const update = commands.findIndex((args) => args[0] === "api");
   const redeployIndex = commands.findIndex((args) => args[0] === "redeploy");
-  assert(down >= 0 && down < redeployIndex, "realm writer handoff did not precede deployment");
+  assert(down >= 0 && down < update, "realm writer handoff did not precede the service mutation");
+  assert(update < redeployIndex, "service mutation did not precede the explicit redeploy");
   assert(commands.some((args) => args[0] === "redeploy"), "updated source was not explicitly deployed");
   const mutation = commands.find((args) => args[0] === "api");
   const variablesIndex = mutation?.indexOf("--variables") ?? -1;
@@ -205,8 +207,8 @@ Deno.test("a deployment receipt exists before a failing health check so rollback
   const outputs = [
     JSON.stringify([deployment("old", "SUCCESS", false)]),
     projectStatus(),
-    JSON.stringify({ data: { serviceInstanceUpdate: true } }),
     "",
+    JSON.stringify({ data: { serviceInstanceUpdate: true } }),
     JSON.stringify({ id: "requested" }),
     JSON.stringify([deployment("new", "SUCCESS"), deployment("old", "SUCCESS", false)]),
   ];
@@ -319,8 +321,8 @@ Deno.test("rollout fails closed on a terminal failed deployment", async () => {
   const outputs = [
     JSON.stringify([deployment("old", "SUCCESS", false)]),
     projectStatus(),
-    JSON.stringify({ data: { serviceInstanceUpdate: true } }),
     "",
+    JSON.stringify({ data: { serviceInstanceUpdate: true } }),
     JSON.stringify({ id: "requested" }),
     JSON.stringify([deployment("failed", "FAILED")]),
   ];

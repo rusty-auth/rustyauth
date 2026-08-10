@@ -404,7 +404,22 @@ export async function rolloutRailwayImage(
       options.environment,
       options.service,
     );
-    if (configuredImage !== sourceImage) {
+    receipt.changed = true;
+    await writeReceipt();
+
+    // Railway keeps the old deployment alive until its replacement is ready,
+    // even with overlapSeconds=0. A RustyAuth realm intentionally refuses to
+    // start while that old process owns the one-writer lease. Updating a
+    // Railway service instance can itself start a deployment, so the explicit,
+    // receipt-backed handoff must happen before the mutation, not merely before
+    // the later redeploy request.
+    if (options.profile === "realm" && previous) {
+      await runJson(runner, downArgs(options));
+    }
+    if (
+      configuredImage !== sourceImage ||
+      (current && !deploymentMatchesProfile(current, options.profile))
+    ) {
       const update = JSON.parse(await runJson(runner, updateArgs(options, sourceImage))) as {
         data?: { serviceInstanceUpdate?: boolean };
         errors?: unknown[];
@@ -412,16 +427,6 @@ export async function rolloutRailwayImage(
       if (update.errors?.length || update.data?.serviceInstanceUpdate !== true) {
         fail("Railway rejected the service image/configuration update");
       }
-    }
-    receipt.changed = true;
-    await writeReceipt();
-
-    // Railway keeps the old deployment alive until its replacement is ready,
-    // even with overlapSeconds=0. A RustyAuth realm intentionally refuses to
-    // start while that old process owns the one-writer lease, so perform an
-    // explicit, receipt-backed handoff before starting the replacement.
-    if (options.profile === "realm" && previous) {
-      await runJson(runner, downArgs(options));
     }
     await runJson(runner, redeployArgs(options));
 
