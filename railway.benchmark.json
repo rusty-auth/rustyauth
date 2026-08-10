@@ -12,6 +12,7 @@
       "/proto/**",
       "/src/**",
       "/benchmarks/k6/**",
+      "/benchmarks/run-passkey-companion.sh",
       "/benchmarks/run-starter-baseline.sh",
       "/benchmarks/run-enterprise-profile.sh",
       "/rustyauth.example.yaml",

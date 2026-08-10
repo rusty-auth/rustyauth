@@ -10,8 +10,8 @@ use secrecy::SecretString;
 use webauthn_rs::Webauthn;
 
 use crate::{
-    backup::BackupStore, config::DeploymentRole, jwt::JwtIssuer, rate_limit::RateLimiter,
-    store::Store, webhook::WebhookRuntime,
+    auth::AuthTelemetry, backup::BackupStore, config::DeploymentRole, jwt::JwtIssuer,
+    rate_limit::RateLimiter, store::Store, webhook::WebhookRuntime,
 };
 
 #[derive(Clone)]
@@ -20,6 +20,7 @@ pub struct AppState {
     /// Reverse proxies in front of this service, for resolving the client address.
     pub trusted_proxy_hops: usize,
     pub store: Store,
+    pub auth_telemetry: AuthTelemetry,
     pub webauthn: Arc<Webauthn>,
     pub jwt: JwtIssuer,
     pub issuer: String,

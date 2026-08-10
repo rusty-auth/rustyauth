@@ -41,7 +41,7 @@ pub(super) async fn token(
 ) -> Result<Response, ApiError> {
     let (raw, session, user) = authenticated(&state, &headers).await?;
     record_telemetry_event(
-        state.store.clone(),
+        &state.auth_telemetry,
         "token.user.issued",
         Some(user.id),
         json!({}),
@@ -117,7 +117,7 @@ pub(super) async fn device_token(
         .await
         .map_err(ApiError::internal)?;
     record_telemetry_event(
-        state.store.clone(),
+        &state.auth_telemetry,
         "device_session.issued",
         Some(user.id),
         json!({ "expiresAt": device_session.absolute_expires_at }),

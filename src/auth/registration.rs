@@ -80,7 +80,7 @@ pub(super) async fn registration_options(
     }
     let user_id = Uuid::new_v4();
     record_telemetry_event(
-        state.store.clone(),
+        &state.auth_telemetry,
         "registration.options.started",
         None,
         json!({ "flow": "passkey" }),
@@ -114,7 +114,7 @@ pub(super) async fn registration_options(
         .await
         .map_err(ApiError::internal)?;
     record_telemetry_event(
-        state.store.clone(),
+        &state.auth_telemetry,
         "registration.ceremony.opened",
         None,
         json!({ "flow": "passkey" }),
@@ -134,7 +134,7 @@ pub(super) async fn registration_verify(
     require_origin(&state, &headers)?;
     require_rate_limit(&state, peer, &headers, RateLimitClass::Ceremony, None).await?;
     record_telemetry_event(
-        state.store.clone(),
+        &state.auth_telemetry,
         "registration.response.returned",
         None,
         json!({ "flow": "passkey" }),
@@ -143,7 +143,7 @@ pub(super) async fn registration_verify(
         Ok(ceremony) => ceremony,
         Err(_) => {
             record_telemetry_event(
-                state.store.clone(),
+                &state.auth_telemetry,
                 "registration.challenge.expired",
                 None,
                 json!({ "flow": "passkey" }),
@@ -205,7 +205,7 @@ pub(super) async fn registration_verify(
         .await
         .map_err(ApiError::internal)?;
     record_telemetry_event(
-        state.store.clone(),
+        &state.auth_telemetry,
         "registration.completed",
         Some(user.id),
         json!({

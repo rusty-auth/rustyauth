@@ -17,6 +17,7 @@ run_k6() {
   duration="$3"
   label="$4"
   time_unit="$5"
+  script_path="${BENCHMARK_SCRIPT_PATH:-/opt/rustyauth/benchmarks/k6/single-realm.js}"
   set +e
   MODE="${mode}" \
   ARRIVAL_RATE="${rate}" \
@@ -27,7 +28,7 @@ run_k6() {
   TARGET_URL="${TARGET_URL}" \
     k6 run \
       --summary-export "${run_dir}/${label}.json" \
-      /opt/rustyauth/benchmarks/k6/single-realm.js \
+      "${script_path}" \
       > "${run_dir}/${label}.txt" 2>&1
   status="$?"
   set -e
@@ -38,18 +39,21 @@ run_k6() {
 # minutes on a capacity ladder.
 run_k6 read 1 10s read-smoke-1rps 1s
 if [ "$(cat "${run_dir}/read-smoke-1rps.exit-code")" -ne 0 ]; then
-  sha256sum "${run_dir}"/*.json "${run_dir}"/*.txt > "${run_dir}/SHA256SUMS"
+  (cd "${run_dir}" && sha256sum ./*.json ./*.txt ./*.exit-code > SHA256SUMS)
   printf '%s\n' "${run_dir}"
   exit 1
 fi
 
+read_status=0
 for rate in 25 50 100 200 400 800; do
   run_k6 read "${rate}" "${READ_DURATION:-90s}" "read-${rate}rps" 1s
   # The fixed ladder is monotonic. Once a step breaches a gate, higher rates
   # cannot establish a sustainable lower tier and would only consume CI/runtime
   # minutes. Preserve the first failed step and continue to the independent
   # passkey sign-in measurement.
-  if [ "$(cat "${run_dir}/read-${rate}rps.exit-code")" -ne 0 ]; then
+  step_status="$(cat "${run_dir}/read-${rate}rps.exit-code")"
+  if [ "${step_status}" -ne 0 ]; then
+    read_status="${step_status}"
     break
   fi
 done
@@ -59,5 +63,10 @@ done
 # user experience without weakening or bypassing production brute-force policy.
 run_k6 signin 6 "${SIGNIN_DURATION:-5m}" signin-0.1rps 1m
 
-sha256sum "${run_dir}"/*.json "${run_dir}"/*.txt > "${run_dir}/SHA256SUMS"
+(cd "${run_dir}" && sha256sum ./*.json ./*.txt ./*.exit-code > SHA256SUMS)
 printf '%s\n' "${run_dir}"
+signin_status="$(cat "${run_dir}/signin-0.1rps.exit-code")"
+if [ "${read_status}" -ne 0 ]; then
+  exit "${read_status}"
+fi
+exit "${signin_status}"

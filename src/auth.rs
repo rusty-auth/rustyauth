@@ -23,6 +23,9 @@ use axum::{
     Router,
     routing::{get, post},
 };
+use serde_json::Value;
+use tokio::sync::mpsc;
+use uuid::Uuid;
 
 use crate::app_state::AppState;
 
@@ -47,21 +50,65 @@ use self::{
 pub(crate) use self::session::session_cookie_name;
 
 const CEREMONY_SECONDS: u64 = 300;
+const AUTH_TELEMETRY_QUEUE_CAPACITY: usize = 8_192;
+const AUTH_TELEMETRY_BATCH_SIZE: usize = 256;
+
+struct QueuedTelemetryEvent {
+    event_type: &'static str,
+    subject: Option<Uuid>,
+    data: Value,
+}
+
+#[derive(Clone)]
+pub struct AuthTelemetry {
+    sender: mpsc::Sender<QueuedTelemetryEvent>,
+}
+
+impl AuthTelemetry {
+    pub fn new(store: crate::store::Store) -> Self {
+        let (sender, mut receiver) =
+            mpsc::channel::<QueuedTelemetryEvent>(AUTH_TELEMETRY_QUEUE_CAPACITY);
+        tokio::spawn(async move {
+            while let Some(first) = receiver.recv().await {
+                let mut queued = Vec::with_capacity(AUTH_TELEMETRY_BATCH_SIZE);
+                queued.push(first);
+                while queued.len() < AUTH_TELEMETRY_BATCH_SIZE {
+                    match receiver.try_recv() {
+                        Ok(event) => queued.push(event),
+                        Err(mpsc::error::TryRecvError::Empty) => break,
+                        Err(mpsc::error::TryRecvError::Disconnected) => break,
+                    }
+                }
+                let batch = queued
+                    .into_iter()
+                    .map(|event| (event.event_type.to_owned(), event.subject, event.data))
+                    .collect();
+                if let Err(error) = store.append_telemetry_events(batch).await {
+                    tracing::warn!(error = %error, "persist authentication telemetry batch");
+                }
+            }
+        });
+        Self { sender }
+    }
+
+    fn record(&self, event_type: &'static str, subject: Option<Uuid>, data: Value) {
+        if let Err(error) = self.sender.try_send(QueuedTelemetryEvent {
+            event_type,
+            subject,
+            data,
+        }) {
+            tracing::warn!(%error, event_type, "authentication telemetry queue is full");
+        }
+    }
+}
 
 fn record_telemetry_event(
-    store: crate::store::Store,
+    telemetry: &AuthTelemetry,
     event_type: &'static str,
-    subject: Option<uuid::Uuid>,
-    data: serde_json::Value,
+    subject: Option<Uuid>,
+    data: Value,
 ) {
-    tokio::spawn(async move {
-        if let Err(error) = store
-            .append_event_with_data(event_type, subject, data)
-            .await
-        {
-            tracing::warn!(error = %error, event_type, "record telemetry event");
-        }
-    });
+    telemetry.record(event_type, subject, data);
 }
 
 pub fn routes() -> Router<AppState> {

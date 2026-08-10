@@ -79,7 +79,7 @@ pub(super) async fn authentication_options(
         .await
         .map_err(ApiError::internal)?;
     record_telemetry_event(
-        state.store.clone(),
+        &state.auth_telemetry,
         "authentication.options.started",
         Some(user.id),
         json!({ "flow": "passkey" }),
@@ -187,7 +187,7 @@ fn record_authentication_outcome(
     started: std::time::Instant,
 ) {
     record_telemetry_event(
-        state.store.clone(),
+        &state.auth_telemetry,
         event_type,
         subject,
         json!({

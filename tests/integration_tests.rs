@@ -143,6 +143,7 @@ async fn clean_room_backup_restore_and_rotation() -> Result<()> {
         rate_limiter: Arc::new(RateLimiter::new(1_024)),
         trusted_proxy_hops: 0,
         store: source.clone(),
+        auth_telemetry: auth::AuthTelemetry::new(source.clone()),
         webauthn: Arc::new(webauthn),
         jwt: source_jwt.clone(),
         issuer: "https://auth.integration.invalid".into(),

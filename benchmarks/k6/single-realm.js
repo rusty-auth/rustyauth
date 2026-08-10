@@ -1,10 +1,13 @@
 import http from "k6/http";
 import encoding from "k6/encoding";
 import exec from "k6/execution";
+import k6Crypto from "k6/crypto";
 import { check } from "k6";
 import { SharedArray } from "k6/data";
 import { Counter, Rate, Trend } from "k6/metrics";
 import { utf8 } from "./utf8.js";
+import { parseServerTiming } from "./timing.js";
+import { monotonicSignCount, signCountBytes } from "./webauthn.js";
 
 const fixtures = new SharedArray(
   "single-realm-fixtures",
@@ -32,8 +35,24 @@ if (fixtures.length === 0) throw new Error("fixture dataset is empty");
 const authenticatedReadDuration = new Trend("authenticated_read_duration", true);
 const authenticatedReadFailures = new Rate("authenticated_read_failures");
 const signInDuration = new Trend("signin_duration", true);
+const signInOptionsDuration = new Trend("signin_options_duration", true);
+const signInVerifyDuration = new Trend("signin_verify_duration", true);
+const signInOptionsApplicationDuration = new Trend("signin_options_application_duration", true);
+const signInOptionsSableDuration = new Trend("signin_options_sabledb_duration", true);
+const signInVerifyApplicationDuration = new Trend("signin_verify_application_duration", true);
+const signInVerifySableDuration = new Trend("signin_verify_sabledb_duration", true);
+const signInOptionsRoundTrips = new Trend("signin_options_sabledb_round_trips");
+const signInVerifyRoundTrips = new Trend("signin_verify_sabledb_round_trips");
+const signInTimingFailures = new Rate("signin_timing_failures");
 const signInFailures = new Rate("signin_failures");
 const unplanned5xx = new Counter("unplanned_5xx");
+const timingEnabled = Boolean(__ENV.BENCHMARK_TIMING_ROOT_SECRET);
+const benchmarkTimingToken = timingEnabled
+  ? k6Crypto.sha256(
+    `rustyauth:benchmark-timing:v1\0${__ENV.BENCHMARK_TIMING_ROOT_SECRET}`,
+    "hex",
+  )
+  : null;
 
 const scenario = {
   executor: "constant-arrival-rate",
@@ -55,6 +74,7 @@ export const options = {
       signin_duration: ["p(95)<750", "p(99)<1500"],
       unplanned_5xx: ["count==0"],
       dropped_iterations: ["count==0"],
+      ...(timingEnabled ? { signin_timing_failures: ["rate==0"] } : {}),
     }
     : {
       authenticated_read_failures: ["rate<0.001"],
@@ -67,6 +87,7 @@ export const options = {
 const jsonHeaders = {
   "Content-Type": "application/json",
   Origin: __ENV.RP_ORIGIN,
+  ...(benchmarkTimingToken ? { "X-RustyAuth-Benchmark-Timing": benchmarkTimingToken } : {}),
 };
 
 export function authenticatedRead() {
@@ -97,6 +118,8 @@ export async function signIn() {
       { headers: jsonHeaders, tags: { operation: "signin_options" } },
     );
     observedRequestDuration += optionsResponse.timings.duration;
+    signInOptionsDuration.add(optionsResponse.timings.duration);
+    recordSignInTiming(optionsResponse, "options");
     if (optionsResponse.status !== 200) {
       recordSignInFailure(optionsResponse, started, observedRequestDuration, "options");
       return;
@@ -110,6 +133,8 @@ export async function signIn() {
       { headers: jsonHeaders, tags: { operation: "signin_verify" } },
     );
     observedRequestDuration += verifyResponse.timings.duration;
+    signInVerifyDuration.add(verifyResponse.timings.duration);
+    recordSignInTiming(verifyResponse, "verify");
     const failed = verifyResponse.status !== 200;
     signInDuration.add(signInElapsed(started, observedRequestDuration));
     signInFailures.add(failed);
@@ -124,6 +149,22 @@ export async function signIn() {
     if (exec.scenario.iterationInTest < 3) {
       console.error(`passkey assertion failed: ${error}`);
     }
+  }
+}
+
+function recordSignInTiming(response, stage) {
+  if (!timingEnabled) return;
+  const timing = parseServerTiming(response.headers["Server-Timing"] || response.headers["server-timing"]);
+  signInTimingFailures.add(timing === null);
+  if (!timing) return;
+  if (stage === "options") {
+    signInOptionsApplicationDuration.add(timing.app);
+    signInOptionsSableDuration.add(timing.sabledb);
+    signInOptionsRoundTrips.add(timing.roundTrips);
+  } else {
+    signInVerifyApplicationDuration.add(timing.app);
+    signInVerifySableDuration.add(timing.sabledb);
+    signInVerifyRoundTrips.add(timing.roundTrips);
   }
 }
 
@@ -155,7 +196,16 @@ async function webauthnAssertion(fixture, options) {
     }),
   );
   const rpHash = new Uint8Array(await crypto.subtle.digest("SHA-256", utf8(publicKey.rpId)));
-  const authenticatorData = concat(rpHash, new Uint8Array([0x05, 0, 0, 0, 1]));
+  // The benchmark dataset is intentionally durable across runs. A fixed
+  // counter would therefore turn every repeat qualification into a replay and
+  // RustyAuth would correctly reject it. Epoch seconds give each low-rate,
+  // single-use synthetic credential a monotonically increasing counter without
+  // weakening the server's cloned-authenticator detection.
+  const authenticatorData = concat(
+    rpHash,
+    new Uint8Array([0x05]),
+    signCountBytes(monotonicSignCount()),
+  );
   const clientHash = new Uint8Array(await crypto.subtle.digest("SHA-256", clientData));
   const signed = concat(authenticatorData, clientHash);
   const key = await crypto.subtle.importKey(

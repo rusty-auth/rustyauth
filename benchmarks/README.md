@@ -18,6 +18,9 @@ The first single-realm baseline uses:
 The passkey rate deliberately stays below the production policy of ten identifier probes per source address
 per minute. Benchmarking must not weaken or bypass the shipped brute-force controls. The authenticated-read
 ladder measures the scalable signed-in workload; passkey sign-in records end-to-end user latency separately.
+`run-passkey-companion.sh` repeats only the passkey workload when capacity and soak traffic are already in
+progress. Synthetic authenticator counters advance monotonically between retained runs, so the harness never
+asks the server to accept a replayed credential counter.
 
 The highest ladder step that satisfies every latency, failure, dropped-iteration, readiness, restart and
 resource gate is the measured sustainable rate. Published active-user estimates use only 70% of that rate,
@@ -49,9 +52,9 @@ by the API is measured below the store abstraction, allowing the run to split:
 Ordinary callers receive no internal timing header. The installable Railway template does not contain the
 runner, fixture keys or benchmark secret.
 
-The enterprise breakpoint profile steps from 250 to 2,000 mixed requests per second, applies a 2,400 RPS
-spike, then returns to 800 RPS to prove recovery. A separate one-hour soak runs at the reviewed 70%-headroom
-rate. A short breakpoint run is never promoted as a soak result.
+Enterprise qualification uses explicit fixed-rate targets to bracket the first strict latency or reliability
+failure. A separate one-hour soak then runs at 70% of the highest passing target. A short breakpoint run is
+never promoted as a soak result, and a higher read-only result is never presented as mixed-journey capacity.
 
 ## Realm-cell extrapolation
 
@@ -100,6 +103,7 @@ Inside the private runner:
 ```sh
 rustyauth-benchmark seed
 RUN_ID=starter-YYYYMMDDTHHMMSSZ /opt/rustyauth/benchmarks/run-starter-baseline.sh
+RUN_ID=passkey-YYYYMMDDTHHMMSSZ /opt/rustyauth/benchmarks/run-passkey-companion.sh
 ```
 
 Resetting an interrupted synthetic preparation is a separate, fail-closed action. It requires both the exact

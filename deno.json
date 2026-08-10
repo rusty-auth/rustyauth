@@ -19,7 +19,7 @@
     "railway:check": "deno check scripts/railway-rollout.ts scripts/sync-railway-template.ts",
     "railway:test": "deno test --allow-read --allow-write --allow-run scripts/railway-rollout.test.ts scripts/railway-workflow.test.ts scripts/sync-railway-template.test.ts",
     "benchmark:check": "deno run --allow-read scripts/check-benchmark-catalog.ts",
-    "benchmark:test": "deno test --allow-read scripts/check-benchmark-catalog.test.ts benchmarks/k6/utf8.test.ts benchmarks/k6/timing.test.ts",
+    "benchmark:test": "deno test --allow-read scripts/check-benchmark-catalog.test.ts benchmarks/k6/utf8.test.ts benchmarks/k6/timing.test.ts benchmarks/k6/webauthn.test.ts",
     "ci:test": "deno test --allow-read scripts/ci-changes.test.ts scripts/ci-workflow.test.ts",
     "release:check": "deno run --allow-read scripts/check-release-readiness.ts",
     "release:test": "deno test --allow-read scripts/check-release-readiness.test.ts",

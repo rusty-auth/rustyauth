@@ -61,6 +61,36 @@ impl Store {
         Ok(event)
     }
 
+    /// Persists a batch of response-path telemetry behind one mutation-lock
+    /// acquisition and one atomic datastore pipeline. Authentication handlers
+    /// enqueue these records after producing their response; batching prevents
+    /// high-rate token issuance from building a FIFO mutex backlog in front of
+    /// passkey verification and other security-critical mutations.
+    pub async fn append_telemetry_events(
+        &self,
+        inputs: Vec<(String, Option<Uuid>, serde_json::Value)>,
+    ) -> Result<()> {
+        if inputs.is_empty() {
+            return Ok(());
+        }
+        let _snapshot = self.snapshot_gate.read().await;
+        let _guard = self.mutation.lock().await;
+        let descriptors = inputs
+            .iter()
+            .map(|(event_type, subject, _)| (event_type.clone(), *subject))
+            .collect::<Vec<_>>();
+        let mut events = self.pending_events(descriptors).await?;
+        for (event, (_, _, data)) in events.iter_mut().zip(inputs) {
+            event.data = data;
+        }
+        let mut connection = self.redis.clone();
+        let mut pipeline = redis::pipe();
+        pipeline.atomic();
+        queue_events(&mut pipeline, &events)?;
+        let _: () = pipeline.query_async(&mut connection).await?;
+        Ok(())
+    }
+
     /// Appends one event. The caller must already hold the snapshot gate; this
     /// acquires the mutation lock, so a caller holding it must use
     /// [`Self::append_event_locked`] instead — the mutex is not reentrant.

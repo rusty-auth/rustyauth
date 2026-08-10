@@ -387,6 +387,7 @@ async fn serve(
         rate_limiter,
         trusted_proxy_hops: config.trusted_proxy_hops,
         store: store.clone(),
+        auth_telemetry: auth::AuthTelemetry::new(store.clone()),
         webauthn: Arc::new(webauthn),
         jwt,
         issuer,
