@@ -74,12 +74,14 @@ the production storage contract without turning 10,000-account preparation into 
 durability barriers. Seeding refuses to run when identity/event records or an active writer lease are present,
 and verifies the final account/session cardinalities before the fixture set can be used by k6.
 
-Each run renews only the synthetic sessions' idle and absolute boundaries before preflight, then validates the
-first and last fixtures through the production session model. This preserves the expensive account and passkey
-dataset between monthly runs without accepting expired session keys as valid workload fixtures. The runner's
-`BENCHMARK_SESSION_IDLE_SECONDS` must exactly match the realm's `AUTH_SESSION_IDLE_SECONDS`. If an earlier
-preflight caused the API to delete an idle-expired synthetic session, the runner reconstructs only that
-deterministic session from its persisted account and single registered passkey and records the repair count.
+Each run renews the synthetic sessions' idle and absolute boundaries before preflight, prunes only superseded
+sessions owned by deterministic benchmark accounts, then validates the first and last fixtures through the
+production session model. This preserves the expensive account and passkey dataset between monthly runs without
+accepting expired session keys as valid workload fixtures. The runner's `BENCHMARK_SESSION_IDLE_SECONDS` must
+exactly match the realm's `AUTH_SESSION_IDLE_SECONDS`. If an earlier preflight caused the API to delete an
+idle-expired synthetic session, the runner reconstructs only that deterministic session from its persisted
+account and single registered passkey and records the repair count. A 60-second unmeasured settle window
+separates these durable fixture writes from the smoke gate and measured profile.
 
 The runner image is built from `Dockerfile.benchmark`, stays private, has no public domain and connects to
 SableDB through Railway private networking. k6 alone calls the public target domain so gateway latency is

@@ -12,6 +12,19 @@ mkdir -p "${run_dir}"
 /usr/local/bin/rustyauth-benchmark refresh-sessions > "${run_dir}/session-refresh.json"
 /usr/local/bin/rustyauth-benchmark count > "${run_dir}/dataset.json"
 
+# Rewriting every fixture TTL intentionally creates a short burst of durable
+# datastore work. Keep preparation outside the measured window and let
+# compaction settle; the following smoke profile remains the fail-closed proof
+# that the realm is quiet enough to measure.
+settle_seconds="${BENCHMARK_SETTLE_SECONDS:-60}"
+case "${settle_seconds}" in
+  ''|*[!0-9]*)
+    printf '%s\n' "BENCHMARK_SETTLE_SECONDS must be a non-negative integer" >&2
+    exit 2
+    ;;
+esac
+sleep "${settle_seconds}"
+
 run_profile() {
   profile="$1"
   label="$2"
