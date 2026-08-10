@@ -35,7 +35,6 @@ docker volume create "$data_volume" >/dev/null
 
 common_args=(
   --read-only
-  --init
   --cap-drop ALL
   --security-opt no-new-privileges
   --pids-limit 256
@@ -44,6 +43,7 @@ common_args=(
 
 docker run -d --name "$sable_container" \
   "${common_args[@]}" \
+  --cap-add CHOWN --cap-add DAC_OVERRIDE --cap-add FOWNER --cap-add SETGID --cap-add SETUID \
   --network "$private_network" --network-alias sabledb \
   --mount "type=volume,src=$data_volume,dst=/var/lib/sabledb" \
   "$sabledb_image" >/dev/null
@@ -54,6 +54,20 @@ for attempt in $(seq 1 60); do
   fi
   if [[ $attempt -eq 60 ]]; then
     echo "SableDB did not become ready" >&2
+    exit 1
+  fi
+  sleep 1
+done
+
+# A second boot must also traverse the volume after the bootstrap has tightened
+# its owner and mode to 10002:10002 and 0750.
+docker restart "$sable_container" >/dev/null
+for attempt in $(seq 1 60); do
+  if docker exec "$sable_container" /usr/local/bin/container-healthcheck redis 127.0.0.1:6379 >/dev/null 2>&1; then
+    break
+  fi
+  if [[ $attempt -eq 60 ]]; then
+    echo "SableDB did not become ready after restart" >&2
     exit 1
   fi
   sleep 1
@@ -104,6 +118,7 @@ config_yaml=$(printf '%s\n' \
 
 docker run -d --name "$api_container" \
   "${common_args[@]}" \
+  --init \
   --network "$private_network" \
   -e "RUSTYAUTH_CONFIG_YAML=$config_yaml" \
   -e "AUTH_MASTER_KEY_HEX=$master_key" \
@@ -126,6 +141,7 @@ done
 
 docker run -d --name "$dashboard_container" \
   "${common_args[@]}" \
+  --init \
   --network "$private_network" \
   -p "127.0.0.1:${dashboard_port}:8080" \
   -e PORT=8080 \
@@ -145,24 +161,20 @@ for attempt in $(seq 1 60); do
 done
 
 for spec in \
-  "$sable_container|10002:10002|$private_network|1" \
-  "$api_container|10001:10001|$private_network|1" \
-  "$dashboard_container|10001:10001|$private_network,$edge_network|2"
+  "$sable_container|0:0|$private_network|1|false" \
+  "$api_container|10001:10001|$private_network|1|true" \
+  "$dashboard_container|10001:10001|$private_network,$edge_network|2|true"
 do
-  name=${spec%%|*}
-  rest=${spec#*|}
-  expected_user=${rest%%|*}
-  rest=${rest#*|}
-  expected_networks=${rest%%|*}
-  expected_network_count=${rest##*|}
+  IFS='|' read -r name expected_user expected_networks expected_network_count expected_init <<< "$spec"
   docker inspect "$name" | jq -e \
     --arg user "$expected_user" \
     --arg networks "$expected_networks" \
     --argjson network_count "$expected_network_count" \
+    --argjson init "$expected_init" \
     '.[0]
      | .Config.User == $user
        and .HostConfig.ReadonlyRootfs
-       and .HostConfig.Init
+       and (if $init then .HostConfig.Init == true else .HostConfig.Init != true end)
        and (.HostConfig.CapDrop == ["ALL"])
        and (.HostConfig.SecurityOpt | index("no-new-privileges") != null)
        and .HostConfig.PidsLimit == 256
@@ -174,6 +186,14 @@ do
     exit 1
   fi
 done
+
+# The SableDB image starts as root only long enough to take ownership of a
+# freshly attached volume. The database process itself must be PID 1 and run as
+# uid 10002, so shutdown signals do not require a privileged forwarding shim.
+docker top "$sable_container" -eo uid,pid,comm | awk '
+  NR > 1 && $3 == "sabledb" { if ($1 != "10002") exit 1; found = 1 }
+  END { if (!found) exit 1 }
+'
 
 docker inspect "$sable_container" | jq -e '.[0].HostConfig.PortBindings == {} or .[0].HostConfig.PortBindings == null' >/dev/null
 docker inspect "$api_container" | jq -e '.[0].HostConfig.PortBindings == {} or .[0].HostConfig.PortBindings == null' >/dev/null

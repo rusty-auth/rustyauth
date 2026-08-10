@@ -11,6 +11,7 @@ export const CI_AREAS = [
   "recovery",
   "api_image",
   "dashboard_image",
+  "sabledb_image",
 ] as const;
 
 export type CiArea = (typeof CI_AREAS)[number];
@@ -44,6 +45,7 @@ const patterns: Record<CiArea, RegExp[]> = {
   policy: [
     /^\.github\/workflows\/(?:release|railway-production|native-packaging)\.yml$/,
     /^scripts\/(?:railway-|check-release|check-native|check-dashboard|check-docs|check-helm)/,
+    /^scripts\/qualify-(?:runtime-images|sabledb-image)\.sh$/,
     /^charts\//,
     /^release-evidence\//,
     /^railway(?:\.[^.]+)?\.json$/,
@@ -91,6 +93,7 @@ const patterns: Record<CiArea, RegExp[]> = {
   ],
   api_image: [
     /^Dockerfile$/,
+    /^container-healthcheck\//,
     /^src\//,
     /^Cargo\.(?:toml|lock)$/,
     /^rust-toolchain\.toml$/,
@@ -101,7 +104,13 @@ const patterns: Record<CiArea, RegExp[]> = {
   ],
   dashboard_image: [
     /^Dockerfile\.dashboard$/,
+    /^container-healthcheck\//,
     /^console\//,
+    ...sharedMetadata,
+  ],
+  sabledb_image: [
+    /^sabledb\/(?:Cargo\.lock|Dockerfile|server\.ini)$/,
+    /^container-healthcheck\//,
     ...sharedMetadata,
   ],
 };

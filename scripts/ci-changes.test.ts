@@ -20,6 +20,7 @@ Deno.test("Railway workflow changes stay within workflow and policy lanes", () =
     recovery: false,
     api_image: false,
     dashboard_image: false,
+    sabledb_image: false,
   });
 });
 
@@ -30,6 +31,7 @@ Deno.test("Rust service changes select runtime, integration and API image lanes"
   assertEquals(selected.api_image, true);
   assertEquals(selected.console, false);
   assertEquals(selected.dashboard_image, false);
+  assertEquals(selected.sabledb_image, false);
   assertEquals(selected.site, false);
 });
 
@@ -40,6 +42,7 @@ Deno.test("site-only changes do not compile Rust or containers", () => {
   assertEquals(selected.recovery, false);
   assertEquals(selected.api_image, false);
   assertEquals(selected.dashboard_image, false);
+  assertEquals(selected.sabledb_image, false);
 });
 
 Deno.test("console changes qualify the dashboard without the API", () => {
@@ -47,6 +50,7 @@ Deno.test("console changes qualify the dashboard without the API", () => {
   assertEquals(selected.console, true);
   assertEquals(selected.dashboard_image, true);
   assertEquals(selected.api_image, false);
+  assertEquals(selected.sabledb_image, false);
   assertEquals(selected.rust, false);
 });
 
@@ -59,6 +63,7 @@ Deno.test("dependency and protocol changes fan out to every consumer", () => {
   assertEquals(selected.recovery, true);
   assertEquals(selected.api_image, true);
   assertEquals(selected.dashboard_image, false);
+  assertEquals(selected.sabledb_image, false);
 });
 
 Deno.test("unknown paths fail safe by selecting every lane", () => {
@@ -71,5 +76,25 @@ Deno.test("Helm chart changes select deployment policy without rebuilding images
   assertEquals(selected.policy, true);
   assertEquals(selected.api_image, false);
   assertEquals(selected.dashboard_image, false);
+  assertEquals(selected.sabledb_image, false);
   assertEquals(selected.rust, false);
+});
+
+Deno.test("SableDB image changes select one dedicated container lane", () => {
+  const selected = classifyCiChanges(["sabledb/Dockerfile"]);
+  assertEquals(selected.sabledb_image, true);
+  assertEquals(selected.api_image, false);
+  assertEquals(selected.dashboard_image, false);
+  assertEquals(selected.rust, false);
+  assertEquals(selected.console, false);
+  assertEquals(selected.site, false);
+});
+
+Deno.test("shared healthcheck code rebuilds each consuming runtime image", () => {
+  const selected = classifyCiChanges(["container-healthcheck/sabledb-entrypoint/main.go"]);
+  assertEquals(selected.sabledb_image, true);
+  assertEquals(selected.api_image, true);
+  assertEquals(selected.dashboard_image, true);
+  assertEquals(selected.rust, false);
+  assertEquals(selected.console, false);
 });

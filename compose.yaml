@@ -63,6 +63,12 @@ services:
 
   sabledb:
     <<: *runtime-hardening
+    # The entrypoint execs SableDB as PID 1 after dropping privilege; a root
+    # signal-forwarding shim could not signal that non-root process.
+    init: false
+    # The image uses these only to prepare a newly attached root-owned volume,
+    # then clears groups and drops to uid/gid 10002 before SableDB starts.
+    cap_add: [CHOWN, DAC_OVERRIDE, FOWNER, SETGID, SETUID]
     build:
       context: .
       dockerfile: sabledb/Dockerfile

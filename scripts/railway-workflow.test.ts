@@ -56,6 +56,25 @@ Deno.test("Railway candidates are immutable, signed and digest-verified", () => 
   }
 });
 
+Deno.test("the public Railway template follows the verified production image set", () => {
+  for (
+    const required of [
+      "name: Publish the verified Railway template graph",
+      "needs: [prepare, publish-api, publish-dashboard, publish-sabledb, deploy]",
+      "needs.deploy.result == 'success'",
+      "RAILWAY_API_TOKEN: ${{ secrets.RAILWAY_TEMPLATE_TOKEN }}",
+      "scripts/sync-railway-template.ts",
+      "ghcr.io/rusty-auth/rustyauth@${API_DIGEST}",
+      "ghcr.io/rusty-auth/dashboard@${DASHBOARD_DIGEST}",
+      "ghcr.io/rusty-auth/sabledb@${SABLEDB_DIGEST}",
+    ]
+  ) assertIncludes(workflow, required);
+  assertOrdered(workflow, [
+    "name: Roll out verified candidate",
+    "name: Publish the verified Railway template graph",
+  ]);
+});
+
 Deno.test("Railway rollout is serialized across every stateful boundary", () => {
   assertOrdered(workflow, [
     "name: Deploy realm API",

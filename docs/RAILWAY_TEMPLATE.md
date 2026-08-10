@@ -1,7 +1,12 @@
 # Railway deployment templates
 
-**Status:** Supported `1.0.0` deployment topology; published Railway template IDs remain tracked by the
-artifact-publication checklist.
+**Status:** Supported `1.0.0` deployment topology. `railway.template.json` is the canonical standalone
+marketplace graph, and the successful production workflow publishes its three verified image digests to the
+existing `rustyauth` template slug after every current-main rollout.
+
+GitHub environment `railway-production` keeps the project-scoped rollout credential in
+`RAILWAY_API_TOKEN` and the workspace-owner template credential in `RAILWAY_TEMPLATE_TOKEN`; separating them
+prevents ordinary service deployment from acquiring marketplace publication authority.
 
 RustyAuth uses separate Railway services so the user interface, policy services and stateful stores have
 independent deploy, scaling, health and recovery boundaries. SableDB is always private and always attached to
@@ -167,7 +172,9 @@ outside the Fleet project and outside the bucket provider account.
 ## SableDB services
 
 Both SableDB services use the pinned RustyAuth image, have no public domain or TCP proxy, expose port `6379`
-only on Railway private networking, and mount a volume at `/var/lib/sabledb`.
+only on Railway private networking, and mount a volume at `/var/lib/sabledb`. The image prepares a newly
+attached root-owned Railway volume, clears supplementary groups, drops to UID/GID `10002`, and only then
+executes SableDB; clean-template qualification covers first boot and restart.
 
 SableDB is a stateful service. “Scale independently” means its CPU, memory, volume and maintenance lifecycle
 are separate; it does not mean increasing a replica slider. Replication or failover requires a separately

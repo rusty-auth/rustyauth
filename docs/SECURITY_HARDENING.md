@@ -10,9 +10,10 @@ The supplied Compose topologies apply the same runtime policy to the dashboard, 
 
 - scratch-based production images with no shell, package manager or general-purpose operating-system tools;
 - a read-only root filesystem with a small `noexec`, `nosuid`, `nodev` `/tmp`;
-- all Linux capabilities dropped and `no-new-privileges` enabled;
-- an init process and a 256-process limit;
-- fixed non-root identities (`10001` for RustyAuth/dashboard and `10002` for SableDB);
+- all Linux capabilities dropped and `no-new-privileges` enabled for the API and dashboard; the SableDB
+  bootstrap receives only `CHOWN`, `DAC_OVERRIDE`, `FOWNER`, `SETGID` and `SETUID` until it drops to 10002;
+- an init process for API/dashboard, direct SableDB PID 1 after privilege drop, and a 256-process limit;
+- fixed non-root application identities (`10001` for RustyAuth/dashboard and `10002` for the SableDB process);
 - no host port for either Rust service or SableDB; and
 - an internal-only network between the public dashboard gateway and private services.
 
@@ -34,6 +35,9 @@ namespace. DNS is not trusted by this application check; see the egress requirem
 - Rust and build-tool images are pinned by digest; all three final runtime stages start from `scratch`.
 - The bundled SableDB image builds the pinned upstream commit recorded in `sabledb/Dockerfile`. Because that
   upstream revision has no lockfile, RustyAuth owns `sabledb/Cargo.lock` and the build uses it with `--locked`.
+- Its static entrypoint rejects symlinked volume paths, prepares only `/var/lib/sabledb`, `data` and `conf`,
+  clears supplementary groups, drops to UID/GID 10002 and then replaces itself with SableDB. Kubernetes may
+  instead start it directly as 10002 after applying `fsGroup`.
 - The dashboard gateway builds the immutable Caddy 2.11.4 source revision under Go 1.26.5 with the fixed
   `x/text` and gRPC module versions. Selected command/HTTP packages and the in-image health probe are tested
   before the static binary enters the scratch image.
@@ -100,8 +104,10 @@ For every release candidate, additionally:
 - run real-SableDB ignored tests and the clean-room backup/restore/rotation drill;
 - exercise pairing-code reuse, expiry, revocation, unreachable realm and private/metadata endpoint rejection;
 - inspect image SBOMs and use the checksum-pinned scanner to require zero HIGH/CRITICAL findings in all three
-  runtime images; and
-- run `scripts/qualify-runtime-images.sh` against the exact release-candidate tags; and
+  runtime images;
+- run `scripts/qualify-runtime-images.sh` against the exact release-candidate tags;
+- run `scripts/qualify-sabledb-image.sh` to exercise a fresh Railway-style root-owned volume and a
+  Kubernetes-style `fsGroup` volume across restarts; and
 - test a full passkey registration, sign-in, sign-out, Owner bootstrap and Fleet create/pair/disconnect flow
   with synthetic accounts.
 

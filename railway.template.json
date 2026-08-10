@@ -1,0 +1,227 @@
+{
+  "buckets": {
+    "256d29d0-214b-4d41-9c86-cb8021e9d518": {
+      "name": "rustyauth-backups"
+    }
+  },
+  "services": {
+    "2314c56d-976a-4d81-b34b-b24d0971493b": {
+      "deploy": {
+        "drainingSeconds": 25,
+        "healthcheckPath": "/readyz",
+        "healthcheckTimeout": 180,
+        "overlapSeconds": 0,
+        "restartPolicyMaxRetries": 10,
+        "restartPolicyType": "ON_FAILURE"
+      },
+      "icon": "https://rustyauth.dev/brand/rustyauth-mark.png",
+      "name": "RustyAuth",
+      "source": {
+        "image": "ghcr.io/rusty-auth/rustyauth@sha256:929a460988cacc49c815eb55b98b4af0f736af9b2eeb3353039ee2924965d4fa"
+      },
+      "variables": {
+        "AUTH_ACCESS_TOKEN_SECONDS": {
+          "defaultValue": "300",
+          "description": "Access-token lifetime in seconds.",
+          "isOptional": false
+        },
+        "AUTH_BACKUP_ACCESS_KEY_ID": {
+          "defaultValue": "${{rustyauth-backups.ACCESS_KEY_ID}}",
+          "description": "Access key for the private Railway backup bucket.",
+          "isOptional": false
+        },
+        "AUTH_BACKUP_BUCKET": {
+          "defaultValue": "${{rustyauth-backups.BUCKET}}",
+          "description": "Private Railway bucket used for encrypted recovery points.",
+          "isOptional": false
+        },
+        "AUTH_BACKUP_ENCRYPTION_KEY_HEX": {
+          "defaultValue": "${{secret(64, \"abcdef0123456789\")}}",
+          "description": "Automatically generated independent 256-bit backup-encryption key.",
+          "isOptional": false
+        },
+        "AUTH_BACKUP_ENDPOINT": {
+          "defaultValue": "${{rustyauth-backups.ENDPOINT}}",
+          "description": "S3-compatible endpoint for the private Railway backup bucket.",
+          "isOptional": false
+        },
+        "AUTH_BACKUP_INTERVAL_SECONDS": {
+          "defaultValue": "21600",
+          "description": "Create and verify an encrypted recovery point every six hours.",
+          "isOptional": false
+        },
+        "AUTH_BACKUP_REGION": {
+          "defaultValue": "${{rustyauth-backups.REGION}}",
+          "description": "Signing region for the private Railway backup bucket.",
+          "isOptional": false
+        },
+        "AUTH_BACKUP_SECRET_ACCESS_KEY": {
+          "defaultValue": "${{rustyauth-backups.SECRET_ACCESS_KEY}}",
+          "description": "Secret access key for the private Railway backup bucket.",
+          "isOptional": false
+        },
+        "AUTH_BACKUP_SSE": {
+          "defaultValue": "provider",
+          "description": "Require provider-managed encryption in addition to RustyAuth application encryption.",
+          "isOptional": false
+        },
+        "AUTH_BACKUP_STORAGE_PROFILE": {
+          "defaultValue": "portable",
+          "description": "Railway-compatible storage profile with application encryption and read-back verification.",
+          "isOptional": false
+        },
+        "AUTH_BACKUP_URL_STYLE": {
+          "defaultValue": "virtual",
+          "description": "Virtual-hosted S3 URL style used by Railway buckets.",
+          "isOptional": false
+        },
+        "AUTH_ENV": {
+          "defaultValue": "production",
+          "description": "Fail-closed production runtime mode.",
+          "isOptional": false
+        },
+        "AUTH_EVENT_RPC_TOKEN": {
+          "defaultValue": "${{secret(64)}}",
+          "description": "Automatically generated credential for the event RPC surface.",
+          "isOptional": false
+        },
+        "AUTH_IDENTITY_RPC_TOKEN": {
+          "defaultValue": "${{secret(64)}}",
+          "description": "Automatically generated credential for the identity RPC surface.",
+          "isOptional": false
+        },
+        "AUTH_ISSUER": {
+          "defaultValue": "https://${{rustyauth-dashboard.RAILWAY_PUBLIC_DOMAIN}}",
+          "description": "Issuer derived from the public dashboard gateway domain.",
+          "isOptional": false
+        },
+        "AUTH_MASTER_KEY_HEX": {
+          "defaultValue": "${{secret(64, \"abcdef0123456789\")}}",
+          "description": "Automatically generated 256-bit master key.",
+          "isOptional": false
+        },
+        "AUTH_OPERATOR_EMAILS": {
+          "description": "Verified email allowed to bootstrap the first dashboard owner.",
+          "isOptional": false
+        },
+        "AUTH_SESSION_ABSOLUTE_SECONDS": {
+          "defaultValue": "604800",
+          "description": "Maximum browser-session lifetime in seconds.",
+          "isOptional": false
+        },
+        "AUTH_SESSION_IDLE_SECONDS": {
+          "defaultValue": "1800",
+          "description": "Browser-session idle timeout in seconds.",
+          "isOptional": false
+        },
+        "AUTH_TENANT_ID": {
+          "defaultValue": "default",
+          "description": "Tenant identifier for this standalone realm.",
+          "isOptional": false
+        },
+        "AUTH_TRUSTED_PROXY_HOPS": {
+          "defaultValue": "1",
+          "description": "Trust the single dashboard gateway reverse proxy in front of the private API.",
+          "isOptional": false
+        },
+        "BOOTSTRAP_TOKEN": {
+          "defaultValue": "${{secret(64)}}",
+          "description": "Automatically generated credential for initial administrative enrolment.",
+          "isOptional": false
+        },
+        "PORT": {
+          "defaultValue": "8080",
+          "description": "Private HTTP port for the RustyAuth API.",
+          "isOptional": false
+        },
+        "RUST_LOG": {
+          "defaultValue": "rustyauth=info,tower_http=info",
+          "description": "Production logging filter.",
+          "isOptional": false
+        },
+        "SABLEDB_URL": {
+          "defaultValue": "redis://${{SableDB.RAILWAY_PRIVATE_DOMAIN}}:6379",
+          "description": "Private Railway connection to the bundled SableDB service.",
+          "isOptional": false
+        },
+        "SPACETIME_AUDIENCE": {
+          "defaultValue": "rustyauth",
+          "description": "Audience claim placed in issued access tokens.",
+          "isOptional": false
+        },
+        "WEBAUTHN_RP_ID": {
+          "defaultValue": "${{rustyauth-dashboard.RAILWAY_PUBLIC_DOMAIN}}",
+          "description": "Passkey relying-party ID derived from the public dashboard gateway domain.",
+          "isOptional": false
+        },
+        "WEBAUTHN_RP_NAME": {
+          "defaultValue": "RustyAuth",
+          "description": "Human-readable relying-party name shown by passkey prompts.",
+          "isOptional": false
+        },
+        "WEBAUTHN_RP_ORIGIN": {
+          "defaultValue": "https://${{rustyauth-dashboard.RAILWAY_PUBLIC_DOMAIN}}",
+          "description": "Passkey origin derived from the public dashboard gateway domain.",
+          "isOptional": false
+        }
+      }
+    },
+    "711d421a-f000-4b0a-adba-3d82cb5c19e7": {
+      "deploy": {
+        "overlapSeconds": 0,
+        "restartPolicyType": "ALWAYS"
+      },
+      "icon": "https://devicons.railway.com/i/redis.svg",
+      "name": "SableDB",
+      "source": {
+        "image": "ghcr.io/rusty-auth/sabledb@sha256:f273551df03b5c864c09091d1f7d96e0a351df1e345aac62350e5ac8ccd0d459"
+      },
+      "variables": {
+        "PORT": {
+          "defaultValue": "6379",
+          "description": "Private SableDB port used by RustyAuth.",
+          "isOptional": false
+        }
+      },
+      "volumeMounts": {
+        "711d421a-f000-4b0a-adba-3d82cb5c19e7": {
+          "mountPath": "/var/lib/sabledb"
+        }
+      }
+    },
+    "161192f7-0077-4389-a005-878ae0d7cfe7": {
+      "deploy": {
+        "drainingSeconds": 10,
+        "healthcheckPath": "/readyz",
+        "healthcheckTimeout": 180,
+        "overlapSeconds": 10,
+        "restartPolicyMaxRetries": 10,
+        "restartPolicyType": "ON_FAILURE"
+      },
+      "icon": "https://rustyauth.dev/brand/rustyauth-mark.png",
+      "name": "rustyauth-dashboard",
+      "networking": {
+        "serviceDomains": {
+          "<hasDomain>:8080": {
+            "port": 8080
+          }
+        }
+      },
+      "source": {
+        "image": "ghcr.io/rusty-auth/dashboard@sha256:4f01f8e6dca43ce691c9924246fec0affa1db2cbbee9ebea9c16f551aff4fac2"
+      },
+      "variables": {
+        "PORT": {
+          "defaultValue": "8080",
+          "description": "Public dashboard gateway port.",
+          "isOptional": false
+        },
+        "RUSTYAUTH_API_UPSTREAM": {
+          "defaultValue": "http://${{RustyAuth.RAILWAY_PRIVATE_DOMAIN}}:8080",
+          "description": "Private Railway URL for the RustyAuth API.",
+          "isOptional": false
+        }
+      }
+    }
+  }
+}

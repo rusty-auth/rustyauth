@@ -31,15 +31,23 @@ FROM golang:1.26.5-alpine3.23@sha256:622e56dbc11a8cfe87cafa2331e9a201877271cbff9
 COPY container-healthcheck /src/container-healthcheck
 WORKDIR /src/container-healthcheck
 RUN go test ./... \
-  && CGO_ENABLED=0 go build -trimpath -ldflags='-s -w' -o /usr/local/bin/container-healthcheck .
+  && CGO_ENABLED=0 go build -trimpath -ldflags='-s -w' -o /usr/local/bin/container-healthcheck . \
+  && CGO_ENABLED=0 go build -trimpath -ldflags='-s -w' \
+     -o /usr/local/bin/sabledb-entrypoint ./sabledb-entrypoint
 
 FROM scratch
 COPY --from=build /runtime-root/ /
 COPY --from=build /src/target/release/sabledb /usr/local/bin/sabledb
 COPY --from=healthcheck /usr/local/bin/container-healthcheck /usr/local/bin/container-healthcheck
+COPY --from=healthcheck /usr/local/bin/sabledb-entrypoint /usr/local/bin/sabledb-entrypoint
 COPY --from=build /src/LICENSE /usr/share/licenses/sabledb/LICENSE
 COPY --chown=10002:10002 sabledb/server.ini /etc/sabledb/server.ini
-USER 10002:10002
+# Railway and several other container platforms attach a new persistent volume
+# as root:root without applying Kubernetes fsGroup semantics. The tiny PID 1
+# below owns only the volume bootstrap: it validates and prepares the three
+# expected directories, drops supplementary groups, gid and uid to 10002, then
+# execs SableDB. SableDB itself never runs as root.
+USER 0:0
 EXPOSE 6379
-ENTRYPOINT ["/usr/local/bin/sabledb"]
+ENTRYPOINT ["/usr/local/bin/sabledb-entrypoint"]
 CMD ["/etc/sabledb/server.ini"]

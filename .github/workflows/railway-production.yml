@@ -444,3 +444,36 @@ jobs:
           path: ${{ runner.temp }}/railway-receipts/*.json
           if-no-files-found: warn
           retention-days: 90
+
+  sync-template:
+    name: Publish the verified Railway template graph
+    needs: [prepare, publish-api, publish-dashboard, publish-sabledb, deploy]
+    if: needs.prepare.outputs.deploy == 'true' && needs.deploy.result == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    environment:
+      name: railway-production
+    env:
+      # Template publication needs workspace-owner authority; do not reuse the
+      # project-scoped deployment token from the rollout job.
+      RAILWAY_API_TOKEN: ${{ secrets.RAILWAY_TEMPLATE_TOKEN }}
+      API_DIGEST: ${{ needs.publish-api.outputs.digest }}
+      DASHBOARD_DIGEST: ${{ needs.publish-dashboard.outputs.digest }}
+      SABLEDB_DIGEST: ${{ needs.publish-sabledb.outputs.digest }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.prepare.outputs.sha }}
+      - uses: denoland/setup-deno@22d081ff2d3a40755e97629de92e3bcbfa7cf2ed # v2
+        with:
+          deno-version: 2.9.3
+      - name: Replace the public template with the verified image set
+        run: >-
+          deno run
+          --allow-env=RAILWAY_API_TOKEN,RAILWAY_TEMPLATE_API_URL,RAILWAY_TEMPLATE_ID,RAILWAY_TEMPLATE_WORKSPACE_ID
+          --allow-net=backboard.railway.com
+          --allow-read=railway.template.json
+          scripts/sync-railway-template.ts
+          --api-image "ghcr.io/rusty-auth/rustyauth@${API_DIGEST}"
+          --dashboard-image "ghcr.io/rusty-auth/dashboard@${DASHBOARD_DIGEST}"
+          --sabledb-image "ghcr.io/rusty-auth/sabledb@${SABLEDB_DIGEST}"

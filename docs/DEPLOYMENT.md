@@ -201,6 +201,12 @@ Requirements:
 - persistent volume at `/var/lib/sabledb`; and
 - health check before RustyAuth receives traffic.
 
+The image safely handles both supported volume ownership models. On Railway it starts a minimal static
+initializer with the platform's standard volume-management capabilities, validates and owns the three fixed
+paths, clears supplementary groups, drops to UID/GID `10002`, and then `exec`s SableDB. Kubernetes charts
+start it directly as `10002` after `fsGroup: 10002` has prepared the volume. In both cases the database process
+is non-root.
+
 Railway private networking and RustyAuth's exclusive reachability are the access-control boundary; SableDB
 itself is not being presented as the public authentication layer.
 
@@ -270,9 +276,11 @@ API image contains a JavaScript dashboard runtime.
 The dashboard is also scratch-based. It contains the Dioxus assets, a statically built source-pinned Caddy
 gateway and a dependency-free health probe; it has no Alpine userspace, shell, curl or package manager.
 
-The SableDB image is scratch-based, runs as non-root UID/GID `10002`, and stores data under
-`/var/lib/sabledb`. Its dedicated probe sends Redis `PING` and requires the exact `PONG` response; the image
-does not carry a shell merely to open a TCP socket.
+The SableDB image is scratch-based, and its database process runs as non-root UID/GID `10002` while storing
+data under `/var/lib/sabledb`. A static initializer handles root-owned platform volumes and drops privilege
+before executing the database; Kubernetes can bypass that privileged path by starting the image as `10002`
+after applying `fsGroup`. Its dedicated probe sends Redis `PING` and requires the exact `PONG` response; the
+image does not carry a shell merely to open a TCP socket.
 
 The API, SableDB and Dioxus WebAssembly release builds embed `cargo-auditable` dependency metadata. Compatible
 artifact scanners therefore recover the Cargo graph from the shipped binary instead of inferring it from a
@@ -280,9 +288,10 @@ builder layer that is absent from the scratch image. CI separately audits the ro
 lockfiles and requires zero HIGH/CRITICAL findings from the checksum-pinned runtime-image scanner.
 
 The supplied Compose files additionally make every service root filesystem read-only, mount a bounded `noexec`
-temporary filesystem, drop all Linux capabilities, enable `no-new-privileges` and cap the process count.
-Preserve equivalent controls in Railway or any other production platform. They are runtime policy, not image
-properties, so publishing the same image does not automatically apply them.
+temporary filesystem, enable `no-new-privileges` and cap the process count. API and dashboard drop all Linux
+capabilities; SableDB adds back only the five capabilities needed to initialize a new volume before its UID
+drop. Preserve equivalent controls in Railway or any other production platform. They are runtime policy, not
+image properties, so publishing the same image does not automatically apply them.
 
 Run `scripts/qualify-runtime-images.sh` against the exact candidate tags before promotion. It creates an
 isolated temporary topology, proves the runtime controls and bounded gateway behavior, crosses repeated lease
