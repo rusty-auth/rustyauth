@@ -92,13 +92,20 @@ async fn seed() -> Result<()> {
 
     let redis = connection().await?;
     let mut raw = redis.clone();
-    let existing: u64 = redis::cmd("DBSIZE")
-        .query_async(&mut raw)
-        .await
-        .context("read benchmark database size")?;
+    let identity_patterns = [
+        "auth:user:*",
+        "auth:session:*",
+        "auth:credential:*",
+        "auth:identifier:*",
+        "auth:email:*",
+    ];
+    let mut existing = 0_u64;
+    for pattern in identity_patterns {
+        existing = existing.saturating_add(scan_count(&mut raw, pattern).await?);
+    }
     if existing != 0 {
         bail!(
-            "benchmark SableDB is not empty ({existing} keys); reset it through the reviewed benchmark control before reseeding"
+            "benchmark SableDB already contains {existing} identity records; reset it through the reviewed benchmark control before reseeding"
         );
     }
 

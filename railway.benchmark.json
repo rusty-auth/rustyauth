@@ -11,7 +11,8 @@
       "/build.rs",
       "/proto/**",
       "/src/**",
-      "/benchmarks/**",
+      "/benchmarks/k6/**",
+      "/benchmarks/run-starter-baseline.sh",
       "/rustyauth.example.yaml",
       "/rustyauth.fleet.example.yaml"
     ]
