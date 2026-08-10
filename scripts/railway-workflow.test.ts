@@ -1,6 +1,7 @@
 const workflow = await Deno.readTextFile(".github/workflows/railway-production.yml");
 const releaseWorkflow = await Deno.readTextFile(".github/workflows/release.yml");
 const rollout = await Deno.readTextFile("scripts/railway-rollout.ts");
+const imageResolver = await Deno.readTextFile("scripts/resolve-image-digest.sh");
 
 function assertIncludes(source: string, required: string): void {
   if (!source.includes(required)) throw new Error(`missing ${JSON.stringify(required)}`);
@@ -55,6 +56,9 @@ Deno.test("Railway candidates are immutable, signed and digest-verified", () => 
       "Reuse the previously deployed API image",
       "Reuse the previously deployed dashboard image",
       "Reuse the previously deployed SableDB image",
+      "scripts/resolve-image-digest.sh ghcr.io/rusty-auth/rustyauth",
+      "scripts/resolve-image-digest.sh ghcr.io/rusty-auth/dashboard",
+      "scripts/resolve-image-digest.sh ghcr.io/rusty-auth/sabledb",
       "needs.prepare.outputs.api_image == 'true'",
       "needs.prepare.outputs.dashboard_image == 'true'",
       "needs.prepare.outputs.sabledb_image == 'true'",
@@ -62,6 +66,15 @@ Deno.test("Railway candidates are immutable, signed and digest-verified", () => 
   ) assertIncludes(workflow + rollout, required);
   if (/tags:.*:latest/.test(workflow)) {
     throw new Error("production deployment must not use a mutable latest tag");
+  }
+});
+
+Deno.test("unchanged images resolve the newest published immutable ancestor", () => {
+  for (const required of ["git rev-list", ":main-${candidate_sha}", "sha256:[0-9a-f]{64}"]) {
+    assertIncludes(imageResolver, required);
+  }
+  if (imageResolver.includes(":latest")) {
+    throw new Error("image reuse must never fall back to a mutable latest tag");
   }
 });
 

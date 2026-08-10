@@ -115,6 +115,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ needs.prepare.outputs.sha }}
+          fetch-depth: 0
       - uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
       - id: reuse
         name: Reuse the previously deployed API image
@@ -122,12 +123,7 @@ jobs:
         env:
           PREVIOUS_SHA: ${{ needs.prepare.outputs.previous_sha }}
         run: |
-          digest="$(
-            docker buildx imagetools inspect \
-              "ghcr.io/rusty-auth/rustyauth:main-${PREVIOUS_SHA}" \
-              --format '{{json .Manifest}}' \
-              | jq -er '.digest | select(test("^sha256:[0-9a-f]{64}$"))'
-          )"
+          digest="$(scripts/resolve-image-digest.sh ghcr.io/rusty-auth/rustyauth "${PREVIOUS_SHA}")"
           echo "digest=${digest}" >> "${GITHUB_OUTPUT}"
       - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         if: needs.prepare.outputs.api_image == 'true'
@@ -172,6 +168,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ needs.prepare.outputs.sha }}
+          fetch-depth: 0
       - uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
       - id: reuse
         name: Reuse the previously deployed dashboard image
@@ -179,12 +176,7 @@ jobs:
         env:
           PREVIOUS_SHA: ${{ needs.prepare.outputs.previous_sha }}
         run: |
-          digest="$(
-            docker buildx imagetools inspect \
-              "ghcr.io/rusty-auth/dashboard:main-${PREVIOUS_SHA}" \
-              --format '{{json .Manifest}}' \
-              | jq -er '.digest | select(test("^sha256:[0-9a-f]{64}$"))'
-          )"
+          digest="$(scripts/resolve-image-digest.sh ghcr.io/rusty-auth/dashboard "${PREVIOUS_SHA}")"
           echo "digest=${digest}" >> "${GITHUB_OUTPUT}"
       - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         if: needs.prepare.outputs.dashboard_image == 'true'
@@ -230,6 +222,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ needs.prepare.outputs.sha }}
+          fetch-depth: 0
           submodules: recursive
       - uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
       - id: reuse
@@ -238,12 +231,7 @@ jobs:
         env:
           PREVIOUS_SHA: ${{ needs.prepare.outputs.previous_sha }}
         run: |
-          digest="$(
-            docker buildx imagetools inspect \
-              "ghcr.io/rusty-auth/sabledb:main-${PREVIOUS_SHA}" \
-              --format '{{json .Manifest}}' \
-              | jq -er '.digest | select(test("^sha256:[0-9a-f]{64}$"))'
-          )"
+          digest="$(scripts/resolve-image-digest.sh ghcr.io/rusty-auth/sabledb "${PREVIOUS_SHA}")"
           echo "digest=${digest}" >> "${GITHUB_OUTPUT}"
       - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         if: needs.prepare.outputs.sabledb_image == 'true'
