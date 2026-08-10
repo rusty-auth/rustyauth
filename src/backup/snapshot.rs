@@ -1,13 +1,16 @@
 //! Logical snapshot capture and manifest construction, with fail-closed validation
 //! of format, tenant, key families, event continuity and cross-record ownership.
 
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::{
+    collections::{BTreeMap, BTreeSet, HashMap},
+    io::Write,
+};
 
 use anyhow::{Context, Result, bail};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use uuid::Uuid;
-use zeroize::{Zeroize, Zeroizing};
+use zeroize::Zeroize;
 
 #[cfg(test)]
 use crate::config::KeyRing;
@@ -38,6 +41,18 @@ struct BinarySnapshotV3 {
     record_count: u64,
     content_sha256: [u8; 32],
     key_families: BTreeMap<String, u64>,
+    event_sequence: u64,
+}
+
+#[derive(Serialize)]
+struct BinarySnapshotV3Ref<'a> {
+    snapshot_id: [u8; 16],
+    tenant_id: &'a str,
+    captured_at: u64,
+    records: &'a [StoreRecord],
+    record_count: u64,
+    content_sha256: [u8; 32],
+    key_families: &'a BTreeMap<String, u64>,
     event_sequence: u64,
 }
 
@@ -79,8 +94,7 @@ impl BackupSnapshot {
     }
 
     fn from_records(tenant_id: &str, captured_at: u64, records: Vec<StoreRecord>) -> Result<Self> {
-        let content = Zeroizing::new(canonical_records(&records)?);
-        let content_sha256 = hex::encode(Sha256::digest(&content));
+        let content_sha256 = canonical_records_sha256(&records)?;
         let event_sequence = records
             .iter()
             .find(|record| record.key == "auth:event-sequence")
@@ -143,14 +157,14 @@ impl BackupSnapshot {
         let content_sha256: [u8; 32] = digest
             .try_into()
             .map_err(|_| anyhow::anyhow!("backup manifest digest is not 32 bytes"))?;
-        postcard::to_allocvec(&BinarySnapshotV3 {
+        postcard::to_allocvec(&BinarySnapshotV3Ref {
             snapshot_id: *self.snapshot_id.as_bytes(),
-            tenant_id: self.tenant_id.clone(),
+            tenant_id: &self.tenant_id,
             captured_at: self.captured_at,
-            records: self.records.clone(),
+            records: &self.records,
             record_count: self.manifest.record_count,
             content_sha256,
-            key_families: self.manifest.key_families.clone(),
+            key_families: &self.manifest.key_families,
             event_sequence: self.manifest.event_sequence,
         })
         .context("serialize compact binary backup snapshot")
@@ -212,8 +226,7 @@ impl BackupSnapshot {
         {
             bail!("backup records must be uniquely sorted by key");
         }
-        let content = Zeroizing::new(canonical_records(&self.records)?);
-        let digest = hex::encode(Sha256::digest(&content));
+        let digest = canonical_records_sha256(&self.records)?;
         if digest != self.manifest.content_sha256 {
             bail!("backup manifest digest does not match its contents");
         }
@@ -1032,8 +1045,23 @@ impl Drop for BackupSnapshot {
     }
 }
 
-fn canonical_records(records: &[StoreRecord]) -> Result<Vec<u8>> {
-    serde_json::to_vec(records).context("serialize canonical backup records")
+struct DigestWriter(Sha256);
+
+impl Write for DigestWriter {
+    fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+        self.0.update(bytes);
+        Ok(bytes.len())
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
+fn canonical_records_sha256(records: &[StoreRecord]) -> Result<String> {
+    let mut writer = DigestWriter(Sha256::new());
+    serde_json::to_writer(&mut writer, records).context("hash canonical backup records")?;
+    Ok(hex::encode(writer.0.finalize()))
 }
 
 fn record_family(key: &str) -> Result<String> {
@@ -1256,9 +1284,7 @@ fn fleet_snapshot() -> BackupSnapshot {
 
 #[cfg(test)]
 fn rehash(snapshot: &mut BackupSnapshot) {
-    snapshot.manifest.content_sha256 = hex::encode(Sha256::digest(
-        canonical_records(&snapshot.records).unwrap(),
-    ));
+    snapshot.manifest.content_sha256 = canonical_records_sha256(&snapshot.records).unwrap();
 }
 
 #[cfg(test)]
@@ -1315,9 +1341,7 @@ mod tests {
         let mut duplicate = minimal_snapshot(&keys);
         duplicate.records.push(duplicate.records[0].clone());
         duplicate.manifest.record_count += 1;
-        duplicate.manifest.content_sha256 = hex::encode(Sha256::digest(
-            canonical_records(&duplicate.records).unwrap(),
-        ));
+        duplicate.manifest.content_sha256 = canonical_records_sha256(&duplicate.records).unwrap();
         duplicate.manifest.key_families.insert("keyset".into(), 2);
         assert!(duplicate.validate("tenant-a").is_err());
 
@@ -1339,9 +1363,8 @@ mod tests {
         )
         .unwrap();
         sequence_mismatch.records[0].value = "1".into();
-        sequence_mismatch.manifest.content_sha256 = hex::encode(Sha256::digest(
-            canonical_records(&sequence_mismatch.records).unwrap(),
-        ));
+        sequence_mismatch.manifest.content_sha256 =
+            canonical_records_sha256(&sequence_mismatch.records).unwrap();
         assert!(sequence_mismatch.validate("tenant-a").is_err());
     }
 
@@ -1354,9 +1377,7 @@ mod tests {
             .find(|record| record.key.starts_with("auth:identifier:"))
             .unwrap();
         index.key = "auth:identifier:phone:+447700900123".into();
-        snapshot.manifest.content_sha256 = hex::encode(Sha256::digest(
-            canonical_records(&snapshot.records).unwrap(),
-        ));
+        snapshot.manifest.content_sha256 = canonical_records_sha256(&snapshot.records).unwrap();
         assert!(snapshot.validate("tenant-a").is_err());
     }
 
