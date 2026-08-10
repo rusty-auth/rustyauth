@@ -12,18 +12,17 @@ on:
 permissions:
   contents: read
 
-# Assurance follows main and is intentionally independent of the release gate.
-# Only the newest main revision needs the expensive qualification pass.
+# Assurance follows a successful main CI run and is intentionally independent
+# of the release gate. Only the newest qualified main revision needs the
+# expensive assurance pass.
 concurrency:
-  # Main-triggered assurance shares the main CI group: a new merge therefore
-  # preempts old assurance before it can compete with the latest correctness run.
-  # Scheduled/manual assurance queues behind CI and cannot cancel it.
-  group: ci-${{ github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'workflow_run' }}
+  group: assurance-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   codeql:
     name: CodeQL (${{ matrix.language }})
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
@@ -58,6 +57,7 @@ jobs:
 
   rust-dependencies:
     name: Rust dependency assurance
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -95,6 +95,7 @@ jobs:
 
   go-vulnerabilities:
     name: Go vulnerability reachability
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     defaults:
@@ -115,6 +116,7 @@ jobs:
 
   image-security:
     name: Container scan (${{ matrix.name }})
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 25
     strategy:
@@ -156,6 +158,7 @@ jobs:
 
   runtime-qualification:
     name: Runtime qualification (${{ matrix.suite }})
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     strategy:
