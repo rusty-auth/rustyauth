@@ -517,7 +517,9 @@ jobs:
                 recovered=true
                 break
               fi
-              sleep 5
+              if [[ "${attempt}" -lt 24 ]]; then
+                sleep 5
+              fi
             done
             [[ "${recovered}" == "true" ]] || rollback_failed=1
           fi
