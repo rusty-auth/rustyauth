@@ -26,8 +26,13 @@ function assertEquals(actual: unknown, expected: unknown): void {
   }
 }
 
-function deployment(id: string, status: string, target = true): RailwayDeployment {
-  const policy = serviceUpdateInput("realm", image);
+function deployment(
+  id: string,
+  status: string,
+  target = true,
+  profile: "realm" | "dashboard" | "sabledb" = "realm",
+): RailwayDeployment {
+  const policy = serviceUpdateInput(profile, image);
   delete policy.source;
   return {
     id,
@@ -45,7 +50,10 @@ function pinnedDeploymentWithoutSeparateDigest(id: string, status: string): Rail
   return candidate;
 }
 
-function projectStatus(configuredImage = "ghcr.io/rusty-auth/rustyauth@sha256:older"): string {
+function projectStatus(
+  configuredImage = "ghcr.io/rusty-auth/rustyauth@sha256:older",
+  service = "api",
+): string {
   return JSON.stringify({
     environments: {
       edges: [{
@@ -53,7 +61,9 @@ function projectStatus(configuredImage = "ghcr.io/rusty-auth/rustyauth@sha256:ol
           id: "production",
           name: "production",
           serviceInstances: {
-            edges: [{ node: { serviceId: "api", serviceName: "api", source: { image: configuredImage } } }],
+            edges: [{
+              node: { serviceId: service, serviceName: service, source: { image: configuredImage } },
+            }],
           },
         },
       }],
@@ -202,6 +212,47 @@ Deno.test("rollout waits for the exact digest to reach terminal success before h
   assert(commands.filter((args) => args[0] === "deployment").length === 4, "rollout did not poll");
 });
 
+Deno.test("SableDB rollout releases the prior volume lock before changing its image", async () => {
+  const outputs = [
+    JSON.stringify([deployment("old", "SUCCESS", false, "sabledb")]),
+    projectStatus("ghcr.io/rusty-auth/rustyauth@sha256:older", "sabledb"),
+    "",
+    JSON.stringify({ data: { serviceInstanceUpdate: true } }),
+    JSON.stringify({ id: "requested" }),
+    JSON.stringify([
+      deployment("new", "SUCCESS", true, "sabledb"),
+      deployment("old", "SUCCESS", false, "sabledb"),
+    ]),
+  ];
+  const commands: string[][] = [];
+  const runner: RailwayRunner = (args) => {
+    commands.push(args);
+    return Promise.resolve({ code: 0, stdout: outputs.shift() ?? "[]", stderr: "" });
+  };
+  const receipt = await rolloutRailwayImage(
+    {
+      project: "project",
+      environment: "production",
+      service: "sabledb",
+      profile: "sabledb",
+      image,
+      digest,
+      healthUrls: [],
+      timeoutMs: 100,
+      pollMs: 1,
+    },
+    runner,
+    () => Promise.resolve(),
+    () => new Date(0),
+    () => Promise.resolve(),
+  );
+
+  assertEquals(receipt.deploymentId, "new");
+  const down = commands.findIndex((args) => args[0] === "down");
+  const update = commands.findIndex((args) => args[0] === "api");
+  assert(down >= 0 && down < update, "SableDB volume handoff did not precede the service mutation");
+});
+
 Deno.test("a deployment receipt exists before a failing health check so rollback can restore it", async () => {
   const receiptPath = await Deno.makeTempFile();
   const outputs = [
@@ -276,6 +327,45 @@ Deno.test("rollout is idempotent when the exact successful digest is already act
   );
   assertEquals(receipt.changed, false);
   assertEquals(calls, 1);
+});
+
+Deno.test("forced realm rollout restarts an unchanged image after a datastore handoff", async () => {
+  const outputs = [
+    JSON.stringify([deployment("current", "SUCCESS")]),
+    projectStatus(sourceImage),
+    "",
+    JSON.stringify({ id: "requested" }),
+    JSON.stringify([deployment("restarted", "SUCCESS"), deployment("current", "SUCCESS")]),
+  ];
+  const commands: string[][] = [];
+  const runner: RailwayRunner = (args) => {
+    commands.push(args);
+    return Promise.resolve({ code: 0, stdout: outputs.shift() ?? "[]", stderr: "" });
+  };
+  const receipt = await rolloutRailwayImage(
+    {
+      project: "project",
+      environment: "production",
+      service: "api",
+      profile: "realm",
+      image,
+      digest,
+      healthUrls: [],
+      force: true,
+      timeoutMs: 100,
+      pollMs: 1,
+    },
+    runner,
+    () => Promise.resolve(),
+    () => new Date(0),
+    () => Promise.resolve(),
+  );
+
+  assertEquals(receipt.changed, true);
+  assertEquals(receipt.deploymentId, "restarted");
+  assert(commands.some((args) => args[0] === "down"), "forced realm restart did not release the writer");
+  assert(commands.some((args) => args[0] === "redeploy"), "forced realm restart did not redeploy");
+  assert(!commands.some((args) => args[0] === "api"), "unchanged image should not be mutated");
 });
 
 Deno.test("rollout forces a fresh deployment when the desired source previously failed", async () => {

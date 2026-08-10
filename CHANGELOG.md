@@ -8,12 +8,18 @@ supported `1.x` contract.
 
 ### Changed
 
+- Reuse the last successfully deployed signed runtime image when its source area did not change. API-only
+  merges no longer rebuild or replace the dashboard and SableDB, shortening production delivery and avoiding
+  stateful churn unrelated to the change.
 - Build the bundled SableDB image from the exact `vendor/sabledb` gitlink in the public `rusty-auth/sabledb`
   fork. Contributors can now test and publish SableDB fixes from inside a RustyAuth checkout, while recursive
   CI checkout and targeted image/recovery qualification preserve reproducible releases.
 
 ### Fixed
 
+- Sequence a real SableDB replacement before an explicit realm restart and readiness proof. The API no longer
+  remains stopped after correctly surrendering its writer lease during a datastore restart, and rollback
+  forces the same clean realm handoff even when the restored API digest is unchanged.
 - Distribute production datastore requests across four independent reconnecting SableDB connections instead of
   cloning one multiplexed connection. This removes a single client-side head-of-line queue that left datastore
   workers idle and inflated authenticated-request tail latency under concurrent load.

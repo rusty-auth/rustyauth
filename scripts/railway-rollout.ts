@@ -30,6 +30,7 @@ export interface RailwayRolloutOptions {
   digest: string;
   healthUrls: string[];
   receipt?: string;
+  force?: boolean;
   timeoutMs: number;
   pollMs: number;
 }
@@ -90,6 +91,13 @@ function positiveInteger(value: string | undefined, name: string, fallback: numb
   const parsed = Number(value);
   if (!Number.isInteger(parsed) || parsed <= 0) fail(`${name} must be a positive integer`);
   return parsed;
+}
+
+function booleanFlag(value: string | undefined, name: string, fallback = false): boolean {
+  if (value === undefined) return fallback;
+  if (value === "true") return true;
+  if (value === "false") return false;
+  fail(`${name} must be true or false`);
 }
 
 export function normalizeDigest(value: string): string {
@@ -396,7 +404,11 @@ export async function rolloutRailwayImage(
   };
 
   let deployment: RailwayDeployment | undefined;
-  if (current?.status === "SUCCESS" && deploymentMatchesProfile(current, options.profile)) {
+  if (
+    !options.force &&
+    current?.status === "SUCCESS" &&
+    deploymentMatchesProfile(current, options.profile)
+  ) {
     deployment = current;
   } else {
     const configuredImage = configuredServiceImage(
@@ -409,11 +421,12 @@ export async function rolloutRailwayImage(
 
     // Railway keeps the old deployment alive until its replacement is ready,
     // even with overlapSeconds=0. A RustyAuth realm intentionally refuses to
-    // start while that old process owns the one-writer lease. Updating a
-    // Railway service instance can itself start a deployment, so the explicit,
-    // receipt-backed handoff must happen before the mutation, not merely before
-    // the later redeploy request.
-    if (options.profile === "realm" && previous) {
+    // start while that old process owns the one-writer lease, and SableDB cannot
+    // open the same persistent database while its prior process still owns the
+    // volume lock. Updating a Railway service instance can itself start a
+    // deployment, so the explicit, receipt-backed handoff must happen before
+    // the mutation, not merely before the later redeploy request.
+    if ((options.profile === "realm" || options.profile === "sabledb") && previous) {
       await runJson(runner, downArgs(options));
     }
     if (
@@ -498,6 +511,7 @@ function parseOptions(args: string[]): RailwayRolloutOptions {
     digest: required(values.get("--digest")?.[0], "--digest"),
     healthUrls,
     receipt: values.get("--receipt")?.[0],
+    force: booleanFlag(values.get("--force")?.[0], "--force"),
     timeoutMs: positiveInteger(values.get("--timeout-ms")?.[0], "--timeout-ms", 20 * 60 * 1_000),
     pollMs: positiveInteger(values.get("--poll-ms")?.[0], "--poll-ms", 10_000),
   };

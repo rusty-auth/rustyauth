@@ -27,6 +27,8 @@ Deno.test("Railway automatic deployments follow successful current-main CI only"
       "group: railway-production",
       "cancel-in-progress: true",
       "RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}",
+      "Select runtime images changed since the last successful deployment",
+      "scripts/ci-changes.ts",
     ]
   ) assertIncludes(workflow, required);
 });
@@ -49,6 +51,13 @@ Deno.test("Railway candidates are immutable, signed and digest-verified", () => 
       "await runJson(runner, redeployArgs(options));",
       "Verify candidates are anonymously pullable",
       "docker buildx imagetools inspect",
+      "steps.build.outputs.digest || steps.reuse.outputs.digest",
+      "Reuse the previously deployed API image",
+      "Reuse the previously deployed dashboard image",
+      "Reuse the previously deployed SableDB image",
+      "needs.prepare.outputs.api_image == 'true'",
+      "needs.prepare.outputs.dashboard_image == 'true'",
+      "needs.prepare.outputs.sabledb_image == 'true'",
     ]
   ) assertIncludes(workflow + rollout, required);
   if (/tags:.*:latest/.test(workflow)) {
@@ -77,12 +86,12 @@ Deno.test("the public Railway template follows the verified production image set
 
 Deno.test("Railway rollout is serialized across every stateful boundary", () => {
   assertOrdered(workflow, [
-    "name: Deploy realm API",
+    "name: Deploy private SableDB",
+    "--profile sabledb",
+    "name: Deploy realm API after the datastore is stable",
     "--profile realm",
     "name: Deploy dashboard",
     "--profile dashboard",
-    "name: Deploy private SableDB",
-    "--profile sabledb",
   ]);
   for (const required of ["/healthz", "/readyz", "retention-days: 90"]) {
     assertIncludes(workflow, required);
@@ -93,13 +102,17 @@ Deno.test("Railway rollout is serialized across every stateful boundary", () => 
   assertIncludes(workflow, '"RUST_LOG=rustyauth=info,tower_http=info"');
   assertIncludes(rollout, '"/usr/local/bin/rustyauth backup create"');
   assertIncludes(rollout, '"down"');
-  assertIncludes(workflow, "name: Require a fresh verified recovery point");
-  assertIncludes(workflow, "encrypted backup created and verified");
-  assertIncludes(workflow, '"formatVersion\\": 3"');
+  assertIncludes(rollout, 'options.profile === "sabledb"');
+  assertIncludes(workflow, "name: Create and verify a fresh recovery point");
+  assertIncludes(workflow, "/usr/local/bin/rustyauth backup create");
+  assertIncludes(workflow, ".formatVersion == 3");
+  assertIncludes(workflow, '.storageProfile == "portable"');
+  assertIncludes(workflow, '--force "${SABLEDB_CHANGED}"');
   assertIncludes(workflow, "rustyauth-backups/v3/");
   assertOrdered(workflow, [
-    "name: Deploy realm API",
-    "name: Require a fresh verified recovery point",
+    "name: Create and verify a fresh recovery point",
+    "name: Deploy private SableDB",
+    "name: Deploy realm API after the datastore is stable",
     "name: Deploy dashboard",
   ]);
 });
@@ -111,8 +124,11 @@ Deno.test("a partial Railway rollout restores services and browser origin in rev
     'rollback_service "${RUNNER_TEMP}/railway-receipts/sabledb.json"',
     'rollback_service "${RUNNER_TEMP}/railway-receipts/dashboard.json"',
     '"AUTH_ISSUER=${previous_issuer}"',
-    'rollback_service "${RUNNER_TEMP}/railway-receipts/api.json"',
+    'if [[ -f "${RUNNER_TEMP}/railway-receipts/api.json" ]]',
   ]);
+  assertIncludes(workflow, "force_args=(--force true)");
+  assertIncludes(workflow, "railway redeploy");
+  assertIncludes(workflow, '"${RAILWAY_API_URL%/}/readyz"');
   assertIncludes(workflow, "railway down");
   assertIncludes(rollout, "healthVerifiedAt: null");
 });
