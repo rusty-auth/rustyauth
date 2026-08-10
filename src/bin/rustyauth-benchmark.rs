@@ -67,7 +67,11 @@ async fn connection() -> Result<redis::aio::ConnectionManager> {
         client,
         redis::aio::ConnectionManagerConfig::new()
             .set_connection_timeout(Some(Duration::from_secs(5)))
-            .set_response_timeout(Some(Duration::from_secs(5))),
+            // Dataset preparation performs durable write batches and can overlap
+            // an LSM compaction pause on the smallest supported SableDB tier.
+            // This timeout is outside the measured workload; k6 owns the actual
+            // latency gates once the prepared realm is online.
+            .set_response_timeout(Some(Duration::from_secs(30))),
     )
     .await
     .context("connect to isolated benchmark SableDB")
