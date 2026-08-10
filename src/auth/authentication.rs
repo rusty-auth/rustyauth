@@ -8,14 +8,16 @@ use axum::{
     http::{HeaderMap, StatusCode},
     response::Response,
 };
-use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use serde_json::{Value, json};
 use uuid::Uuid;
 
 use crate::{
     app_state::AppState,
     rate_limit::RateLimitClass,
-    store::{AuthenticationCeremony, AuthenticationPurpose, IdentifierValue, SessionOrigin, now},
+    store::{
+        AuthenticationCeremony, AuthenticationCommitError, AuthenticationPurpose, IdentifierValue,
+        now,
+    },
 };
 
 use super::{
@@ -152,23 +154,20 @@ pub(super) async fn authentication_verify(
         );
         return Err(ApiError::unauthorized("passkey did not verify the user"));
     }
-    let user = state
+    let (user, session_token, session) = state
         .store
-        .apply_authentication(ceremony.user_id, &result)
-        .await
-        .map_err(|_| ApiError::unauthorized("passkey verification failed"))?;
-    let current_credential_id = URL_SAFE_NO_PAD.encode(result.cred_id().as_ref());
-    let (session_token, session) = state
-        .store
-        .create_session(
-            &user,
-            SessionOrigin::Passkey {
-                credential_id: current_credential_id,
-            },
+        .apply_authentication_and_create_session(
+            ceremony.user_id,
+            &result,
             state.session_absolute_seconds,
         )
         .await
-        .map_err(ApiError::internal)?;
+        .map_err(|error| match error {
+            AuthenticationCommitError::Rejected => {
+                ApiError::unauthorized("passkey verification failed")
+            }
+            AuthenticationCommitError::Internal(error) => ApiError::internal(error),
+        })?;
     record_authentication_outcome(
         &state,
         Some(user.id),

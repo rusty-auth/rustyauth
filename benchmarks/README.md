@@ -108,7 +108,9 @@ RUN_ID=passkey-YYYYMMDDTHHMMSSZ /opt/rustyauth/benchmarks/run-passkey-companion.
 
 Resetting an interrupted synthetic preparation is a separate, fail-closed action. It requires both the exact
 benchmark Railway project ID and `BENCHMARK_RESET_CONFIRM=reset-synthetic-benchmark-data`; the command deletes
-keys in bounded batches and succeeds only after the isolated database reports zero remaining keys.
+keys in bounded batches and succeeds only after a fresh scan reports zero remaining RustyAuth-owned `auth:*`
+keys. The receipt also records SableDB's total key count so datastore-internal accounting remains visible
+without being mistaken for live realm data.
 
 The runner writes one directory under `/data/runs/<run-id>` containing dataset cardinalities, each k6 summary,
 human-readable k6 output, exit codes and `SHA256SUMS`. Railway CPU, memory, HTTP, network, volume and

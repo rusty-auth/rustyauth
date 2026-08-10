@@ -30,6 +30,7 @@ pub use self::ceremonies::{
     AuthenticationCeremony, AuthenticationPurpose, LocalAgentHandoff, RegistrationCeremony,
     RegistrationPurpose,
 };
+pub(crate) use self::credentials::AuthenticationCommitError;
 pub use self::credentials::StoredPasskey;
 pub use self::events::{AuthEvent, EventLogIntegrityError};
 pub use self::fleet::{

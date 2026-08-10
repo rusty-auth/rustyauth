@@ -6,7 +6,10 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 use webauthn_rs::prelude::{AuthenticationResult, Passkey};
 
-use super::{Store, StorePolicyError, User, credential_id, events::queue_events, now};
+use super::{
+    Session, SessionOrigin, Store, StorePolicyError, User, credential_id, events::queue_events,
+    now, session_key, sessions::prepare_session,
+};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -20,7 +23,66 @@ pub struct StoredPasskey {
     pub passkey: Passkey,
 }
 
+#[derive(Debug, thiserror::Error)]
+pub(crate) enum AuthenticationCommitError {
+    #[error("passkey authentication state was rejected")]
+    Rejected,
+    #[error(transparent)]
+    Internal(#[from] anyhow::Error),
+}
+
 impl Store {
+    /// Applies a successful passkey result and creates its browser session in
+    /// one mutation. Keeping the credential counter, user record, session and
+    /// audit event in one atomic pipeline avoids both partial sign-ins and the
+    /// extra datastore round trips that otherwise dominate passkey latency
+    /// under sustained authentication traffic.
+    pub(crate) async fn apply_authentication_and_create_session(
+        &self,
+        user_id: Uuid,
+        result: &AuthenticationResult,
+        absolute_seconds: u64,
+    ) -> std::result::Result<(User, String, Session), AuthenticationCommitError> {
+        let _snapshot = self.snapshot_gate.read().await;
+        let _guard = self.mutation.lock().await;
+        let mut user = self
+            .user(user_id)
+            .await
+            .map_err(AuthenticationCommitError::Internal)?
+            .ok_or(AuthenticationCommitError::Rejected)?;
+        apply_authentication_result(&mut user, result)
+            .map_err(|_| AuthenticationCommitError::Rejected)?;
+        let credential_id = URL_SAFE_NO_PAD.encode(result.cred_id().as_ref());
+        let (session_token, session) = prepare_session(
+            &user,
+            SessionOrigin::Passkey { credential_id },
+            absolute_seconds,
+        );
+        let events = self
+            .pending_events(vec![("session.created".to_owned(), Some(user.id))])
+            .await
+            .map_err(AuthenticationCommitError::Internal)?;
+        let user_json = serde_json::to_string(&user).map_err(anyhow::Error::from)?;
+        let session_json = serde_json::to_string(&session).map_err(anyhow::Error::from)?;
+        let mut connection = self.redis.clone();
+        let mut pipeline = redis::pipe();
+        pipeline
+            .atomic()
+            .set(format!("auth:user:{user_id}"), user_json);
+        pipeline
+            .cmd("SETEX")
+            .arg(session_key(&session_token))
+            .arg(absolute_seconds)
+            .arg(session_json)
+            .ignore();
+        queue_events(&mut pipeline, &events).map_err(AuthenticationCommitError::Internal)?;
+        let _: () = pipeline
+            .query_async(&mut connection)
+            .await
+            .context("persist passkey result, session and event")?;
+        Ok((user, session_token, session))
+    }
+
     pub async fn apply_authentication(
         &self,
         user_id: Uuid,
@@ -32,22 +94,7 @@ impl Store {
             .user(user_id)
             .await?
             .ok_or(StorePolicyError::UserMissing)?;
-        let id = URL_SAFE_NO_PAD.encode(result.cred_id().as_ref());
-        let stored = user
-            .passkeys
-            .iter_mut()
-            .find(|passkey| passkey.id == id)
-            .ok_or(StorePolicyError::CredentialNotLinked)?;
-        let next = result.counter();
-        if counter_regressed(stored.counter, next) {
-            bail!("passkey counter did not advance; possible cloned credential");
-        }
-        stored
-            .passkey
-            .update_credential(result)
-            .context("passkey result does not match stored credential")?;
-        stored.counter = next.max(stored.counter);
-        stored.last_used_at = Some(now());
+        apply_authentication_result(&mut user, result)?;
         self.persist_user(&user, "persist passkey authentication state")
             .await?;
         Ok(user)
@@ -166,6 +213,26 @@ impl Store {
             .context("revoke passkey and persist event")?;
         Ok(user)
     }
+}
+
+fn apply_authentication_result(user: &mut User, result: &AuthenticationResult) -> Result<()> {
+    let id = URL_SAFE_NO_PAD.encode(result.cred_id().as_ref());
+    let stored = user
+        .passkeys
+        .iter_mut()
+        .find(|passkey| passkey.id == id)
+        .ok_or(StorePolicyError::CredentialNotLinked)?;
+    let next = result.counter();
+    if counter_regressed(stored.counter, next) {
+        bail!("passkey counter did not advance; possible cloned credential");
+    }
+    stored
+        .passkey
+        .update_credential(result)
+        .context("passkey result does not match stored credential")?;
+    stored.counter = next.max(stored.counter);
+    stored.last_used_at = Some(now());
+    Ok(())
 }
 
 /// Reports a passkey sign counter that failed to advance, which is WebAuthn's

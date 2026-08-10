@@ -658,18 +658,26 @@ async fn reset() -> Result<()> {
 
     let mut redis = connection().await?;
     let mut deleted = 0_u64;
-    for _ in 0..20 {
+    for attempt in 1..=20 {
         deleted = deleted.saturating_add(delete_scan_pass(&mut redis).await?);
-        let remaining: u64 = redis::cmd("DBSIZE")
+        let remaining_owned = scan_count(&mut redis, "auth:*").await?;
+        let remaining_database: u64 = redis::cmd("DBSIZE")
             .query_async(&mut redis)
             .await
-            .context("verify benchmark reset")?;
-        if remaining == 0 {
-            println!("{{\"deletedKeys\":{deleted},\"remainingKeys\":0}}");
+            .context("measure benchmark database after reset")?;
+        if remaining_owned == 0 {
+            println!(
+                "{{\"deletedKeys\":{deleted},\"remainingKeys\":0,\"remainingDatabaseKeys\":{remaining_database}}}"
+            );
             return Ok(());
         }
+        if attempt == 20 {
+            bail!(
+                "benchmark reset did not converge after 20 bounded passes: {remaining_owned} RustyAuth-owned keys remain ({remaining_database} database keys total)"
+            );
+        }
     }
-    bail!("benchmark reset did not converge after 20 bounded passes");
+    unreachable!("bounded reset loop either succeeds or reports its last measurement")
 }
 
 async fn delete_scan_pass(redis: &mut redis::aio::ConnectionManager) -> Result<u64> {

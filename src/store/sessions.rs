@@ -87,6 +87,36 @@ impl SessionOrigin {
     }
 }
 
+pub(super) fn prepare_session(
+    user: &User,
+    origin: SessionOrigin,
+    absolute_seconds: u64,
+) -> (String, Session) {
+    let auth_method = origin.auth_method();
+    let token_prefix = origin.token_prefix();
+    let current_credential_id = origin.credential_id();
+    let token = format!(
+        "{token_prefix}{}",
+        URL_SAFE_NO_PAD.encode(rand::random::<[u8; 32]>())
+    );
+    let current = now();
+    let session = Session {
+        id: Uuid::new_v4(),
+        user_id: user.id,
+        auth_method: auth_method.into(),
+        current_credential_id,
+        session_version: user.session_version,
+        created_at: current,
+        // A device session can only be minted immediately after a browser
+        // passkey step-up. It carries that assurance for the remainder of
+        // the same five-minute administrative window, never beyond it.
+        step_up_at: matches!(auth_method, "passkey" | "device").then_some(current),
+        last_seen_at: current,
+        absolute_expires_at: current.saturating_add(absolute_seconds),
+    };
+    (token, session)
+}
+
 impl Store {
     pub async fn create_session(
         &self,
@@ -94,29 +124,8 @@ impl Store {
         origin: SessionOrigin,
         absolute_seconds: u64,
     ) -> Result<(String, Session)> {
-        let auth_method = origin.auth_method();
-        let token_prefix = origin.token_prefix();
-        let current_credential_id = origin.credential_id();
         let _snapshot = self.snapshot_gate.read().await;
-        let token = format!(
-            "{token_prefix}{}",
-            URL_SAFE_NO_PAD.encode(rand::random::<[u8; 32]>())
-        );
-        let current = now();
-        let session = Session {
-            id: Uuid::new_v4(),
-            user_id: user.id,
-            auth_method: auth_method.into(),
-            current_credential_id,
-            session_version: user.session_version,
-            created_at: current,
-            // A device session can only be minted immediately after a browser
-            // passkey step-up. It carries that assurance for the remainder of
-            // the same five-minute administrative window, never beyond it.
-            step_up_at: matches!(auth_method, "passkey" | "device").then_some(current),
-            last_seen_at: current,
-            absolute_expires_at: current.saturating_add(absolute_seconds),
-        };
+        let (token, session) = prepare_session(user, origin, absolute_seconds);
         self.set_json_ex(&session_key(&token), &session, absolute_seconds)
             .await?;
         self.append_event_within_snapshot("session.created", Some(user.id))
