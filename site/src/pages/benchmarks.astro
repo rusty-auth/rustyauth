@@ -18,10 +18,12 @@ const updated = new Intl.DateTimeFormat("en-GB", {
   timeZone: "UTC",
 }).format(new Date(catalogue.updatedAt));
 const realmReports = catalogue.reports.filter((report) => report.programId === realmProgram.id);
-const starterReport = realmReports.find((report) => report.status === "passed");
-if (!starterReport) throw new Error("passed single-realm benchmark report is missing");
-const result = (key: string) => starterReport.results.find((item) => item.key === key)?.value ?? 0;
-const primaryChart = starterReport.charts?.[0];
+const latestReport = realmReports
+  .filter((report) => report.status === "passed")
+  .sort((left, right) => right.observedAt.localeCompare(left.observedAt))[0];
+if (!latestReport) throw new Error("passed single-realm benchmark report is missing");
+const result = (key: string) => latestReport.results.find((item) => item.key === key)?.value ?? 0;
+const primaryChart = latestReport.charts?.[0];
 if (!primaryChart) throw new Error("single-realm latency chart is missing");
 const chartWidth = 780;
 const chartHeight = 310;

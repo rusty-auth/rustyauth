@@ -4406,7 +4406,8 @@ fn BenchmarksPage() -> Element {
     let primary_chart = catalogue
         .reports
         .iter()
-        .find(|report| report.program_id == realm.id && report.status == "passed")
+        .filter(|report| report.program_id == realm.id && report.status == "passed")
+        .max_by(|left, right| left.observed_at.cmp(&right.observed_at))
         .and_then(|report| report.charts.first())
         .cloned();
     let state_label = if realm.state == "awaiting-baseline" {

@@ -9,11 +9,22 @@ RUN apt-get update \
 WORKDIR /src
 COPY Cargo.toml Cargo.lock build.rs ./
 COPY proto ./proto
+# Keep the dependency graph in a reusable image layer. The benchmark helper is
+# changed frequently while a release is being qualified; those source edits
+# should rebuild the workspace crate, not every third-party dependency.
+RUN --mount=type=cache,id=s/e0d03bd6-31ea-4575-9026-b825ffff24e2-/usr/local/cargo/registry,target=/usr/local/cargo/registry \
+  --mount=type=cache,id=s/e0d03bd6-31ea-4575-9026-b825ffff24e2-/src/target,target=/src/target \
+  mkdir -p src/bin \
+  && printf 'fn main() {}\n' > src/bin/rustyauth-benchmark.rs \
+  && touch src/lib.rs \
+  && cargo build --locked --release --features benchmark-tools --bin rustyauth-benchmark \
+  && rm -rf src
 COPY rustyauth.example.yaml rustyauth.fleet.example.yaml ./
 COPY src ./src
 RUN --mount=type=cache,id=s/e0d03bd6-31ea-4575-9026-b825ffff24e2-/usr/local/cargo/registry,target=/usr/local/cargo/registry \
   --mount=type=cache,id=s/e0d03bd6-31ea-4575-9026-b825ffff24e2-/src/target,target=/src/target \
-  cargo build --locked --release --features benchmark-tools --bin rustyauth-benchmark \
+  find src -type f -exec touch {} + \
+  && cargo build --locked --release --features benchmark-tools --bin rustyauth-benchmark \
   && cp /src/target/release/rustyauth-benchmark /usr/local/bin/rustyauth-benchmark
 
 FROM debian:bookworm-slim@sha256:abd67ffcfa541b485a3dff59865ab629aa048a6c613e639d36e7456b0b229241

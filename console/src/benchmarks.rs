@@ -188,7 +188,8 @@ mod tests {
         let report = catalogue
             .reports
             .iter()
-            .find(|report| report.program_id == realm.id && report.status == "passed")
+            .filter(|report| report.program_id == realm.id && report.status == "passed")
+            .max_by(|left, right| left.observed_at.cmp(&right.observed_at))
             .expect("passed single-realm report");
         assert!(
             report.results.iter().any(

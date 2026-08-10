@@ -65,7 +65,31 @@ const phaseMetrics = Object.fromEntries(
     endToEnd: new Trend(`phase_${phase.name}_end_to_end`, true),
     application: new Trend(`phase_${phase.name}_application`, true),
     sabledb: new Trend(`phase_${phase.name}_sabledb`, true),
+    completed: new Counter(`phase_${phase.name}_completed`),
+    failures: new Rate(`phase_${phase.name}_failures`),
+    unplanned5xx: new Counter(`phase_${phase.name}_unplanned_5xx`),
+    operations: {
+      account: new Trend(`phase_${phase.name}_account`, true),
+      token: new Trend(`phase_${phase.name}_token`, true),
+      credentials: new Trend(`phase_${phase.name}_credentials`, true),
+      jwks: new Trend(`phase_${phase.name}_jwks`, true),
+    },
   }]),
+);
+
+const phaseThresholds = Object.fromEntries(
+  phases.flatMap((phase) => [
+    [`phase_${phase.name}_completed`, [`count>=${phase.rate * durationSeconds(phase.duration)}`]],
+    [`phase_${phase.name}_failures`, ["rate<0.001"]],
+    [`phase_${phase.name}_unplanned_5xx`, ["count==0"]],
+    [`phase_${phase.name}_end_to_end`, ["p(95)<300", "p(99)<750"]],
+    [`phase_${phase.name}_application`, ["p(95)<150", "p(99)<400"]],
+    [`phase_${phase.name}_sabledb`, ["p(95)<100", "p(99)<250"]],
+    [`phase_${phase.name}_account`, ["p(95)<250"]],
+    [`phase_${phase.name}_token`, ["p(95)<350"]],
+    [`phase_${phase.name}_credentials`, ["p(95)<250"]],
+    [`phase_${phase.name}_jwks`, ["p(95)<150"]],
+  ]),
 );
 
 let startsAtSeconds = 0;
@@ -104,6 +128,7 @@ export const options = {
     credentials_duration: ["p(95)<250"],
     jwks_duration: ["p(95)<150"],
     dropped_iterations: ["count==0"],
+    ...phaseThresholds,
   },
 };
 
@@ -128,8 +153,17 @@ export function enterpriseJourney() {
   operationDuration[operation].add(duration);
   endToEndDuration.add(duration);
   phase.endToEnd.add(duration);
-  requestFailures.add(failed);
-  if (response.status >= 500) unplanned5xx.add(1);
+  const unsuccessful = failed || timing === null;
+  requestFailures.add(unsuccessful);
+  phase.failures.add(unsuccessful);
+  phase.completed.add(1);
+  phase.operations[operation].add(duration);
+  if (response.status >= 500) {
+    unplanned5xx.add(1);
+    phase.unplanned5xx.add(1);
+  } else {
+    phase.unplanned5xx.add(0);
+  }
 
   if (timing) {
     serverApplicationDuration.add(timing.app);
@@ -139,8 +173,6 @@ export function enterpriseJourney() {
     sabledbRoundTrips.add(timing.roundTrips);
     phase.application.add(timing.app);
     phase.sabledb.add(timing.sabledb);
-  } else {
-    requestFailures.add(true);
   }
 
   check(response, {

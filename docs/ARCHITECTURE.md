@@ -171,9 +171,11 @@ Every authenticated request checks:
 7. that the session's originating passkey is still attached to the account.
 
 Any failed check deletes the session record before rejecting the request, so a session invalidated once stays
-invalidated. Successful validation advances `last_seen_at`. Sign-out deletes the current session. The data
-model supports invalidating sessions by advancing a user's session version; the public revoke-all operation
-uses that mechanism and requires a recent passkey-backed session.
+invalidated. Successful validation advances `last_seen_at`; durable touches are coalesced to a bounded cadence
+so the authenticated read path does not rewrite the session on every request. Coalescing may end an idle
+session by up to one minute early, but never extends its idle or absolute security boundary. Sign-out deletes
+the current session. The data model supports invalidating sessions by advancing a user's session version; the
+public revoke-all operation uses that mechanism and requires a recent passkey-backed session.
 
 ### Passkey revocation ends the sessions that passkey created
 

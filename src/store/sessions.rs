@@ -7,6 +7,15 @@ use uuid::Uuid;
 
 use super::{Store, User, now, session_key};
 
+// Persisting `last_seen_at` on every authenticated request turns the read path
+// into a write-heavy workload and drives avoidable LSM compaction. A session is
+// touched at most once per minute (and more frequently for short idle windows).
+// The stored timestamp can therefore trail real activity by this bounded
+// interval, which may end an idle session slightly early but never extends it
+// beyond the configured security boundary.
+const MAX_SESSION_TOUCH_INTERVAL_SECONDS: u64 = 60;
+const SESSION_TOUCHES_PER_IDLE_WINDOW: u64 = 20;
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Session {
@@ -152,9 +161,12 @@ impl Store {
             self.delete(&key).await?;
             return Ok(None);
         }
+        let touch_due = session_touch_due(&session, idle_seconds, current);
         session.last_seen_at = current;
-        self.set_json_ex(&key, &session, session.absolute_expires_at - current)
-            .await?;
+        if touch_due {
+            self.set_json_ex(&key, &session, session.absolute_expires_at - current)
+                .await?;
+        }
         Ok(Some((session, user)))
     }
 
@@ -222,6 +234,14 @@ enum SessionVerdict {
 /// Whether the session has run out of time, decidable without reading the account.
 fn session_expired(session: &Session, idle_seconds: u64, now: u64) -> bool {
     session.absolute_expires_at <= now || session.last_seen_at.saturating_add(idle_seconds) <= now
+}
+
+fn session_touch_interval(idle_seconds: u64) -> u64 {
+    (idle_seconds / SESSION_TOUCHES_PER_IDLE_WINDOW).clamp(1, MAX_SESSION_TOUCH_INTERVAL_SECONDS)
+}
+
+fn session_touch_due(session: &Session, idle_seconds: u64, now: u64) -> bool {
+    now.saturating_sub(session.last_seen_at) >= session_touch_interval(idle_seconds)
 }
 
 fn session_verdict(
@@ -371,6 +391,23 @@ mod tests {
             session_verdict(&session(None), 3, &[], 300_000, 10_000),
             SessionVerdict::AbsoluteExpiry
         );
+    }
+
+    #[test]
+    fn session_touches_are_coalesced_without_extending_the_idle_boundary() {
+        let session = session(None);
+        assert_eq!(session_touch_interval(1_800), 60);
+        assert!(!session_touch_due(&session, 1_800, 1_059));
+        assert!(session_touch_due(&session, 1_800, 1_060));
+
+        // Short idle windows retain twenty persisted touch opportunities and
+        // never use a zero-second interval.
+        assert_eq!(session_touch_interval(300), 15);
+        assert_eq!(session_touch_interval(1), 1);
+
+        // Coalescing cannot change the expiry predicate: the persisted value
+        // is never advanced into the future to buy performance headroom.
+        assert!(session_expired(&session, 300, 1_300));
     }
 
     #[test]
