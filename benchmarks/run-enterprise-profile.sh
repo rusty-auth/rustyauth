@@ -34,11 +34,12 @@ run_profile() {
 
 run_profile smoke enterprise-smoke
 if [ "$(cat "${run_dir}/enterprise-smoke.exit-code")" -ne 0 ]; then
-  sha256sum "${run_dir}"/*.json "${run_dir}"/*.txt > "${run_dir}/SHA256SUMS"
+  (cd "${run_dir}" && sha256sum ./*.json ./*.txt > SHA256SUMS)
   printf '%s\n' "${run_dir}"
   exit 1
 fi
 
 run_profile "${PROFILE:-enterprise}" "${PROFILE:-enterprise}"
-sha256sum "${run_dir}"/*.json "${run_dir}"/*.txt > "${run_dir}/SHA256SUMS"
+(cd "${run_dir}" && sha256sum ./*.json ./*.txt > SHA256SUMS)
 printf '%s\n' "${run_dir}"
+exit "$(cat "${run_dir}/${PROFILE:-enterprise}.exit-code")"

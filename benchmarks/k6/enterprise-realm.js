@@ -77,8 +77,12 @@ for (const phase of phases) {
     timeUnit: "1s",
     duration: phase.duration,
     startTime: `${startsAtSeconds}s`,
-    preAllocatedVUs: Math.max(25, Math.ceil(phase.rate * 0.35)),
-    maxVUs: Math.max(100, Math.ceil(phase.rate * 2)),
+    // Sequential scenarios retain their initialized VU pools for the full run.
+    // Allocate for the measured median path and allow bounded dynamic growth;
+    // oversized pools can otherwise qualify the generator's memory, not the
+    // realm under test.
+    preAllocatedVUs: Math.max(25, Math.ceil(phase.rate * 0.15)),
+    maxVUs: Math.max(100, Math.ceil(phase.rate * 0.75)),
     gracefulStop: "20s",
     exec: "enterpriseJourney",
     tags: { phase: phase.name, target_rate: String(phase.rate) },
