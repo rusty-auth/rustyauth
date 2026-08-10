@@ -7,6 +7,8 @@ railway_volume="rustyauth-sable-volume-${run_id}"
 railway_container="rustyauth-sable-volume-${run_id}"
 kubernetes_volume="rustyauth-sable-fsgroup-${run_id}"
 kubernetes_container="rustyauth-sable-fsgroup-${run_id}"
+storage_accounts=250
+maximum_storage_mb=64
 
 cleanup() {
   exit_code=$?
@@ -42,9 +44,114 @@ assert_unprivileged_database() {
   '
 }
 
+mapped_port() {
+  docker port "$1" 6379/tcp | awk -F: 'NR == 1 { print $NF }'
+}
+
+exercise_transaction_storage() {
+  port=$(mapped_port "$railway_container")
+  python3 - "$port" "$storage_accounts" <<'PY'
+import socket
+import sys
+
+port = int(sys.argv[1])
+accounts = int(sys.argv[2])
+value = b"x" * 1024
+
+def encode(*parts):
+    result = [f"*{len(parts)}\r\n".encode()]
+    for part in parts:
+        if isinstance(part, str):
+            part = part.encode()
+        result.extend((f"${len(part)}\r\n".encode(), part, b"\r\n"))
+    return b"".join(result)
+
+def read_reply(stream):
+    marker = stream.read(1)
+    if marker in (b"+", b"-", b":"):
+        line = stream.readline()
+        if not line.endswith(b"\r\n"):
+            raise RuntimeError("truncated Redis response")
+        if marker == b"-":
+            raise RuntimeError(f"Redis error: {line.decode(errors='replace').strip()}")
+        return int(line) if marker == b":" else line[:-2]
+    if marker == b"$":
+        size = int(stream.readline())
+        if size == -1:
+            return None
+        payload = stream.read(size)
+        if len(payload) != size or stream.read(2) != b"\r\n":
+            raise RuntimeError("truncated Redis bulk response")
+        return payload
+    if marker == b"*":
+        count = int(stream.readline())
+        return [read_reply(stream) for _ in range(count)]
+    raise RuntimeError(f"unexpected Redis response marker {marker!r}")
+
+with socket.create_connection(("127.0.0.1", port), timeout=5) as connection:
+    connection.settimeout(5)
+    stream = connection.makefile("rb")
+    for index in range(accounts):
+        commands = [("MULTI",)]
+        commands.extend(("SET", f"auth:user:{index}:{part}", value) for part in range(6))
+        commands.extend([
+            ("EXEC",),
+            ("SETEX", f"auth:session:{index}", "86400", value),
+            ("MULTI",),
+            ("SET", f"auth:event:{index}", value),
+            ("SET", "auth:event-sequence", str(index)),
+            ("EXEC",),
+        ])
+        connection.sendall(b"".join(encode(*command) for command in commands))
+        for _ in commands:
+            read_reply(stream)
+PY
+}
+
+assert_storage_survived_restart() {
+  port=$(mapped_port "$railway_container")
+  expected=$((storage_accounts * 8 + 1))
+  python3 - "$port" "$expected" <<'PY'
+import socket
+import sys
+
+port = int(sys.argv[1])
+expected = int(sys.argv[2])
+with socket.create_connection(("127.0.0.1", port), timeout=5) as connection:
+    connection.sendall(b"*1\r\n$6\r\nDBSIZE\r\n")
+    response = connection.recv(128)
+if response != f":{expected}\r\n".encode():
+    raise SystemExit(f"unexpected DBSIZE response after restart: {response!r}")
+PY
+}
+
+assert_bounded_volume_usage() {
+  size=$(docker system df -v | awk -v name="$railway_volume" '$1 == name { print $3 }')
+  python3 - "$size" "$maximum_storage_mb" <<'PY'
+import re
+import sys
+
+value = sys.argv[1]
+maximum_mb = float(sys.argv[2])
+match = re.fullmatch(r"([0-9.]+)([kMGT]?B)", value)
+if match is None:
+    raise SystemExit(f"could not parse Docker volume size {value!r}")
+number = float(match.group(1))
+unit = match.group(2)
+scale = {"B": 1 / 1_000_000, "kB": 1 / 1_000, "MB": 1, "GB": 1_000, "TB": 1_000_000}[unit]
+actual_mb = number * scale
+if actual_mb > maximum_mb:
+    raise SystemExit(
+        f"SableDB transaction smoke used {actual_mb:.2f} MB; ceiling is {maximum_mb:.2f} MB"
+    )
+print(f"SableDB transaction smoke used {actual_mb:.2f} MB (ceiling {maximum_mb:.2f} MB)")
+PY
+}
+
 docker image inspect "$image" >/dev/null
 docker volume create "$railway_volume" >/dev/null
 docker run -d --name "$railway_container" \
+  -p 127.0.0.1::6379 \
   --read-only \
   --cap-drop ALL \
   --cap-add CHOWN \
@@ -62,12 +169,16 @@ docker run -d --name "$railway_container" \
 # exercises the now-private 10002:10002 directory without discarding its data.
 wait_until_ready "$railway_container"
 assert_unprivileged_database "$railway_container"
+exercise_transaction_storage
 docker restart "$railway_container" >/dev/null
 wait_until_ready "$railway_container"
 assert_unprivileged_database "$railway_container"
+assert_storage_survived_restart
+assert_bounded_volume_usage
 
 logs=$(docker logs "$railway_container" 2>&1)
 [[ $(printf '%s' "$logs" | grep -c 'Server started on port address') -ge 2 ]]
+[[ $(printf '%s' "$logs" | grep -c 'wal_ttl_seconds: 0') -ge 2 ]]
 if printf '%s' "$logs" | grep -Eqi 'permission denied|sabledb-entrypoint:'; then
   echo "SableDB volume bootstrap failure found in logs" >&2
   exit 1

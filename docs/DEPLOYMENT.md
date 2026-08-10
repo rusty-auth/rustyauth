@@ -200,6 +200,12 @@ Requirements:
 - persistent volume at `/var/lib/sabledb`; and
 - health check before RustyAuth receives traffic.
 
+The shipped image keeps the active RocksDB write-ahead log enabled for crash recovery but sets archived-WAL
+retention to zero. RustyAuth deploys one SableDB writer per realm and does not use archived WAL files as a
+replication feed; retaining obsolete files creates unbounded storage amplification without improving recovery.
+Image qualification exercises production-shaped account/session transactions, restarts the database, verifies
+the data survived and rejects a volume above the reviewed storage ceiling.
+
 The image safely handles both supported volume ownership models. On Railway it starts a minimal static
 initializer with the platform's standard volume-management capabilities, validates and owns the three fixed
 paths, clears supplementary groups, drops to UID/GID `10002`, and then `exec`s SableDB. Kubernetes charts

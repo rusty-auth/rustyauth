@@ -6,7 +6,14 @@ supported `1.x` contract.
 
 ## Unreleased
 
-No changes yet.
+### Fixed
+
+- Stop archiving obsolete SableDB write-ahead logs on supported single-writer realms. The prior 24-hour WAL
+  retention could turn a megabyte-scale account dataset into tens of gigabytes of volume usage; image
+  qualification now replays production-shaped transactions, restarts the database, verifies durability and
+  enforces a storage ceiling.
+- Prepare isolated benchmark realms with bounded atomic batches and validate the resulting users, sessions,
+  indexes and complete gap-free auth event log through the production storage model before a run is accepted.
 
 ## 1.0.0 - 2026-08-09
 

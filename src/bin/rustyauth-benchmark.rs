@@ -13,6 +13,7 @@ use std::{
 };
 
 use anyhow::{Context, Result, bail};
+use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use serde::Serialize;
 use sha2::{Digest, Sha256};
 use url::Url;
@@ -20,7 +21,10 @@ use uuid::Uuid;
 use webauthn_rs::WebauthnBuilder;
 
 use rustyauth::{
-    store::{AccountProfile, IdentifierKind, IdentifierValue, SessionOrigin, Store},
+    store::{
+        AccountIdentifier, AccountProfile, AuthEvent, IdentifierKind, IdentifierValue, Session,
+        Store, StoredPasskey, User, now,
+    },
     webauthn_soft::SoftAuthenticator,
 };
 
@@ -28,12 +32,14 @@ const EXPECTED_PROJECT_ID: &str = "3da0030b-006f-4198-a8e7-f8f18da4a8e0";
 const RESET_CONFIRMATION: &str = "reset-synthetic-benchmark-data";
 const DEFAULT_ACCOUNTS: u64 = 10_000;
 const SESSION_SECONDS: u64 = 86_400;
+const SEED_BATCH_SIZE: u64 = 25;
+const DELETE_BATCH_SIZE: usize = 25;
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
-struct Fixture<'a> {
+struct Fixture {
     index: u64,
-    email: &'a str,
+    email: String,
     session_token: String,
     credential_id: String,
     private_jwk: serde_json::Value,
@@ -88,6 +94,7 @@ async fn seed() -> Result<()> {
     let seed = required("BENCHMARK_SEED")?;
     let rp_id = required("WEBAUTHN_RP_ID")?;
     let origin = required("WEBAUTHN_RP_ORIGIN")?;
+    let tenant_id = required("AUTH_TENANT_ID")?;
     let origin_url = Url::parse(&origin).context("parse WEBAUTHN_RP_ORIGIN")?;
     let output = PathBuf::from(
         env::var("BENCHMARK_FIXTURES_PATH").unwrap_or_else(|_| "/data/fixtures.jsonl".to_owned()),
@@ -104,6 +111,7 @@ async fn seed() -> Result<()> {
         "auth:credential:*",
         "auth:identifier:*",
         "auth:email:*",
+        "auth:event*",
     ];
     let mut existing = 0_u64;
     for pattern in identity_patterns {
@@ -114,8 +122,17 @@ async fn seed() -> Result<()> {
             "benchmark SableDB already contains {existing} identity records; reset it through the reviewed benchmark control before reseeding"
         );
     }
+    let active_writer: bool = redis::cmd("EXISTS")
+        .arg("auth:writer-lease")
+        .query_async(&mut raw)
+        .await
+        .context("check benchmark writer lease")?;
+    if active_writer {
+        bail!(
+            "benchmark SableDB still has an active RustyAuth writer lease; stop the realm before seeding"
+        );
+    }
 
-    let store = Store::new(redis, required("AUTH_TENANT_ID")?);
     let webauthn = WebauthnBuilder::new(&rp_id, &origin_url)
         .context("create benchmark WebAuthn relying party")?
         .rp_name("RustyAuth synthetic benchmark")
@@ -123,69 +140,151 @@ async fn seed() -> Result<()> {
         .context("build benchmark WebAuthn relying party")?;
     let mut writer =
         BufWriter::new(File::create(&output).context("create benchmark fixture file")?);
+    let mut event_sequence = 0_u64;
 
-    for index in 0..account_count {
-        let email = format!("realm-{index:06}@benchmark.invalid");
-        let user_id = deterministic_uuid(&seed, index);
-        let authenticator = SoftAuthenticator::from_seed(&seed, index);
-        let (options, registration_state) = webauthn
-            .start_passkey_registration(user_id, &email, &email, None)
-            .context("start synthetic passkey registration")?;
-        let options = serde_json::to_value(options).context("serialize registration options")?;
-        let response = serde_json::from_value(authenticator.register(&options, &origin))
-            .context("decode synthetic passkey registration")?;
-        let passkey = webauthn
-            .finish_passkey_registration(&response, &registration_state)
-            .context("verify synthetic passkey registration")?;
-        let user = store
-            .create_user_with_passkey(
+    for batch_start in (0..account_count).step_by(SEED_BATCH_SIZE as usize) {
+        let batch_end = account_count.min(batch_start.saturating_add(SEED_BATCH_SIZE));
+        let mut pipeline = redis::pipe();
+        pipeline.atomic();
+        let mut fixtures = Vec::with_capacity((batch_end - batch_start) as usize);
+
+        for index in batch_start..batch_end {
+            let email = format!("realm-{index:06}@benchmark.invalid");
+            let identifier = IdentifierValue::canonical(IdentifierKind::Email, &email)
+                .context("canonicalize synthetic identifier")?;
+            let user_id = deterministic_uuid("user", &seed, index);
+            let authenticator = SoftAuthenticator::from_seed(&seed, index);
+            let (options, registration_state) = webauthn
+                .start_passkey_registration(user_id, &email, &email, None)
+                .context("start synthetic passkey registration")?;
+            let options =
+                serde_json::to_value(options).context("serialize registration options")?;
+            let response = serde_json::from_value(authenticator.register(&options, &origin))
+                .context("decode synthetic passkey registration")?;
+            let passkey = webauthn
+                .finish_passkey_registration(&response, &registration_state)
+                .context("verify synthetic passkey registration")?;
+            let credential_id = URL_SAFE_NO_PAD.encode(passkey.cred_id().as_ref());
+            let credential: webauthn_rs::prelude::Credential = passkey.clone().into();
+            let current = now();
+            let user = User {
+                id: user_id,
+                email: identifier.value.clone(),
+                email_verified: true,
+                profile: AccountProfile::default(),
+                identifiers: vec![AccountIdentifier {
+                    kind: identifier.kind,
+                    value: identifier.value.clone(),
+                    verified: true,
+                    verified_at: Some(current),
+                    primary: true,
+                    created_at: current,
+                }],
+                session_version: 1,
+                recovery_codes: Vec::new(),
+                created_at: current,
+                passkeys: vec![StoredPasskey {
+                    id: credential_id.clone(),
+                    label: "Primary passkey".to_owned(),
+                    counter: credential.counter,
+                    created_at: current,
+                    last_used_at: None,
+                    passkey,
+                }],
+            };
+            let session_token = deterministic_session_token(&seed, index);
+            let session = Session {
+                id: deterministic_uuid("session", &seed, index),
                 user_id,
-                IdentifierValue::canonical(IdentifierKind::Email, &email)
-                    .context("canonicalize synthetic identifier")?,
-                AccountProfile::default(),
-                passkey,
-                true,
-                None,
-            )
-            .await
-            .with_context(|| format!("persist synthetic account {index}"))?;
-        let credential_id = user
-            .passkeys
-            .first()
-            .context("seeded account has no passkey")?
-            .id
-            .clone();
-        let (session_token, _) = store
-            .create_session(
-                &user,
-                SessionOrigin::Passkey {
-                    credential_id: credential_id.clone(),
-                },
-                SESSION_SECONDS,
-            )
-            .await
-            .with_context(|| format!("persist synthetic session {index}"))?;
-        serde_json::to_writer(
-            &mut writer,
-            &Fixture {
+                auth_method: "passkey".to_owned(),
+                current_credential_id: Some(credential_id.clone()),
+                session_version: user.session_version,
+                created_at: current,
+                step_up_at: Some(current),
+                last_seen_at: current,
+                absolute_expires_at: current.saturating_add(SESSION_SECONDS),
+            };
+            let identity_event = next_event(
+                &mut event_sequence,
+                &tenant_id,
+                "identity.created",
+                user_id,
+                current,
+            )?;
+            let session_event = next_event(
+                &mut event_sequence,
+                &tenant_id,
+                "session.created",
+                user_id,
+                current,
+            )?;
+
+            pipeline
+                .cmd("SET")
+                .arg(format!("auth:user:{user_id}"))
+                .arg(serde_json::to_string(&user)?)
+                .ignore()
+                .cmd("SET")
+                .arg(format!(
+                    "auth:identifier:{}:{}",
+                    identifier.kind.as_str(),
+                    identifier.value
+                ))
+                .arg(user_id.to_string())
+                .ignore()
+                .cmd("SET")
+                .arg(format!("auth:email:{}", identifier.value))
+                .arg(user_id.to_string())
+                .ignore()
+                .cmd("SET")
+                .arg(format!("auth:credential:{credential_id}"))
+                .arg(user_id.to_string())
+                .ignore()
+                .cmd("SETEX")
+                .arg(session_key(&session_token))
+                .arg(SESSION_SECONDS)
+                .arg(serde_json::to_string(&session)?)
+                .ignore();
+            queue_event(&mut pipeline, &identity_event)?;
+            queue_event(&mut pipeline, &session_event)?;
+            fixtures.push(Fixture {
                 index,
-                email: &email,
+                email,
                 session_token,
                 credential_id,
                 private_jwk: authenticator.private_jwk(),
-            },
-        )
-        .context("serialize benchmark fixture")?;
-        writer.write_all(b"\n").context("write benchmark fixture")?;
+            });
+        }
+        pipeline
+            .cmd("SET")
+            .arg("auth:event-sequence")
+            .arg(event_sequence)
+            .ignore();
+        let _: () = pipeline.query_async(&mut raw).await.with_context(|| {
+            format!("persist synthetic account batch {batch_start}..{batch_end}")
+        })?;
+        for fixture in fixtures {
+            serde_json::to_writer(&mut writer, &fixture).context("serialize benchmark fixture")?;
+            writer.write_all(b"\n").context("write benchmark fixture")?;
+        }
+        writer.flush().context("checkpoint benchmark fixtures")?;
 
-        if (index + 1) % 1_000 == 0 || index + 1 == account_count {
+        if batch_end % 1_000 == 0 || batch_end == account_count {
             eprintln!(
                 "seeded {} of {account_count} synthetic accounts and sessions",
-                index + 1
+                batch_end
             );
         }
     }
     writer.flush().context("flush benchmark fixtures")?;
+    let accounts = scan_count(&mut raw, "auth:user:*").await?;
+    let sessions = scan_count(&mut raw, "auth:session:*").await?;
+    if accounts != account_count || sessions != account_count {
+        bail!(
+            "benchmark seed cardinality mismatch: expected {account_count}, found {accounts} accounts and {sessions} sessions"
+        );
+    }
+    validate_seeded_realm(redis, &tenant_id, &seed, account_count).await?;
     let bytes = fs::read(&output).context("hash benchmark fixtures")?;
     let summary = SeedSummary {
         project_id: EXPECTED_PROJECT_ID.to_owned(),
@@ -197,6 +296,55 @@ async fn seed() -> Result<()> {
         origin,
     };
     println!("{}", serde_json::to_string_pretty(&summary)?);
+    Ok(())
+}
+
+async fn validate_seeded_realm(
+    redis: redis::aio::ConnectionManager,
+    tenant_id: &str,
+    seed: &str,
+    account_count: u64,
+) -> Result<()> {
+    let store = Store::new(redis, tenant_id.to_owned());
+    for index in [0, account_count - 1] {
+        let expected_id = deterministic_uuid("user", seed, index);
+        let expected_email = format!("realm-{index:06}@benchmark.invalid");
+        let user = store
+            .user(expected_id)
+            .await
+            .with_context(|| format!("hydrate synthetic account {index}"))?
+            .with_context(|| format!("synthetic account {index} is missing"))?;
+        if user.email != expected_email || user.passkeys.len() != 1 {
+            bail!("synthetic account {index} failed production-model validation");
+        }
+        let session_token = deterministic_session_token(seed, index);
+        let (_, session_user) = store
+            .session(&session_token, SESSION_SECONDS)
+            .await
+            .with_context(|| format!("hydrate synthetic session {index}"))?
+            .with_context(|| format!("synthetic session {index} is invalid"))?;
+        if session_user.id != expected_id {
+            bail!("synthetic session {index} resolved to the wrong account");
+        }
+    }
+
+    let expected_events = account_count
+        .checked_mul(2)
+        .context("benchmark event count overflow")?;
+    if store.latest_event_sequence().await? != expected_events {
+        bail!("synthetic event sequence does not match the seeded realm");
+    }
+    let mut verified_events = 0_u64;
+    while verified_events < expected_events {
+        let events = store.events(verified_events, 500).await?;
+        if events.is_empty() {
+            bail!("synthetic event log ended before sequence {expected_events}");
+        }
+        verified_events = verified_events.saturating_add(events.len() as u64);
+    }
+    if verified_events != expected_events {
+        bail!("synthetic event log exceeds the expected sequence");
+    }
     Ok(())
 }
 
@@ -243,12 +391,14 @@ async fn delete_scan_pass(redis: &mut redis::aio::ConnectionManager) -> Result<u
             .await
             .context("scan isolated benchmark keys for reset")?;
         if !keys.is_empty() {
-            let removed: u64 = redis::cmd("DEL")
-                .arg(keys)
-                .query_async(&mut *redis)
-                .await
-                .context("delete isolated benchmark key batch")?;
-            deleted = deleted.saturating_add(removed);
+            for chunk in keys.chunks(DELETE_BATCH_SIZE) {
+                let removed: u64 = redis::cmd("DEL")
+                    .arg(chunk)
+                    .query_async(&mut *redis)
+                    .await
+                    .context("delete isolated benchmark key batch")?;
+                deleted = deleted.saturating_add(removed);
+            }
         }
         cursor = next;
         if cursor == 0 {
@@ -306,11 +456,80 @@ fn optional_u64(name: &str, default: u64) -> Result<u64> {
     }
 }
 
-fn deterministic_uuid(seed: &str, index: u64) -> Uuid {
-    let digest = Sha256::digest(format!("rustyauth-benchmark-user\0{seed}\0{index}").as_bytes());
+fn deterministic_uuid(domain: &str, seed: &str, index: u64) -> Uuid {
+    let digest =
+        Sha256::digest(format!("rustyauth-benchmark-{domain}\0{seed}\0{index}").as_bytes());
     let mut bytes = [0_u8; 16];
     bytes.copy_from_slice(&digest[..16]);
     bytes[6] = (bytes[6] & 0x0f) | 0x40;
     bytes[8] = (bytes[8] & 0x3f) | 0x80;
     Uuid::from_bytes(bytes)
+}
+
+fn deterministic_session_token(seed: &str, index: u64) -> String {
+    URL_SAFE_NO_PAD.encode(Sha256::digest(
+        format!("rustyauth-benchmark-session-token\0{seed}\0{index}").as_bytes(),
+    ))
+}
+
+fn session_key(token: &str) -> String {
+    format!(
+        "auth:session:{}",
+        hex::encode(Sha256::digest(token.as_bytes()))
+    )
+}
+
+fn next_event(
+    sequence: &mut u64,
+    tenant_id: &str,
+    event_type: &str,
+    subject: Uuid,
+    occurred_at: u64,
+) -> Result<AuthEvent> {
+    *sequence = sequence
+        .checked_add(1)
+        .context("auth event sequence exhausted")?;
+    Ok(AuthEvent {
+        sequence: *sequence,
+        id: Uuid::new_v4(),
+        tenant_id: tenant_id.to_owned(),
+        event_type: event_type.to_owned(),
+        subject: Some(subject),
+        occurred_at,
+        data: serde_json::json!({}),
+    })
+}
+
+fn queue_event(pipeline: &mut redis::Pipeline, event: &AuthEvent) -> Result<()> {
+    pipeline
+        .cmd("SET")
+        .arg(format!("auth:event:{}", event.sequence))
+        .arg(serde_json::to_string(event)?)
+        .ignore();
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn deterministic_id_domains_do_not_overlap() {
+        assert_eq!(
+            deterministic_uuid("user", "seed", 7),
+            deterministic_uuid("user", "seed", 7)
+        );
+        assert_ne!(
+            deterministic_uuid("user", "seed", 7),
+            deterministic_uuid("session", "seed", 7)
+        );
+    }
+
+    #[test]
+    fn deterministic_session_tokens_are_stable_and_distinct() {
+        let first = deterministic_session_token("seed", 7);
+        assert_eq!(first, deterministic_session_token("seed", 7));
+        assert_ne!(first, deterministic_session_token("seed", 8));
+        assert_eq!(first.len(), 43);
+    }
 }

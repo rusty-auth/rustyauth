@@ -34,6 +34,12 @@ supported active users = sustainable authenticated RPS × 60 × 0.70
 refuses to run unless `BENCHMARK_PROJECT_ID` is the dedicated project ID. Fixture private keys and session
 tokens remain on the benchmark runner volume and are never committed, logged or added to a report.
 
+Preparation verifies every synthetic WebAuthn registration locally, then persists accounts, lookup indexes,
+sessions and gap-free auth events in bounded atomic batches of 25. This keeps the generated realm identical to
+the production storage contract without turning 10,000-account preparation into tens of thousands of separate
+durability barriers. Seeding refuses to run when identity/event records or an active writer lease are present,
+and verifies the final account/session cardinalities before the fixture set can be used by k6.
+
 The runner image is built from `Dockerfile.benchmark`, stays private, has no public domain and connects to
 SableDB through Railway private networking. k6 alone calls the public target domain so gateway latency is
 included. Raw run evidence is downloaded, sanitised, checksummed and reviewed before the catalogue is changed.
