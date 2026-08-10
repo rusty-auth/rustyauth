@@ -25,6 +25,7 @@ use rustyauth::{
 };
 
 const EXPECTED_PROJECT_ID: &str = "3da0030b-006f-4198-a8e7-f8f18da4a8e0";
+const RESET_CONFIRMATION: &str = "reset-synthetic-benchmark-data";
 const DEFAULT_ACCOUNTS: u64 = 10_000;
 const SESSION_SECONDS: u64 = 86_400;
 
@@ -56,7 +57,8 @@ async fn main() -> Result<()> {
     match command.as_str() {
         "seed" => seed().await,
         "count" => count().await,
-        other => bail!("unknown benchmark command {other:?}; expected seed or count"),
+        "reset" => reset().await,
+        other => bail!("unknown benchmark command {other:?}; expected seed, count, or reset"),
     }
 }
 
@@ -205,6 +207,54 @@ async fn count() -> Result<()> {
     let sessions = scan_count(&mut redis, "auth:session:*").await?;
     println!("{{\"registeredAccounts\":{accounts},\"validSessions\":{sessions}}}");
     Ok(())
+}
+
+async fn reset() -> Result<()> {
+    require_isolated_project()?;
+    if required("BENCHMARK_RESET_CONFIRM")? != RESET_CONFIRMATION {
+        bail!("BENCHMARK_RESET_CONFIRM does not authorize the synthetic benchmark reset");
+    }
+
+    let mut redis = connection().await?;
+    let mut deleted = 0_u64;
+    for _ in 0..20 {
+        deleted = deleted.saturating_add(delete_scan_pass(&mut redis).await?);
+        let remaining: u64 = redis::cmd("DBSIZE")
+            .query_async(&mut redis)
+            .await
+            .context("verify benchmark reset")?;
+        if remaining == 0 {
+            println!("{{\"deletedKeys\":{deleted},\"remainingKeys\":0}}");
+            return Ok(());
+        }
+    }
+    bail!("benchmark reset did not converge after 20 bounded passes");
+}
+
+async fn delete_scan_pass(redis: &mut redis::aio::ConnectionManager) -> Result<u64> {
+    let mut cursor = 0_u64;
+    let mut deleted = 0_u64;
+    loop {
+        let (next, keys): (u64, Vec<String>) = redis::cmd("SCAN")
+            .arg(cursor)
+            .arg("COUNT")
+            .arg(500_u16)
+            .query_async(&mut *redis)
+            .await
+            .context("scan isolated benchmark keys for reset")?;
+        if !keys.is_empty() {
+            let removed: u64 = redis::cmd("DEL")
+                .arg(keys)
+                .query_async(&mut *redis)
+                .await
+                .context("delete isolated benchmark key batch")?;
+            deleted = deleted.saturating_add(removed);
+        }
+        cursor = next;
+        if cursor == 0 {
+            return Ok(deleted);
+        }
+    }
 }
 
 async fn scan_count(redis: &mut redis::aio::ConnectionManager, pattern: &str) -> Result<u64> {

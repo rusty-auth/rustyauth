@@ -47,6 +47,10 @@ rustyauth-benchmark seed
 RUN_ID=starter-YYYYMMDDTHHMMSSZ /opt/rustyauth/benchmarks/run-starter-baseline.sh
 ```
 
+Resetting an interrupted synthetic preparation is a separate, fail-closed action. It requires both the exact
+benchmark Railway project ID and `BENCHMARK_RESET_CONFIRM=reset-synthetic-benchmark-data`; the command deletes
+keys in bounded batches and succeeds only after the isolated database reports zero remaining keys.
+
 The runner writes one directory under `/data/runs/<run-id>` containing dataset cardinalities, each k6 summary,
 human-readable k6 output, exit codes and `SHA256SUMS`. Railway CPU, memory, HTTP, network, volume and
 deployment evidence is collected for the same UTC interval by benchmark control before a candidate report is

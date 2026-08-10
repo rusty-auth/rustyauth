@@ -36,9 +36,21 @@ run_k6() {
 # A short preflight catches fixture, routing and cookie errors before spending
 # minutes on a capacity ladder.
 run_k6 read 1 10s read-smoke-1rps 1s
+if [ "$(cat "${run_dir}/read-smoke-1rps.exit-code")" -ne 0 ]; then
+  sha256sum "${run_dir}"/*.json "${run_dir}"/*.txt > "${run_dir}/SHA256SUMS"
+  printf '%s\n' "${run_dir}"
+  exit 1
+fi
 
 for rate in 25 50 100 200 400 800; do
   run_k6 read "${rate}" "${READ_DURATION:-90s}" "read-${rate}rps" 1s
+  # The fixed ladder is monotonic. Once a step breaches a gate, higher rates
+  # cannot establish a sustainable lower tier and would only consume CI/runtime
+  # minutes. Preserve the first failed step and continue to the independent
+  # passkey sign-in measurement.
+  if [ "$(cat "${run_dir}/read-${rate}rps.exit-code")" -ne 0 ]; then
+    break
+  fi
 done
 
 # Six sign-ins a minute stays below the product's intentional ten identifier
