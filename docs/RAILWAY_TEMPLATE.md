@@ -4,9 +4,9 @@
 marketplace graph, and the successful production workflow publishes its three verified image digests to the
 existing `rustyauth` template slug after every current-main rollout.
 
-GitHub environment `railway-production` keeps the project-scoped rollout credential in
-`RAILWAY_API_TOKEN` and the workspace-owner template credential in `RAILWAY_TEMPLATE_TOKEN`; separating them
-prevents ordinary service deployment from acquiring marketplace publication authority.
+GitHub environment `railway-production` keeps the project-scoped rollout credential in `RAILWAY_TOKEN` and the
+workspace-owner template credential in `RAILWAY_TEMPLATE_TOKEN`; separating them prevents ordinary service
+deployment from acquiring marketplace publication authority.
 
 RustyAuth uses separate Railway services so the user interface, policy services and stateful stores have
 independent deploy, scaling, health and recovery boundaries. SableDB is always private and always attached to

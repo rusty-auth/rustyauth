@@ -26,7 +26,7 @@ Deno.test("Railway automatic deployments follow successful current-main CI only"
       "Skipping stale successful CI result",
       "group: railway-production",
       "cancel-in-progress: true",
-      "RAILWAY_API_TOKEN: ${{ secrets.RAILWAY_API_TOKEN }}",
+      "RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}",
     ]
   ) assertIncludes(workflow, required);
 });

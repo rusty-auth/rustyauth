@@ -222,7 +222,9 @@ jobs:
       name: railway-production
       url: ${{ vars.RAILWAY_DASHBOARD_URL }}
     env:
-      RAILWAY_API_TOKEN: ${{ secrets.RAILWAY_API_TOKEN }}
+      # Railway project tokens use RAILWAY_TOKEN. Keep the broader workspace
+      # token confined to the template-publication job below.
+      RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
       RAILWAY_PROJECT_ID: ${{ vars.RAILWAY_PROJECT_ID }}
       RAILWAY_ENVIRONMENT_ID: ${{ vars.RAILWAY_ENVIRONMENT_ID }}
       RAILWAY_API_SERVICE_ID: ${{ vars.RAILWAY_API_SERVICE_ID }}
@@ -250,7 +252,7 @@ jobs:
       - name: Validate deployment target
         run: |
           required=(
-            RAILWAY_API_TOKEN RAILWAY_PROJECT_ID RAILWAY_ENVIRONMENT_ID
+            RAILWAY_TOKEN RAILWAY_PROJECT_ID RAILWAY_ENVIRONMENT_ID
             RAILWAY_API_SERVICE_ID RAILWAY_DASHBOARD_SERVICE_ID RAILWAY_SABLEDB_SERVICE_ID
             RAILWAY_API_URL RAILWAY_DASHBOARD_URL API_DIGEST DASHBOARD_DIGEST SABLEDB_DIGEST
           )

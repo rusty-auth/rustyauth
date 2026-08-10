@@ -110,14 +110,13 @@ issuer and relying-party values, and retains both forward and rollback receipts.
 had no prior deployment, rollback removes only that service's latest deployment; it never deletes the service
 or a datastore volume. A rollback failure keeps the workflow red and requires operator repair.
 
-The GitHub `railway-production` environment owns the workspace-scoped `RAILWAY_API_TOKEN` and non-secret
-target IDs/URLs. The token is restricted to the Railway workspace containing this project; project-scoped
-tokens are preferred when the workspace permits their creation. The environment must define
-`RAILWAY_PROJECT_ID`, `RAILWAY_ENVIRONMENT_ID`, `RAILWAY_API_SERVICE_ID`,
-`RAILWAY_DASHBOARD_SERVICE_ID`, `RAILWAY_SABLEDB_SERVICE_ID`, `RAILWAY_API_URL` and
-`RAILWAY_DASHBOARD_URL`. The job aligns the issuer and WebAuthn relying-party settings to the dashboard origin
-without printing their existing values. Every successful or failed run retains per-service deployment
-receipts for 90 days.
+The GitHub `railway-production` environment owns the project-and-environment-scoped `RAILWAY_TOKEN`, the
+workspace-scoped `RAILWAY_TEMPLATE_TOKEN`, and non-secret target IDs/URLs. The rollout cannot mutate another
+project, while only the separate template job receives marketplace publication authority. The environment must
+define `RAILWAY_PROJECT_ID`, `RAILWAY_ENVIRONMENT_ID`, `RAILWAY_API_SERVICE_ID`,
+`RAILWAY_DASHBOARD_SERVICE_ID`, `RAILWAY_SABLEDB_SERVICE_ID`, `RAILWAY_API_URL` and `RAILWAY_DASHBOARD_URL`.
+The job aligns the issuer and WebAuthn relying-party settings to the dashboard origin without printing their
+existing values. Every successful or failed run retains per-service deployment receipts for 90 days.
 
 A manual dispatch defaults to the current `main` tip. Selecting an older full SHA additionally requires the
 explicit `allow_non_tip` rollback input, and the workflow still rejects commits that are not ancestors of
