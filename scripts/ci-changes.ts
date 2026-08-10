@@ -51,7 +51,7 @@ const patterns: Record<CiArea, RegExp[]> = {
   ],
   policy: [
     /^\.github\/workflows\/(?:release|railway-production|native-packaging)\.yml$/,
-    /^scripts\/(?:railway-|check-release|check-native|check-dashboard|check-docs|check-helm)/,
+    /^scripts\/(?:railway-|resolve-image-digest|check-release|check-native|check-dashboard|check-docs|check-helm)/,
     /^scripts\/qualify-(?:runtime-images|sabledb-image)\.sh$/,
     /^charts\//,
     /^benchmarks\/(?!catalog\.json$)/,

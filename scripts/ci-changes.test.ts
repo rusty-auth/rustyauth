@@ -24,6 +24,24 @@ Deno.test("Railway workflow changes stay within workflow and policy lanes", () =
   });
 });
 
+Deno.test("immutable image resolver changes stay in deployment policy", () => {
+  assertEquals(classifyCiChanges(["scripts/resolve-image-digest.sh"]), {
+    workflow: false,
+    protocol: false,
+    client: false,
+    site: false,
+    policy: true,
+    infrastructure: false,
+    rust: false,
+    console: false,
+    supply_chain: false,
+    recovery: false,
+    api_image: false,
+    dashboard_image: false,
+    sabledb_image: false,
+  });
+});
+
 Deno.test("Rust service changes select runtime, integration and API image lanes", () => {
   const selected = classifyCiChanges(["src/backup/snapshot.rs"]);
   assertEquals(selected.rust, true);
