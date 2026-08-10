@@ -381,34 +381,8 @@ jobs:
             "AUTH_ISSUER=${dashboard_url}" \
             "WEBAUTHN_RP_ORIGIN=${dashboard_url}" \
             "WEBAUTHN_RP_ID=${dashboard_host}" >/dev/null
-      - name: Create and verify a fresh recovery point
-        run: |
-          receipt="${RUNNER_TEMP}/railway-receipts/backup-before.json"
-          railway ssh \
-            --project "${RAILWAY_PROJECT_ID}" \
-            --environment "${RAILWAY_ENVIRONMENT_ID}" \
-            --service "${RAILWAY_API_SERVICE_ID}" -- \
-            /usr/local/bin/rustyauth backup create > "${receipt}"
-          jq --exit-status '
-            .formatVersion == 3 and
-            (.snapshotId | type == "string" and length > 0) and
-            (.objectKey | type == "string" and startswith("rustyauth-backups/v3/")) and
-            (.recordCount | type == "number" and . > 0) and
-            (.envelopeBytes | type == "number" and . > 0) and
-            .storageProfile == "portable"
-          ' "${receipt}" >/dev/null
-      - name: Deploy private SableDB
-        run: >-
-          deno run --allow-env --allow-net --allow-run --allow-write="${RUNNER_TEMP}/railway-receipts"
-          scripts/railway-rollout.ts
-          --project "${RAILWAY_PROJECT_ID}"
-          --environment "${RAILWAY_ENVIRONMENT_ID}"
-          --service "${RAILWAY_SABLEDB_SERVICE_ID}"
-          --profile sabledb
-          --image "ghcr.io/rusty-auth/sabledb:main-${RELEASE_SHA}"
-          --digest "${SABLEDB_DIGEST}"
-          --receipt "${RUNNER_TEMP}/railway-receipts/sabledb.json"
-      - name: Deploy realm API after the datastore is stable
+      - name: Deploy realm API and create the recovery point
+        if: needs.prepare.outputs.api_image == 'true' || needs.prepare.outputs.sabledb_image == 'true'
         run: >-
           deno run --allow-env --allow-net --allow-run --allow-write="${RUNNER_TEMP}/railway-receipts"
           scripts/railway-rollout.ts
@@ -421,8 +395,64 @@ jobs:
           --force "${SABLEDB_CHANGED}"
           --health-url "${RAILWAY_API_URL%/}/healthz"
           --health-url "${RAILWAY_API_URL%/}/readyz"
-          --receipt "${RUNNER_TEMP}/railway-receipts/api.json"
+          --receipt "${RUNNER_TEMP}/railway-receipts/api-before-sable.json"
+      - name: Require a fresh verified recovery point
+        if: needs.prepare.outputs.api_image == 'true' || needs.prepare.outputs.sabledb_image == 'true'
+        run: |
+          deployment_id="$(jq -r '.deploymentId' "${RUNNER_TEMP}/railway-receipts/api-before-sable.json")"
+          for attempt in {1..12}; do
+            logs="$(railway logs "${deployment_id}" \
+              --project "${RAILWAY_PROJECT_ID}" \
+              --environment "${RAILWAY_ENVIRONMENT_ID}" \
+              --service "${RAILWAY_API_SERVICE_ID}" \
+              --lines 200 --json || true)"
+            if jq --slurp --exit-status '
+              any(.[]; (.message // "") | contains("encrypted backup created and verified")) or
+              (
+                any(.[]; (.message // "") | contains("\"formatVersion\": 3")) and
+                any(.[]; (.message // "") | contains("\"objectKey\": \"rustyauth-backups/v3/")) and
+                any(.[]; (.message // "") | contains("\"storageProfile\": \"portable\""))
+              )' \
+              <<<"${logs}" >/dev/null; then
+              printf '%s\n' "${logs}" > \
+                "${RUNNER_TEMP}/railway-receipts/backup-before-logs.json"
+              exit 0
+            fi
+            if [[ "${attempt}" -lt 12 ]]; then
+              sleep 5
+            fi
+          done
+          echo "::error::candidate did not create and verify a fresh encrypted backup"
+          exit 1
+      - name: Deploy private SableDB
+        if: needs.prepare.outputs.sabledb_image == 'true'
+        run: >-
+          deno run --allow-env --allow-net --allow-run --allow-write="${RUNNER_TEMP}/railway-receipts"
+          scripts/railway-rollout.ts
+          --project "${RAILWAY_PROJECT_ID}"
+          --environment "${RAILWAY_ENVIRONMENT_ID}"
+          --service "${RAILWAY_SABLEDB_SERVICE_ID}"
+          --profile sabledb
+          --image "ghcr.io/rusty-auth/sabledb:main-${RELEASE_SHA}"
+          --digest "${SABLEDB_DIGEST}"
+          --receipt "${RUNNER_TEMP}/railway-receipts/sabledb.json"
+      - name: Restart the realm API after a datastore change
+        if: needs.prepare.outputs.sabledb_image == 'true'
+        run: >-
+          deno run --allow-env --allow-net --allow-run --allow-write="${RUNNER_TEMP}/railway-receipts"
+          scripts/railway-rollout.ts
+          --project "${RAILWAY_PROJECT_ID}"
+          --environment "${RAILWAY_ENVIRONMENT_ID}"
+          --service "${RAILWAY_API_SERVICE_ID}"
+          --profile realm
+          --image "ghcr.io/rusty-auth/rustyauth:main-${RELEASE_SHA}"
+          --digest "${API_DIGEST}"
+          --force true
+          --health-url "${RAILWAY_API_URL%/}/healthz"
+          --health-url "${RAILWAY_API_URL%/}/readyz"
+          --receipt "${RUNNER_TEMP}/railway-receipts/api-after-sable.json"
       - name: Deploy dashboard
+        if: needs.prepare.outputs.dashboard_image == 'true'
         run: >-
           deno run --allow-env --allow-net --allow-run --allow-write="${RUNNER_TEMP}/railway-receipts"
           scripts/railway-rollout.ts
@@ -500,8 +530,8 @@ jobs:
               || rollback_failed=1
           fi
 
-          if [[ -f "${RUNNER_TEMP}/railway-receipts/api.json" ]]; then
-            rollback_service "${RUNNER_TEMP}/railway-receipts/api.json"
+          if [[ -f "${RUNNER_TEMP}/railway-receipts/api-before-sable.json" ]]; then
+            rollback_service "${RUNNER_TEMP}/railway-receipts/api-before-sable.json"
           else
             railway redeploy \
               --project "${RAILWAY_PROJECT_ID}" \

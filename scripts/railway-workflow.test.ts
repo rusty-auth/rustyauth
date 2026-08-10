@@ -86,9 +86,11 @@ Deno.test("the public Railway template follows the verified production image set
 
 Deno.test("Railway rollout is serialized across every stateful boundary", () => {
   assertOrdered(workflow, [
+    "name: Deploy realm API and create the recovery point",
+    "--profile realm",
     "name: Deploy private SableDB",
     "--profile sabledb",
-    "name: Deploy realm API after the datastore is stable",
+    "name: Restart the realm API after a datastore change",
     "--profile realm",
     "name: Deploy dashboard",
     "--profile dashboard",
@@ -103,16 +105,18 @@ Deno.test("Railway rollout is serialized across every stateful boundary", () => 
   assertIncludes(rollout, '"/usr/local/bin/rustyauth backup create"');
   assertIncludes(rollout, '"down"');
   assertIncludes(rollout, 'options.profile === "sabledb"');
-  assertIncludes(workflow, "name: Create and verify a fresh recovery point");
-  assertIncludes(workflow, "/usr/local/bin/rustyauth backup create");
-  assertIncludes(workflow, ".formatVersion == 3");
-  assertIncludes(workflow, '.storageProfile == "portable"');
+  assertIncludes(workflow, "name: Require a fresh verified recovery point");
+  assertIncludes(workflow, "encrypted backup created and verified");
+  assertIncludes(workflow, '"formatVersion\\": 3"');
   assertIncludes(workflow, '--force "${SABLEDB_CHANGED}"');
+  assertIncludes(workflow, "--force true");
+  assertIncludes(workflow, "backup-before-logs.json");
   assertIncludes(workflow, "rustyauth-backups/v3/");
   assertOrdered(workflow, [
-    "name: Create and verify a fresh recovery point",
+    "name: Deploy realm API and create the recovery point",
+    "name: Require a fresh verified recovery point",
     "name: Deploy private SableDB",
-    "name: Deploy realm API after the datastore is stable",
+    "name: Restart the realm API after a datastore change",
     "name: Deploy dashboard",
   ]);
 });
@@ -124,7 +128,7 @@ Deno.test("a partial Railway rollout restores services and browser origin in rev
     'rollback_service "${RUNNER_TEMP}/railway-receipts/sabledb.json"',
     'rollback_service "${RUNNER_TEMP}/railway-receipts/dashboard.json"',
     '"AUTH_ISSUER=${previous_issuer}"',
-    'if [[ -f "${RUNNER_TEMP}/railway-receipts/api.json" ]]',
+    'if [[ -f "${RUNNER_TEMP}/railway-receipts/api-before-sable.json" ]]',
   ]);
   assertIncludes(workflow, "force_args=(--force true)");
   assertIncludes(workflow, "railway redeploy");
