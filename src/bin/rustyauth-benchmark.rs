@@ -5,6 +5,7 @@
 //! Railway template.
 
 use std::{
+    collections::HashSet,
     env,
     fs::{self, File},
     io::{BufWriter, Write},
@@ -62,6 +63,7 @@ struct SeedSummary {
 struct SessionRefreshSummary {
     refreshed_sessions: u64,
     recreated_sessions: u64,
+    pruned_sessions: u64,
     refreshed_at: u64,
     idle_seconds: u64,
     absolute_seconds: u64,
@@ -387,12 +389,13 @@ async fn refresh_sessions() -> Result<()> {
     let redis = connection().await?;
     let mut raw = redis.clone();
     let accounts = scan_count(&mut raw, "auth:user:*").await?;
-    let sessions = scan_count(&mut raw, "auth:session:*").await?;
-    if accounts != account_count || sessions > account_count {
+    let sessions_before = scan_count(&mut raw, "auth:session:*").await?;
+    if accounts != account_count {
         bail!(
-            "benchmark refresh requires exactly {account_count} accounts and no extra sessions; found {accounts} accounts and {sessions} sessions"
+            "benchmark refresh requires exactly {account_count} accounts; found {accounts} accounts and {sessions_before} sessions"
         );
     }
+    let pruned_sessions = prune_extra_synthetic_sessions(&mut raw, &seed, account_count).await?;
 
     let current = now();
     let mut recreated_sessions = 0_u64;
@@ -446,6 +449,13 @@ async fn refresh_sessions() -> Result<()> {
             })?;
     }
 
+    let final_sessions = scan_count(&mut raw, "auth:session:*").await?;
+    if final_sessions != account_count {
+        bail!(
+            "benchmark refresh cardinality mismatch: expected {account_count} sessions, found {final_sessions}"
+        );
+    }
+
     // Hydrate boundary fixtures through the production session model so the
     // refresh cannot report success with a missing account, revoked passkey or
     // mismatched session version.
@@ -464,12 +474,80 @@ async fn refresh_sessions() -> Result<()> {
         serde_json::to_string_pretty(&SessionRefreshSummary {
             refreshed_sessions: account_count,
             recreated_sessions,
+            pruned_sessions,
             refreshed_at: current,
             idle_seconds,
             absolute_seconds: SESSION_SECONDS,
         })?
     );
     Ok(())
+}
+
+/// Removes superseded login sessions created by earlier benchmark journeys.
+///
+/// This remains fail-closed: the command is already restricted to the one
+/// dedicated Railway project, and every extra session must belong to one of
+/// the deterministic synthetic accounts before any deletion begins. A session
+/// for any other account aborts the refresh without deleting the validated set.
+async fn prune_extra_synthetic_sessions(
+    redis: &mut redis::aio::ConnectionManager,
+    seed: &str,
+    account_count: u64,
+) -> Result<u64> {
+    let expected_keys: HashSet<_> = (0..account_count)
+        .map(|index| session_key(&deterministic_session_token(seed, index)))
+        .collect();
+    let expected_users: HashSet<_> = (0..account_count)
+        .map(|index| deterministic_uuid("user", seed, index))
+        .collect();
+    let session_keys = scan_keys(redis, "auth:session:*").await?;
+    let extra_keys: Vec<_> = session_keys
+        .into_iter()
+        .filter(|key| !expected_keys.contains(key))
+        .collect();
+
+    let mut present_extra_keys = Vec::with_capacity(extra_keys.len());
+    for chunk in extra_keys.chunks(DELETE_BATCH_SIZE) {
+        let mut pipeline = redis::pipe();
+        for key in chunk {
+            pipeline.cmd("GET").arg(key);
+        }
+        let values: Vec<Option<String>> = pipeline
+            .query_async(&mut *redis)
+            .await
+            .context("read superseded synthetic benchmark sessions")?;
+        if values.len() != chunk.len() {
+            bail!("SableDB returned an incomplete superseded session batch");
+        }
+        for (key, value) in chunk.iter().zip(values) {
+            let Some(value) = value else {
+                continue;
+            };
+            let session: Session = serde_json::from_str(&value)
+                .with_context(|| format!("decode superseded benchmark session {key}"))?;
+            if !is_synthetic_session(&session, &expected_users) {
+                bail!(
+                    "refusing to prune session {key} because it is not owned by a deterministic benchmark account"
+                );
+            }
+            present_extra_keys.push(key.clone());
+        }
+    }
+
+    let mut deleted = 0_u64;
+    for chunk in present_extra_keys.chunks(DELETE_BATCH_SIZE) {
+        let removed: u64 = redis::cmd("DEL")
+            .arg(chunk)
+            .query_async(&mut *redis)
+            .await
+            .context("prune superseded synthetic benchmark sessions")?;
+        deleted = deleted.saturating_add(removed);
+    }
+    Ok(deleted)
+}
+
+fn is_synthetic_session(session: &Session, expected_users: &HashSet<Uuid>) -> bool {
+    expected_users.contains(&session.user_id)
 }
 
 async fn recreate_session(
@@ -576,6 +654,30 @@ async fn scan_count(redis: &mut redis::aio::ConnectionManager, pattern: &str) ->
         cursor = next;
         if cursor == 0 {
             return Ok(count);
+        }
+    }
+}
+
+async fn scan_keys(
+    redis: &mut redis::aio::ConnectionManager,
+    pattern: &str,
+) -> Result<Vec<String>> {
+    let mut cursor = 0_u64;
+    let mut found = Vec::new();
+    loop {
+        let (next, keys): (u64, Vec<String>) = redis::cmd("SCAN")
+            .arg(cursor)
+            .arg("MATCH")
+            .arg(pattern)
+            .arg("COUNT")
+            .arg(1_000_u16)
+            .query_async(redis)
+            .await
+            .with_context(|| format!("scan {pattern}"))?;
+        found.extend(keys);
+        cursor = next;
+        if cursor == 0 {
+            return Ok(found);
         }
     }
 }
@@ -712,5 +814,25 @@ mod tests {
         assert_eq!(session.step_up_at, Some(100));
         assert_eq!(session.current_credential_id, Some(credential_id));
         assert_eq!(session.session_version, 7);
+    }
+
+    #[test]
+    fn superseded_session_pruning_is_scoped_to_deterministic_accounts() {
+        let synthetic_user = deterministic_uuid("user", "seed", 7);
+        let expected = HashSet::from([synthetic_user]);
+        let mut session = Session {
+            id: Uuid::new_v4(),
+            user_id: synthetic_user,
+            auth_method: "passkey".to_owned(),
+            current_credential_id: None,
+            session_version: 1,
+            created_at: 1,
+            step_up_at: Some(1),
+            last_seen_at: 1,
+            absolute_expires_at: 2,
+        };
+        assert!(is_synthetic_session(&session, &expected));
+        session.user_id = Uuid::new_v4();
+        assert!(!is_synthetic_session(&session, &expected));
     }
 }
