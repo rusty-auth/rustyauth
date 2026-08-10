@@ -35,6 +35,8 @@ const patterns: Record<CiArea, RegExp[]> = {
   ],
   site: [
     /^site\//,
+    /^benchmarks\//,
+    /^scripts\/check-benchmark-catalog(?:\.test)?\.ts$/,
     /^docs\//,
     /^assets\//,
     /^examples\//,
@@ -68,6 +70,7 @@ const patterns: Record<CiArea, RegExp[]> = {
   ],
   console: [
     /^console\//,
+    /^benchmarks\//,
     /^Dockerfile\.dashboard$/,
     /^proto\//,
   ],
@@ -106,6 +109,7 @@ const patterns: Record<CiArea, RegExp[]> = {
     /^Dockerfile\.dashboard$/,
     /^container-healthcheck\//,
     /^console\//,
+    /^benchmarks\//,
     ...sharedMetadata,
   ],
   sabledb_image: [

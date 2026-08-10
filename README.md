@@ -268,6 +268,7 @@ tokens and plaintext production SableDB addresses outside private networking.
 
 - [Configuration reference](docs/CONFIGURATION.md)
 - [Docker, Kubernetes and Railway deployment](docs/DEPLOYMENT.md)
+- [Benchmarks and single-realm capacity evidence](docs/BENCHMARKS.md)
 - [Kubernetes and Civo K3s Helm charts](docs/KUBERNETES.md)
 - [Security policy and threat model](SECURITY.md)
 

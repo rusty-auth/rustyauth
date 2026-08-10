@@ -112,6 +112,8 @@ jobs:
       - run: deno install --frozen
       - run: deno task docs:check
       - run: deno task gateway:check
+      - run: deno task benchmark:check
+      - run: deno task benchmark:test
       - run: deno task site:check
       - run: deno task site:test
 

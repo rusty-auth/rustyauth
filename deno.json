@@ -18,6 +18,8 @@
     "native:check": "deno run --allow-read scripts/check-native-packaging.ts",
     "railway:check": "deno check scripts/railway-rollout.ts scripts/sync-railway-template.ts",
     "railway:test": "deno test --allow-read --allow-write --allow-run scripts/railway-rollout.test.ts scripts/railway-workflow.test.ts scripts/sync-railway-template.test.ts",
+    "benchmark:check": "deno run --allow-read scripts/check-benchmark-catalog.ts",
+    "benchmark:test": "deno test --allow-read scripts/check-benchmark-catalog.test.ts",
     "ci:test": "deno test --allow-read scripts/ci-changes.test.ts scripts/ci-workflow.test.ts",
     "release:check": "deno run --allow-read scripts/check-release-readiness.ts",
     "release:test": "deno test --allow-read scripts/check-release-readiness.test.ts",
@@ -34,11 +36,11 @@
     "infra:preview": "pulumi -C infra/cloudflare preview --stack livermoreledger/rustyauth-cloudflare/production",
     "infra:up": "pulumi -C infra/cloudflare up --yes --stack livermoreledger/rustyauth-cloudflare/production",
     "site:publish": "deno run -A npm:wrangler@4.119.0 pages deploy site/dist --project-name rustyauth-dev --branch main --commit-dirty=true",
-    "fmt": "cargo fmt && cargo fmt --manifest-path console/Cargo.toml && deno fmt deno.json buf.yaml buf.gen.yaml packages/client packages/protocol/deno.json packages/protocol/index.ts release-evidence scripts site/src site/tests site/astro.config.mjs site/deno.json site/package.json",
-    "fmt:check": "cargo fmt --check && cargo fmt --manifest-path console/Cargo.toml --check && deno fmt --check deno.json buf.yaml buf.gen.yaml packages/client packages/protocol/deno.json packages/protocol/index.ts release-evidence scripts site/src site/tests site/astro.config.mjs site/deno.json site/package.json && cd infra/cloudflare && test -z \"$(gofmt -l .)\"",
+    "fmt": "cargo fmt && cargo fmt --manifest-path console/Cargo.toml && deno fmt benchmarks deno.json buf.yaml buf.gen.yaml packages/client packages/protocol/deno.json packages/protocol/index.ts release-evidence scripts site/src site/tests site/astro.config.mjs site/deno.json site/package.json",
+    "fmt:check": "cargo fmt --check && cargo fmt --manifest-path console/Cargo.toml --check && deno fmt --check benchmarks deno.json buf.yaml buf.gen.yaml packages/client packages/protocol/deno.json packages/protocol/index.ts release-evidence scripts site/src site/tests site/astro.config.mjs site/deno.json site/package.json && cd infra/cloudflare && test -z \"$(gofmt -l .)\"",
     "lint": "cargo clippy --locked --all-targets --all-features -- -D warnings && cargo clippy --manifest-path console/Cargo.toml --locked --no-default-features --features web -- -D warnings && deno lint packages/client/src packages/protocol/index.ts scripts site/src site/tests site/astro.config.mjs && cd infra/cloudflare && go vet ./...",
-    "check": "deno task fmt:check && deno task lint && deno task connect:check && deno task docs:check && deno task gateway:check && deno task native:check && deno task railway:check && deno task site:check",
-    "test": "deno task connect:test && deno task railway:test && deno task release:test && deno task site:test && cargo test --locked && cd infra/cloudflare && go test ./..."
+    "check": "deno task fmt:check && deno task lint && deno task connect:check && deno task docs:check && deno task gateway:check && deno task native:check && deno task railway:check && deno task benchmark:check && deno task site:check",
+    "test": "deno task connect:test && deno task railway:test && deno task benchmark:test && deno task release:test && deno task site:test && cargo test --locked && cd infra/cloudflare && go test ./..."
   },
   "fmt": {
     "lineWidth": 110,

@@ -18,6 +18,7 @@ WORKDIR /src
 COPY console/Cargo.toml console/Cargo.lock console/build.rs console/Dioxus.toml ./console/
 COPY proto ./proto
 COPY console/assets ./console/assets
+COPY benchmarks ./benchmarks
 COPY site/public/brand ./site/public/brand
 COPY console/src ./console/src
 WORKDIR /src/console

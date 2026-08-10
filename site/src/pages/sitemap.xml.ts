@@ -20,6 +20,7 @@ export const GET: APIRoute = ({ site }) => {
     "/",
     "/why-rustyauth",
     "/fleet",
+    "/benchmarks",
     "/guides",
     "/solutions",
     ...solutions.map((solution) => `/solutions/${solution.slug}`),

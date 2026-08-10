@@ -19,6 +19,7 @@ deployment decisions.
 | Manage organizations, projects and environments | [Fleet quick start](FLEET_QUICKSTART.md) | [Fleet control plane](FLEET_CONTROL_PLANE.md), [Fleet Analytics](FLEET_ANALYTICS.md)                                            |
 | Build or review federated Fleet analytics       | [Fleet Analytics](FLEET_ANALYTICS.md)    | [V1 semantics](FLEET_ANALYTICS_V1.md), [developer guide](https://rustyauth.dev/docs/fleet-analytics)                            |
 | Deploy to Kubernetes, Railway or containers     | [Deployment](DEPLOYMENT.md)              | [Kubernetes and Civo K3s](KUBERNETES.md), [Railway topology](RAILWAY_TEMPLATE.md), [Backups and recovery](BACKUPS.md)             |
+| Review capacity and latency evidence             | [Benchmarks](BENCHMARKS.md)               | [Public results](https://rustyauth.dev/benchmarks/), [release readiness](RELEASE_READINESS.md)                                  |
 | Standardize policy across environments          | [Configuration](CONFIGURATION.md)        | [JSON Schema](../schemas/rustyauth-config-v1alpha1.schema.json), [production example](../examples/config/realm-production.yaml) |
 | Contribute safely                               | [Contributing](../CONTRIBUTING.md)       | [Engineering](ENGINEERING.md), [ADRs](#architecture-decisions)                                                                  |
 
@@ -80,6 +81,7 @@ connects directly to a realm database.
 | [Security hardening](SECURITY_HARDENING.md)         | Container, runtime, supply-chain and qualification controls     |
 | [Protocol qualification](PROTOCOL_QUALIFICATION.md) | Fuzz, skew, fault and upgrade qualification evidence            |
 | [Web GA qualification](WEB_GA_QUALIFICATION.md)     | Supported browser/authenticator matrix and evidence contract    |
+| [Benchmarks](BENCHMARKS.md)                         | Isolated load topology, capacity model and publication contract  |
 | [Security policy](../SECURITY.md)                   | Vulnerability reporting, threat model and known limitations     |
 | [1.0.0 release readiness](RELEASE_READINESS.md)     | Passed local evidence and externally owned promotion gates      |
 | [Native previews](NATIVE_PACKAGING.md)              | Ephemeral package matrix, local evidence and future signing gates |

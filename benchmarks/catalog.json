@@ -1,0 +1,136 @@
+{
+  "schemaVersion": 1,
+  "updatedAt": "2026-08-10T10:00:00Z",
+  "publicationPolicy": {
+    "summary": "Only synthetic, reproducible benchmark evidence is published. Customer data and production traffic are never used.",
+    "isolation": "The load generator, seed data and result storage run in a separate template-derived Railway project and are not part of the installable RustyAuth template.",
+    "promotion": "A result becomes public only after its resource limits, dataset, workload, release commit, image digests and retained evidence pass catalogue validation."
+  },
+  "programs": [
+    {
+      "id": "single-realm-capacity",
+      "title": "Single-realm capacity",
+      "state": "awaiting-baseline",
+      "summary": "Measures how many registered accounts, valid sessions, active authenticated users and passkey sign-ins one supported single-writer realm can serve within explicit latency and reliability gates.",
+      "schedule": [
+        "A fixed-rate regression run after every release",
+        "A breakpoint ladder and one-hour soak once each month",
+        "A manual run after authentication, gateway, datastore or deployment changes"
+      ],
+      "resourceTiers": [
+        {
+          "name": "Starter",
+          "api": "1 vCPU / 512 MB",
+          "sableDb": "1 vCPU / 1 GB",
+          "datasetAccounts": 10000
+        },
+        {
+          "name": "Growth",
+          "api": "2 vCPU / 1 GB",
+          "sableDb": "2 vCPU / 2 GB",
+          "datasetAccounts": 100000
+        },
+        {
+          "name": "Scale",
+          "api": "4 vCPU / 2 GB",
+          "sableDb": "4 vCPU / 4 GB",
+          "datasetAccounts": 1000000
+        }
+      ],
+      "userProfiles": [
+        {
+          "name": "Light SaaS",
+          "requestsPerMinute": 2,
+          "description": "Occasional account and session-backed application activity."
+        },
+        {
+          "name": "Typical application",
+          "requestsPerMinute": 6,
+          "description": "A signed-in product session making a request about every ten seconds."
+        },
+        {
+          "name": "Heavy administration",
+          "requestsPerMinute": 20,
+          "description": "An operator or workflow making sustained authenticated calls."
+        }
+      ],
+      "gates": [
+        "Unexpected request failures below 0.1% and no unplanned 5xx responses",
+        "Authenticated reads below 250 ms p95 and 750 ms p99",
+        "Writes below 500 ms p95 and 1 second p99",
+        "No readiness loss, restart or out-of-memory event",
+        "Published user capacity retains 30% measured throughput headroom"
+      ]
+    },
+    {
+      "id": "fleet-analytics-query",
+      "title": "Fleet Analytics query qualification",
+      "state": "active",
+      "summary": "Measures bounded organization-level Analytics queries at the pinned medium qualification tier.",
+      "schedule": [
+        "Continuous assurance on the current main revision",
+        "Repeated before a supported release is promoted"
+      ],
+      "resourceTiers": [],
+      "userProfiles": [],
+      "gates": [
+        "A 28-day organization query completes within 2 seconds p95 at the medium tier"
+      ]
+    }
+  ],
+  "reports": [
+    {
+      "id": "fleet-analytics-medium-2026-08-09",
+      "programId": "fleet-analytics-query",
+      "title": "Medium-tier 28-day organization query",
+      "status": "passed",
+      "qualification": "Pinned local source qualification",
+      "observedAt": "2026-08-09T00:00:00Z",
+      "release": "1.0.0 source",
+      "commit": "source-qualified-2026-08-09",
+      "environment": "Pinned local SableDB and GreptimeDB topology",
+      "methodologyVersion": "fleet-analytics-v1",
+      "summary": "Twenty organization queries were measured after seeding 1,000 realms and 8,064,000 five-minute metric rows.",
+      "dataset": [
+        {
+          "key": "realms",
+          "label": "Realms",
+          "value": 1000,
+          "unit": "realms"
+        },
+        {
+          "key": "metric_rows",
+          "label": "Metric rows",
+          "value": 8064000,
+          "unit": "rows"
+        },
+        {
+          "key": "query_samples",
+          "label": "Query samples",
+          "value": 20,
+          "unit": "queries"
+        }
+      ],
+      "results": [
+        {
+          "key": "organization_query_p95_ms",
+          "label": "Organization query p95",
+          "value": 239.5325,
+          "unit": "ms",
+          "threshold": "≤ 2,000 ms",
+          "outcome": "pass"
+        }
+      ],
+      "evidence": [
+        {
+          "label": "Release-readiness evidence",
+          "url": "https://github.com/rusty-auth/rustyauth/blob/main/docs/RELEASE_READINESS.md"
+        },
+        {
+          "label": "Fleet Analytics runbook",
+          "url": "https://github.com/rusty-auth/rustyauth/blob/main/docs/FLEET_ANALYTICS_RUNBOOK.md"
+        }
+      ]
+    }
+  ]
+}

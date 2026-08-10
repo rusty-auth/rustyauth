@@ -26,6 +26,247 @@
   text-rendering: optimizeLegibility;
 }
 
+.benchmark-console-summary {
+  display: grid;
+  grid-template-columns: .8fr 1.2fr;
+  gap: 16px;
+}
+
+.benchmark-console-state > strong {
+  display: block;
+  margin: 25px 0 0;
+  font-size: 50px;
+  letter-spacing: -.06em;
+}
+
+.benchmark-console-state > small,
+.benchmark-console-tier-grid small,
+.benchmark-console-tier-grid dt,
+.benchmark-console-reports article header small,
+.benchmark-console-result-grid small,
+.benchmark-console-result-grid em {
+  color: var(--ink-soft);
+  font: 10px/1.5 var(--mono);
+  letter-spacing: .04em;
+  text-transform: uppercase;
+}
+
+.benchmark-console-state > p,
+.benchmark-console-policy > p {
+  color: var(--ink-soft);
+  line-height: 1.65;
+}
+
+.benchmark-console-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 20px;
+}
+
+.benchmark-console-meta > span {
+  display: flex;
+  gap: 12px;
+  padding: 9px 11px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  color: var(--ink-soft);
+  font-size: 11px;
+}
+
+.benchmark-console-meta strong {
+  color: var(--ink);
+}
+
+.benchmark-console-tier-grid,
+.benchmark-console-profile-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.benchmark-console-tier-grid article,
+.benchmark-console-profile-grid article {
+  min-width: 0;
+  padding: 19px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: var(--paper-bright);
+}
+
+.benchmark-console-tier-grid article > span {
+  color: var(--copper);
+  font: 11px var(--mono);
+  text-transform: uppercase;
+}
+
+.benchmark-console-tier-grid article > strong {
+  display: block;
+  margin: 24px 0 3px;
+  font-size: 32px;
+  letter-spacing: -.05em;
+}
+
+.benchmark-console-tier-grid dl {
+  margin: 17px 0 0;
+}
+
+.benchmark-console-tier-grid dl div {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 9px 0;
+  border-top: 1px solid var(--line);
+}
+
+.benchmark-console-tier-grid dd {
+  margin: 0;
+  font-size: 11px;
+  font-weight: 650;
+  text-align: right;
+}
+
+.benchmark-console-profile-grid article > strong {
+  color: var(--copper);
+  font-size: 27px;
+  letter-spacing: -.04em;
+}
+
+.benchmark-console-profile-grid article > strong span,
+.benchmark-console-result-grid strong span {
+  color: var(--ink-soft);
+  font: 10px var(--mono);
+  letter-spacing: 0;
+}
+
+.benchmark-console-profile-grid h4 {
+  margin: 25px 0 7px;
+}
+
+.benchmark-console-profile-grid p {
+  margin: 0;
+  color: var(--ink-soft);
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.benchmark-console-formula {
+  display: block;
+  margin-top: 12px;
+  padding: 14px 16px;
+  overflow-x: auto;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  color: var(--ink-soft);
+  background: var(--paper-bright);
+  font-size: 11px;
+}
+
+.benchmark-console-gates ol {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border-top: 1px solid var(--line);
+}
+
+.benchmark-console-gates li {
+  display: grid;
+  grid-template-columns: 38px 1fr;
+  gap: 12px;
+  padding: 13px 0;
+  border-bottom: 1px solid var(--line);
+  font-size: 13px;
+}
+
+.benchmark-console-gates li span {
+  color: var(--copper);
+  font: 10px var(--mono);
+}
+
+.benchmark-console-reports > article {
+  margin-top: 15px;
+  padding: 20px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+}
+
+.benchmark-console-reports article > header,
+.benchmark-console-reports article > footer {
+  display: flex;
+  justify-content: space-between;
+  gap: 20px;
+}
+
+.benchmark-console-reports article h3 {
+  margin: 6px 0 0;
+}
+
+.benchmark-console-reports article > p {
+  color: var(--ink-soft);
+  line-height: 1.6;
+}
+
+.benchmark-console-result-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 1px;
+  margin: 18px 0;
+  background: var(--line);
+}
+
+.benchmark-console-result-grid > div {
+  min-width: 0;
+  padding: 15px;
+  background: var(--paper-bright);
+}
+
+.benchmark-console-result-grid strong {
+  display: block;
+  margin: 12px 0 5px;
+  overflow-wrap: anywhere;
+  font-size: 22px;
+}
+
+.benchmark-console-result-grid em {
+  display: block;
+  font-style: normal;
+}
+
+.benchmark-console-reports article > footer {
+  padding-top: 15px;
+  border-top: 1px solid var(--line);
+  color: var(--ink-soft);
+  font: 10px/1.5 var(--mono);
+}
+
+.benchmark-console-reports footer nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  color: var(--copper);
+}
+
+@media (max-width: 980px) {
+  .benchmark-console-summary,
+  .benchmark-console-tier-grid,
+  .benchmark-console-profile-grid {
+    grid-template-columns: 1fr;
+  }
+  .benchmark-console-result-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 620px) {
+  .benchmark-console-result-grid {
+    grid-template-columns: 1fr;
+  }
+  .benchmark-console-reports article > header,
+  .benchmark-console-reports article > footer {
+    flex-direction: column;
+  }
+}
+
 * {
   box-sizing: border-box;
 }

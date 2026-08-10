@@ -54,6 +54,18 @@ Deno.test("console changes qualify the dashboard without the API", () => {
   assertEquals(selected.rust, false);
 });
 
+Deno.test("benchmark catalogue changes rebuild only its two published surfaces", () => {
+  const selected = classifyCiChanges(["benchmarks/catalog.json"]);
+  assertEquals(selected.site, true);
+  assertEquals(selected.console, true);
+  assertEquals(selected.dashboard_image, true);
+  assertEquals(selected.rust, false);
+  assertEquals(selected.recovery, false);
+  assertEquals(selected.api_image, false);
+  assertEquals(selected.sabledb_image, false);
+  assertEquals(selected.infrastructure, false);
+});
+
 Deno.test("dependency and protocol changes fan out to every consumer", () => {
   const selected = classifyCiChanges(["Cargo.lock", "proto/rustyauth/fleet/v1/fleet.proto"]);
   assertEquals(selected.protocol, true);

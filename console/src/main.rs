@@ -4,6 +4,7 @@
 )]
 
 mod app;
+mod benchmarks;
 mod fixtures;
 mod fleet_client;
 mod models;

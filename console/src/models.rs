@@ -12,6 +12,7 @@ pub enum NavKey {
     ServiceAccounts,
     Webhooks,
     Metrics,
+    Benchmarks,
     Security,
 }
 
@@ -30,6 +31,7 @@ impl NavKey {
             Self::ServiceAccounts => "Service accounts",
             Self::Webhooks => "Webhooks",
             Self::Metrics => "Metrics",
+            Self::Benchmarks => "Release benchmarks",
             Self::Security => "Account security",
         }
     }

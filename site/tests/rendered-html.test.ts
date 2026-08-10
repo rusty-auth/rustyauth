@@ -124,12 +124,29 @@ Deno.test("publishes crawler controls and a real 404 document", async () => {
   assertMatch(sitemap, /https:\/\/rustyauth\.dev\/authentication-events\//);
   assertMatch(sitemap, /https:\/\/rustyauth\.dev\/guides\//);
   assertMatch(sitemap, /https:\/\/rustyauth\.dev\/fleet\//);
+  assertMatch(sitemap, /https:\/\/rustyauth\.dev\/benchmarks\//);
   assertMatch(sitemap, /https:\/\/rustyauth\.dev\/why-rustyauth\//);
   assertMatch(sitemap, /https:\/\/rustyauth\.dev\/docs\/integration\//);
 
   const notFound = await Deno.readTextFile("dist/404.html");
   assertMatch(notFound, /Page not found/);
   assertMatch(notFound, /name="robots" content="noindex, follow"/);
+});
+
+Deno.test("renders the benchmark catalogue without inventing realm capacity", async () => {
+  const html = await Deno.readTextFile(outputFor("/benchmarks"));
+  assertMatch(html, /Benchmarks,/);
+  assertMatch(html, /Awaiting first baseline/);
+  assertMatch(html, /Separate benchmark project/);
+  assertMatch(html, /Medium-tier 28-day organization query/);
+  assertMatch(html, /239\.5325/);
+  assertMatch(html, /8,064,000/);
+  assertNotMatch(html, /A single realm supports [0-9]/i);
+  assertEquals(html.match(/<h1\b/g)?.length, 1);
+
+  const catalogue = JSON.parse(await Deno.readTextFile("dist/benchmarks/catalog.json"));
+  assertEquals(catalogue.schemaVersion, 1);
+  assertEquals(catalogue.programs[0].state, "awaiting-baseline");
 });
 
 Deno.test("renders every industry solution route", async () => {

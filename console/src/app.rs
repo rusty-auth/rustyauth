@@ -2,6 +2,7 @@ use base64::Engine as _;
 use dioxus::prelude::*;
 use dx_icons_tabler::{Icon, TablerIcon};
 
+use crate::benchmarks;
 use crate::fixtures::{
     AUTH_VOLUME, PREVIEW_METRICS, PREVIEW_OPERATOR, preview_fleet_connections,
     preview_fleet_environments, preview_fleet_organizations, preview_fleet_projects,
@@ -51,7 +52,7 @@ enum SignInVariant {
 #[allow(non_snake_case)]
 pub fn App() -> Element {
     let mut view = use_signal(initial_app_view);
-    let mut active = use_signal(|| NavKey::FleetOverview);
+    let mut active = use_signal(initial_nav_key);
     let mut mobile_nav = use_signal(|| false);
     let mut organization = use_signal(preview_organization);
     let accounts = use_signal(preview_service_accounts);
@@ -155,7 +156,9 @@ pub fn App() -> Element {
                                 preview: mode == DashboardMode::Preview,
                                 on_connect: move |_| navigate_to(&mut view, AppView::SignIn(SignInVariant::Classic)),
                             }
-                            if mode == DashboardMode::Live(DeploymentRole::Realm) {
+                            if active() == NavKey::Benchmarks {
+                                BenchmarksPage {}
+                            } else if mode == DashboardMode::Live(DeploymentRole::Realm) {
                                 RealmWorkspace {
                                     active: active(),
                                     on_navigate: move |key| active.set(key),
@@ -181,6 +184,7 @@ pub fn App() -> Element {
                                 },
                                 NavKey::ServiceAccounts => rsx! { ServiceAccountsPage { accounts: accounts() } },
                                 NavKey::Webhooks => rsx! { WebhooksPage {} },
+                                NavKey::Benchmarks => rsx! { BenchmarksPage {} },
                                 NavKey::Security => rsx! { section { class: "panel empty-panel", h2 { "Account security is available on a live realm." } } },
                             } }
                         }
@@ -216,6 +220,18 @@ fn initial_app_view() -> AppView {
     }
 
     AppView::SignIn(SignInVariant::Classic)
+}
+
+fn initial_nav_key() -> NavKey {
+    #[cfg(target_arch = "wasm32")]
+    if web_sys::window()
+        .and_then(|window| window.location().search().ok())
+        .is_some_and(|search| search.contains("benchmarks=1"))
+    {
+        return NavKey::Benchmarks;
+    }
+
+    NavKey::FleetOverview
 }
 
 fn navigate_to(view: &mut Signal<AppView>, next: AppView) {
@@ -948,6 +964,17 @@ fn Topbar(
                             },
                             Icon { icon: TablerIcon::Building, size: 17 }
                             "Organization settings"
+                            Icon { icon: TablerIcon::ChevronRight, size: 15 }
+                        }
+                        button {
+                            r#type: "button",
+                            role: "menuitem",
+                            onclick: move |_| {
+                                menu_open.set(false);
+                                on_navigate.call(NavKey::Benchmarks);
+                            },
+                            Icon { icon: TablerIcon::Gauge, size: 17 }
+                            "Release benchmarks"
                             Icon { icon: TablerIcon::ChevronRight, size: 15 }
                         }
                         button {
@@ -4348,6 +4375,172 @@ fn MetricsPage() -> Element {
                 }
             }
         }
+    }
+}
+
+#[component]
+fn BenchmarksPage() -> Element {
+    let Ok(catalogue) = benchmarks::catalogue() else {
+        return rsx! {
+            section { class: "panel empty-panel",
+                h2 { "Benchmark catalogue unavailable" }
+                p { "The embedded release evidence did not pass its schema contract." }
+            }
+        };
+    };
+    let Some(realm) = catalogue
+        .programs
+        .iter()
+        .find(|program| program.id == "single-realm-capacity")
+        .cloned()
+    else {
+        return rsx! {
+            section { class: "panel empty-panel", h2 { "Single-realm benchmark programme unavailable" } }
+        };
+    };
+    let realm_report_count = catalogue
+        .reports
+        .iter()
+        .filter(|report| report.program_id == realm.id)
+        .count();
+    let state_label = if realm.state == "awaiting-baseline" {
+        "Awaiting first baseline"
+    } else {
+        "Active"
+    };
+
+    rsx! {
+        div { class: "content-stack benchmark-console",
+            section { class: "page-heading",
+                div {
+                    p { class: "eyebrow", "Release evidence" }
+                    h2 { "Capacity & latency benchmarks" }
+                    p { "Published synthetic evidence from the isolated benchmark project, tied to explicit datasets, resource ceilings and release artifacts." }
+                }
+                a {
+                    class: "button secondary",
+                    href: "https://rustyauth.dev/benchmarks/",
+                    target: "_blank",
+                    rel: "noreferrer",
+                    "Public benchmark page "
+                    Icon { icon: TablerIcon::ArrowUpRight, size: 17 }
+                }
+            }
+
+            section { class: "benchmark-console-summary",
+                article { class: "panel benchmark-console-state",
+                    span { class: "status-badge warn", i {} "{state_label}" }
+                    strong { "{realm_report_count}" }
+                    small { "published single-realm runs" }
+                    p { "{realm.summary}" }
+                }
+                article { class: "panel benchmark-console-policy",
+                    PanelHeader { eyebrow: "Isolation boundary", title: "Not part of customer installs" }
+                    p { "{catalogue.publication_policy.isolation}" }
+                    div { class: "benchmark-console-meta",
+                        span { "Schema" strong { "v{catalogue.schema_version}" } }
+                        span { "Updated" strong { "{catalogue.updated_at}" } }
+                    }
+                }
+            }
+
+            section { class: "panel",
+                PanelHeader { eyebrow: "Qualified shapes", title: "Single-writer realm tiers" }
+                div { class: "benchmark-console-tier-grid",
+                    for tier in realm.resource_tiers {
+                        article {
+                            span { "{tier.name}" }
+                            strong { "{format_grouped_u64(tier.dataset_accounts)}" }
+                            small { "seeded accounts" }
+                            dl {
+                                div { dt { "Realm API" } dd { "{tier.api}" } }
+                                div { dt { "SableDB" } dd { "{tier.sable_db}" } }
+                            }
+                        }
+                    }
+                }
+            }
+
+            section { class: "panel",
+                PanelHeader { eyebrow: "User translation", title: "Active-user workload profiles" }
+                div { class: "benchmark-console-profile-grid",
+                    for profile in realm.user_profiles {
+                        article {
+                            strong { "{profile.requests_per_minute}" span { " / minute" } }
+                            h4 { "{profile.name}" }
+                            p { "{profile.description}" }
+                        }
+                    }
+                }
+                code { class: "benchmark-console-formula", "active users = sustainable authenticated RPS × 60 × 0.70 ÷ requests per user per minute" }
+            }
+
+            section { class: "panel benchmark-console-gates",
+                PanelHeader { eyebrow: "Promotion policy", title: "Required publication gates" }
+                ol {
+                    for (index, gate) in realm.gates.iter().enumerate() {
+                        li { span { "{index + 1:02}" } "{gate}" }
+                    }
+                }
+            }
+
+            section { class: "panel benchmark-console-reports",
+                PanelHeader { eyebrow: "Retained evidence", title: format!("{} published reports", catalogue.reports.len()) }
+                for report in catalogue.reports {
+                    article {
+                        header {
+                            div { small { "{report.qualification}" } h3 { "{report.title}" } }
+                            span { class: if report.status == "passed" { "status-badge good" } else { "status-badge warn" }, i {} "{report.status}" }
+                        }
+                        p { "{report.summary}" }
+                        div { class: "benchmark-console-result-grid",
+                            for result in report.results {
+                                div {
+                                    small { "{result.label}" }
+                                    strong { "{format_benchmark_value(result.value)} " span { "{result.unit}" } }
+                                    em { "{result.threshold} · {result.outcome}" }
+                                }
+                            }
+                            for datum in report.dataset {
+                                div {
+                                    small { "{datum.label}" }
+                                    strong { "{format_benchmark_value(datum.value)} " span { "{datum.unit}" } }
+                                    em { "Measured dataset" }
+                                }
+                            }
+                        }
+                        footer {
+                            span { "{report.release} · {report.environment} · methodology {report.methodology_version}" }
+                            nav {
+                                for evidence in report.evidence {
+                                    a { href: "{evidence.url}", target: "_blank", rel: "noreferrer", "{evidence.label} ↗" }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+fn format_grouped_u64(value: u64) -> String {
+    let raw = value.to_string();
+    let mut grouped = String::with_capacity(raw.len() + raw.len() / 3);
+    for (index, character) in raw.chars().enumerate() {
+        if index > 0 && (raw.len() - index).is_multiple_of(3) {
+            grouped.push(',');
+        }
+        grouped.push(character);
+    }
+    grouped
+}
+
+fn format_benchmark_value(value: f64) -> String {
+    if value.fract() == 0.0 && value <= u64::MAX as f64 {
+        format_grouped_u64(value as u64)
+    } else {
+        format!("{value:.4}").trim_end_matches('0').to_owned()
     }
 }
 
