@@ -20,6 +20,8 @@ supported `1.x` contract.
 - Resume the scheduled-backup interval from the most recent persisted success. A verified pre-deploy backup
   no longer triggers a duplicate full startup backup seconds later, avoiding datastore contention and severe
   long-tail authentication latency during an otherwise healthy rollout.
+- Read logical backup records in bounded datastore pipelines instead of one network round trip per key,
+  keeping pre-deploy recovery-point creation practical as realm datasets grow.
 - Stop archiving obsolete SableDB write-ahead logs on supported single-writer realms. The prior 24-hour WAL
   retention could turn a megabyte-scale account dataset into tens of gigabytes of volume usage; image
   qualification now replays production-shaped transactions, restarts the database, verifies durability and

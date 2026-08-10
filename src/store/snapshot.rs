@@ -13,6 +13,8 @@ use super::{
     SERVICE_CREDENTIAL_PREFIX, Store, User, now,
 };
 
+const SNAPSHOT_READ_BATCH_SIZE: usize = 250;
+
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct StoreRecord {
@@ -27,38 +29,59 @@ impl Store {
         let _snapshot = self.snapshot_gate.write().await;
         let captured_at = now();
         let keys = self.managed_keys().await?;
-        let mut records = Vec::with_capacity(keys.len());
+        let mut included_keys = Vec::with_capacity(keys.len());
         for key in keys {
             match snapshot_key_policy(&key)? {
                 SnapshotKeyPolicy::Exclude => continue,
-                SnapshotKeyPolicy::Include => {}
+                SnapshotKeyPolicy::Include => included_keys.push(key),
             }
-            let mut connection = self.redis.clone();
-            let (value, ttl): (Option<String>, i64) = redis::pipe()
-                .cmd("GET")
-                .arg(&key)
-                .cmd("TTL")
-                .arg(&key)
+        }
+
+        // One GET+TTL pipeline per key makes a logical snapshot pay one network
+        // round trip for every record. A production-shaped 10,000-account realm
+        // contains roughly 70,000 durable keys, so that implementation turned a
+        // pre-deploy recovery point into minutes of datastore contention. The
+        // snapshot write gate keeps values and expiries stable while bounded
+        // pipelines reduce the same work to two round trips per 250 records.
+        let mut connection = self.redis.clone();
+        let mut records = Vec::with_capacity(included_keys.len());
+        for keys in included_keys.chunks(SNAPSHOT_READ_BATCH_SIZE) {
+            let mut value_pipeline = redis::pipe();
+            let mut ttl_pipeline = redis::pipe();
+            for key in keys {
+                value_pipeline.cmd("GET").arg(key);
+                ttl_pipeline.cmd("TTL").arg(key);
+            }
+            let values: Vec<Option<String>> = value_pipeline
                 .query_async(&mut connection)
                 .await
-                .with_context(|| format!("read snapshot record {key}"))?;
-            let Some(value) = value else {
-                continue;
-            };
-            if value.len() > MAX_SNAPSHOT_VALUE_BYTES {
-                bail!("snapshot record {key} exceeds the 8 MiB safety limit");
+                .context("read snapshot value batch")?;
+            let ttls: Vec<i64> = ttl_pipeline
+                .query_async(&mut connection)
+                .await
+                .context("read snapshot expiry batch")?;
+            if values.len() != keys.len() || ttls.len() != keys.len() {
+                bail!("SableDB returned an incomplete snapshot batch");
             }
-            let expires_at = match ttl {
-                -1 => None,
-                value if value >= 0 => Some(captured_at.saturating_add(value as u64)),
-                -2 => continue,
-                value => bail!("SableDB returned invalid TTL {value} for {key}"),
-            };
-            records.push(StoreRecord {
-                key,
-                value,
-                expires_at,
-            });
+            for ((key, value), ttl) in keys.iter().zip(values).zip(ttls) {
+                let Some(value) = value else {
+                    continue;
+                };
+                if value.len() > MAX_SNAPSHOT_VALUE_BYTES {
+                    bail!("snapshot record {key} exceeds the 8 MiB safety limit");
+                }
+                let expires_at = match ttl {
+                    -1 => None,
+                    value if value >= 0 => Some(captured_at.saturating_add(value as u64)),
+                    -2 => continue,
+                    value => bail!("SableDB returned invalid TTL {value} for {key}"),
+                };
+                records.push(StoreRecord {
+                    key: key.clone(),
+                    value,
+                    expires_at,
+                });
+            }
         }
         records.sort_unstable_by(|left, right| left.key.cmp(&right.key));
         Ok((captured_at, records))
@@ -370,7 +393,67 @@ fn is_unknown_command(error: &redis::RedisError) -> bool {
 
 #[cfg(test)]
 mod tests {
+    use std::env;
+
     use super::*;
+
+    #[tokio::test]
+    #[ignore = "requires the compose.integration.yaml SableDB service"]
+    async fn snapshot_batches_values_and_expiries_without_losing_records() -> Result<()> {
+        let url = env::var("RUSTYAUTH_TEST_SOURCE_SABLEDB_URL").context(
+            "integration environment variable RUSTYAUTH_TEST_SOURCE_SABLEDB_URL is missing",
+        )?;
+        let client = redis::Client::open(url).context("create live store client")?;
+        let mut connection = redis::aio::ConnectionManager::new(client)
+            .await
+            .context("connect to the live store")?;
+        let prefix = Uuid::new_v4();
+        let keys: Vec<_> = (0..=SNAPSHOT_READ_BATCH_SIZE)
+            .map(|index| format!("auth:webhook-cursor:{prefix}:{index:04}"))
+            .collect();
+        let mut pipeline = redis::pipe();
+        for (index, key) in keys.iter().enumerate() {
+            pipeline.cmd("SET").arg(key).arg(format!("value-{index}"));
+            if index % 2 == 0 {
+                pipeline.arg("EX").arg(600_u16);
+            }
+            pipeline.ignore();
+        }
+        pipeline
+            .query_async::<()>(&mut connection)
+            .await
+            .context("seed batched snapshot records")?;
+
+        let store = Store::new(connection.clone(), format!("snapshot-test-{prefix}"));
+        let (_, records) = store.export_records().await?;
+        let records: Vec<_> = records
+            .into_iter()
+            .filter(|record| {
+                record
+                    .key
+                    .starts_with(&format!("auth:webhook-cursor:{prefix}:"))
+            })
+            .collect();
+        assert_eq!(records.len(), SNAPSHOT_READ_BATCH_SIZE + 1);
+        assert_eq!(records[0].value, "value-0");
+        assert_eq!(
+            records.last().map(|record| record.value.as_str()),
+            Some("value-250")
+        );
+        assert_eq!(
+            records
+                .iter()
+                .filter(|record| record.expires_at.is_some())
+                .count(),
+            SNAPSHOT_READ_BATCH_SIZE / 2 + 1
+        );
+
+        let _: usize = connection
+            .del(keys)
+            .await
+            .context("remove batched snapshot records")?;
+        Ok(())
+    }
 
     #[test]
     fn snapshot_policy_is_explicit_and_excludes_replayable_state() {
