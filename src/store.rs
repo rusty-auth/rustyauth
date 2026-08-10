@@ -166,10 +166,49 @@ const MAX_SEARCH_CANDIDATES: usize = 2_000;
 
 #[derive(Clone)]
 pub struct Store {
-    redis: redis::aio::ConnectionManager,
+    redis: MeasuredConnection,
     mutation: Arc<Mutex<()>>,
     snapshot_gate: SnapshotGate,
     tenant_id: String,
+}
+
+/// A connection manager that measures the complete API-to-SableDB round trip
+/// only while benchmark request timing is active. Implementing Redis's native
+/// connection trait keeps the measurement below every command and pipeline,
+/// including store modules that do not pass through the convenience helpers.
+#[derive(Clone)]
+pub struct MeasuredConnection(redis::aio::ConnectionManager);
+
+impl redis::aio::ConnectionLike for MeasuredConnection {
+    fn req_packed_command<'a>(
+        &'a mut self,
+        command: &'a redis::Cmd,
+    ) -> redis::RedisFuture<'a, redis::Value> {
+        Box::pin(async move {
+            let started = std::time::Instant::now();
+            let result = self.0.req_packed_command(command).await;
+            crate::request_timing::record_sabledb_round_trip(started.elapsed());
+            result
+        })
+    }
+
+    fn req_packed_commands<'a>(
+        &'a mut self,
+        pipeline: &'a redis::Pipeline,
+        offset: usize,
+        count: usize,
+    ) -> redis::RedisFuture<'a, Vec<redis::Value>> {
+        Box::pin(async move {
+            let started = std::time::Instant::now();
+            let result = self.0.req_packed_commands(pipeline, offset, count).await;
+            crate::request_timing::record_sabledb_round_trip(started.elapsed());
+            result
+        })
+    }
+
+    fn get_db(&self) -> i64 {
+        self.0.get_db()
+    }
 }
 
 pub type SnapshotGate = Arc<RwLock<()>>;
@@ -177,14 +216,14 @@ pub type SnapshotGate = Arc<RwLock<()>>;
 impl Store {
     pub fn new(redis: redis::aio::ConnectionManager, tenant_id: String) -> Self {
         Self {
-            redis,
+            redis: MeasuredConnection(redis),
             mutation: Arc::new(Mutex::new(())),
             snapshot_gate: Arc::new(RwLock::new(())),
             tenant_id,
         }
     }
 
-    pub fn connection(&self) -> redis::aio::ConnectionManager {
+    pub fn connection(&self) -> MeasuredConnection {
         self.redis.clone()
     }
 

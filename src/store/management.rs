@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use uuid::Uuid;
 
-use super::{Store, StorePolicyError, now};
+use super::{MeasuredConnection, Store, StorePolicyError, now};
 
 const PAIRING_PREFIX: &str = "auth:fleet-pairing:";
 const GRANT_PREFIX: &str = "auth:fleet-grant:";
@@ -397,7 +397,7 @@ const fn initial_assignment_epoch() -> u64 {
     1
 }
 
-async fn count_keys(redis: &redis::aio::ConnectionManager, pattern: &str) -> Result<u64> {
+async fn count_keys(redis: &MeasuredConnection, pattern: &str) -> Result<u64> {
     let mut cursor = 0_u64;
     let mut count = 0_u64;
     loop {

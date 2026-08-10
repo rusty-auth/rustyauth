@@ -13,6 +13,7 @@
       "/src/**",
       "/benchmarks/k6/**",
       "/benchmarks/run-starter-baseline.sh",
+      "/benchmarks/run-enterprise-profile.sh",
       "/rustyauth.example.yaml",
       "/rustyauth.fleet.example.yaml"
     ]

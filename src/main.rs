@@ -18,6 +18,7 @@ use axum::{
     Json, Router,
     extract::State,
     http::{HeaderName, HeaderValue, Method, StatusCode, header},
+    middleware,
     response::IntoResponse,
     routing::get,
 };
@@ -50,6 +51,7 @@ use rustyauth::{
         REALM_CONFIGURATION_EXAMPLE,
     },
     rate_limit::RateLimiter,
+    request_timing::{BENCHMARK_TIMING_HEADER, benchmark_server_timing, benchmark_timing_digest},
     rpc,
     store::{Store, WriterLease},
     telemetry::run_telemetry_exporter,
@@ -380,6 +382,7 @@ async fn serve(
         backup,
         webhook_runtime: webhook_runtime.clone(),
     };
+    let benchmark_timing_digest = benchmark_timing_digest(state.bootstrap_token.expose_secret());
     let signing_worker = state.jwt.clone();
     let backup_worker = state.backup.clone();
     let connector_jwt = state.jwt.clone();
@@ -401,6 +404,7 @@ async fn serve(
         cors_origin,
         request_id,
         config.environment == Environment::Production,
+        benchmark_timing_digest,
     );
 
     let listener = TcpListener::bind(bind)
@@ -646,6 +650,7 @@ fn apply_transport_policy(
     cors_origin: HeaderValue,
     request_id: HeaderName,
     production: bool,
+    benchmark_timing_digest: [u8; 32],
 ) -> Router {
     router
         // Layer order matters and is not the order these read in. `Router::layer`
@@ -669,6 +674,12 @@ fn apply_transport_policy(
         // Outside the panic layer, so a caught panic is still recorded against its
         // request span rather than after the span has been left.
         .layer(TraceLayer::new_for_http())
+        // The timing layer is inert unless the caller presents the exact
+        // benchmark capability. It sits inside request-id propagation so measured
+        // responses retain the same correlation contract as ordinary traffic.
+        .layer(middleware::from_fn(move |request, next| {
+            benchmark_server_timing(request, next, benchmark_timing_digest)
+        }))
         .layer(PropagateRequestIdLayer::new(request_id.clone()))
         // Outside the trace layer, so the span carries the id.
         .layer(SetRequestIdLayer::new(request_id, MakeRequestUuid))
@@ -740,6 +751,7 @@ fn apply_transport_policy(
             header::AUTHORIZATION,
             header::COOKIE,
             HeaderName::from_static("x-bootstrap-token"),
+            HeaderName::from_static(BENCHMARK_TIMING_HEADER),
         ]))
         .layer(SetSensitiveResponseHeadersLayer::new(std::iter::once(
             header::SET_COOKIE,
@@ -830,6 +842,13 @@ mod tests {
     fn policy_router(production: bool) -> Router {
         let router = Router::new()
             .route("/ok", get(|| async { "ok" }))
+            .route(
+                "/timed",
+                get(|| async {
+                    rustyauth::request_timing::record_sabledb_round_trip(Duration::from_millis(3));
+                    "timed"
+                }),
+            )
             .route("/sink", post(|_: String| async { "accepted" }))
             .route(
                 "/panic",
@@ -844,6 +863,7 @@ mod tests {
             HeaderValue::from_static("https://app.example.test"),
             HeaderName::from_static("x-request-id"),
             production,
+            benchmark_timing_digest("benchmark-secret"),
         )
     }
 
@@ -852,6 +872,41 @@ mod tests {
             .oneshot(request)
             .await
             .expect("the transport policy is infallible")
+    }
+
+    #[tokio::test]
+    async fn internal_server_timing_is_secret_gated_and_splits_store_time() {
+        let ordinary = response_for(
+            Request::builder()
+                .uri("/timed")
+                .body(Body::empty())
+                .unwrap(),
+            true,
+        )
+        .await;
+        assert!(ordinary.headers().get("server-timing").is_none());
+
+        let measured = response_for(
+            Request::builder()
+                .uri("/timed")
+                .header(
+                    BENCHMARK_TIMING_HEADER,
+                    hex::encode(benchmark_timing_digest("benchmark-secret")),
+                )
+                .body(Body::empty())
+                .unwrap(),
+            true,
+        )
+        .await;
+        let timing = measured
+            .headers()
+            .get("server-timing")
+            .and_then(|value| value.to_str().ok())
+            .expect("authorized benchmark response has server timing");
+        assert!(timing.contains("app;dur="), "{timing}");
+        assert!(timing.contains("sabledb;dur=3."), "{timing}");
+        assert!(timing.contains("1 round trips"), "{timing}");
+        assert!(timing.contains("nonstore;dur="), "{timing}");
     }
 
     /// Every response leaves with the security headers, including the ones the

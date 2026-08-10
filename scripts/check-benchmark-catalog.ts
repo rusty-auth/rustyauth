@@ -23,7 +23,7 @@ const requiredCapacityResults = [
 export function validateBenchmarkCatalog(value: unknown): ValidationError[] {
   const errors: string[] = [];
   if (!object(value)) return ["catalogue must be an object"];
-  if (value.schemaVersion !== 1) errors.push("schemaVersion must be 1");
+  if (value.schemaVersion !== 2) errors.push("schemaVersion must be 2");
   if (!isoTimestamp(value.updatedAt)) errors.push("updatedAt must be an ISO timestamp");
 
   if (!object(value.publicationPolicy)) {
@@ -53,6 +53,33 @@ export function validateBenchmarkCatalog(value: unknown): ValidationError[] {
     }
     for (const field of ["schedule", "resourceTiers", "userProfiles", "gates"]) {
       if (!Array.isArray(candidate[field])) errors.push(`${path}.${field} must be an array`);
+    }
+    if (candidate.id === "single-realm-capacity") {
+      if (!object(candidate.decisionGuide)) {
+        errors.push(`${path}.decisionGuide must be an object`);
+      } else {
+        for (const field of ["headline", "measured", "inferred", "notDemonstrated", "scaleStrategy"]) {
+          if (!nonEmpty(candidate.decisionGuide[field])) {
+            errors.push(`${path}.decisionGuide.${field} is required`);
+          }
+        }
+      }
+      if (!object(candidate.enterpriseProfile)) {
+        errors.push(`${path}.enterpriseProfile must be an object`);
+      } else {
+        if (!nonEmpty(candidate.enterpriseProfile.name)) {
+          errors.push(`${path}.enterpriseProfile.name is required`);
+        }
+        if (!Array.isArray(candidate.enterpriseProfile.mix) || candidate.enterpriseProfile.mix.length === 0) {
+          errors.push(`${path}.enterpriseProfile.mix must not be empty`);
+        } else {
+          const total = candidate.enterpriseProfile.mix.reduce(
+            (sum, item) => sum + (object(item) && finiteNonNegative(item.percent) ? item.percent : 0),
+            0,
+          );
+          if (total !== 100) errors.push(`${path}.enterpriseProfile.mix must total 100 percent`);
+        }
+      }
     }
   }
 
@@ -137,6 +164,37 @@ export function validateBenchmarkCatalog(value: unknown): ValidationError[] {
           }
         }
       }
+      const capacityModels = Array.isArray(candidate.capacityModels) ? candidate.capacityModels : [];
+      if (capacityModels.length === 0) errors.push(`${path}.capacityModels must not be empty`);
+      const charts = Array.isArray(candidate.charts) ? candidate.charts : [];
+      if (charts.length === 0) errors.push(`${path}.charts must not be empty`);
+      for (const [chartIndex, chart] of charts.entries()) {
+        const chartPath = `${path}.charts[${chartIndex}]`;
+        if (!object(chart)) {
+          errors.push(`${chartPath} must be an object`);
+          continue;
+        }
+        for (const field of ["id", "title", "description", "xUnit", "yUnit"]) {
+          if (!nonEmpty(chart[field])) errors.push(`${chartPath}.${field} is required`);
+        }
+        const series = Array.isArray(chart.series) ? chart.series : [];
+        if (series.length === 0) errors.push(`${chartPath}.series must not be empty`);
+        for (const [seriesIndex, line] of series.entries()) {
+          const seriesPath = `${chartPath}.series[${seriesIndex}]`;
+          if (
+            !object(line) || !nonEmpty(line.name) || !Array.isArray(line.points) || line.points.length < 2
+          ) {
+            errors.push(`${seriesPath} requires a name and at least two points`);
+            continue;
+          }
+          for (const point of line.points) {
+            if (!object(point) || !finiteNonNegative(point.x) || !finiteNonNegative(point.y)) {
+              errors.push(`${seriesPath} points require non-negative x and y values`);
+            }
+          }
+        }
+      }
+      if (!object(candidate.confidence)) errors.push(`${path}.confidence must be an object`);
     }
   }
 

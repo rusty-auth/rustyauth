@@ -28,6 +28,40 @@ supported active users = sustainable authenticated RPS × 60 × 0.70
                          ÷ requests per user per minute
 ```
 
+## Enterprise product journey
+
+`run-enterprise-profile.sh` adds a high-traffic product workload after the simple capacity floor is known. It
+uses one k6 run with named phases, so warm-up, sustained tiers, saturation, spike and recovery can be compared
+without rebuilding or restarting the realm between samples. Its deterministic traffic mix is 60% session-backed
+account reads, 20% user-token minting, 15% passkey inventory reads and 5% signing-key discovery.
+
+The runner authenticates a separate timing header with the realm's benchmark-only secret. RustyAuth then emits a
+standard `Server-Timing` response only for that authorized request. Every Redis command and pipeline issued by the
+API is measured below the store abstraction, allowing the run to split:
+
+- total public runner-to-Railway response time;
+- external edge, transport and runner overhead (`end-to-end - app`);
+- API application time;
+- accumulated API-to-SableDB round-trip time and round-trip count; and
+- non-datastore application work (`app - SableDB`).
+
+Ordinary callers receive no internal timing header. The installable Railway template does not contain the runner,
+fixture keys or benchmark secret.
+
+The enterprise breakpoint profile steps from 250 to 2,000 mixed requests per second, applies a 2,400 RPS spike,
+then returns to 800 RPS to prove recovery. A separate one-hour soak runs at the reviewed 70%-headroom rate. A short
+breakpoint run is never promoted as a soak result.
+
+## Realm-cell extrapolation
+
+A realm is an independent capacity cell. If a pinned shape sustains `C` requests per second, `N` identically sized,
+independently sharded realms provide an initial planning model of `N × C`. Capacity is additive: one-to-two realms
+doubles the total; adding a third to two increases it by 50%.
+
+This arithmetic is labelled **extrapolated**, not measured. It assumes balanced routing, comparable datasets and no
+shared Fleet, network or regional bottleneck. Facebook-scale claims require separate multi-realm, Fleet-cardinality,
+global-routing and failure-domain tests; a large multiplication of one-realm results is not that proof.
+
 ## Isolation and safety
 
 `rustyauth-benchmark` is compiled only with the `benchmark-tools` Cargo feature. Its data-mutating command

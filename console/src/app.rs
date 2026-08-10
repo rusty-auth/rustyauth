@@ -4403,6 +4403,12 @@ fn BenchmarksPage() -> Element {
         .iter()
         .filter(|report| report.program_id == realm.id)
         .count();
+    let primary_chart = catalogue
+        .reports
+        .iter()
+        .find(|report| report.program_id == realm.id && report.status == "passed")
+        .and_then(|report| report.charts.first())
+        .cloned();
     let state_label = if realm.state == "awaiting-baseline" {
         "Awaiting first baseline"
     } else {
@@ -4440,6 +4446,54 @@ fn BenchmarksPage() -> Element {
                     div { class: "benchmark-console-meta",
                         span { "Schema" strong { "v{catalogue.schema_version}" } }
                         span { "Updated" strong { "{catalogue.updated_at}" } }
+                    }
+                }
+            }
+
+            section { class: "panel benchmark-console-decision",
+                PanelHeader { eyebrow: "Decision brief", title: "Measured, modelled and not yet proven" }
+                p { class: "benchmark-console-headline", "{realm.decision_guide.headline}" }
+                div { class: "benchmark-console-confidence-grid",
+                    article { class: "measured", small { "Measured" } h4 { "Safe for decisions" } p { "{realm.decision_guide.measured}" } }
+                    article { class: "modelled", small { "Modelled" } h4 { "Assumptions apply" } p { "{realm.decision_guide.inferred}" } }
+                    article { class: "unproven", small { "Not demonstrated" } h4 { "Do not claim yet" } p { "{realm.decision_guide.not_demonstrated}" } }
+                }
+            }
+
+            section { class: "panel benchmark-console-enterprise",
+                PanelHeader { eyebrow: "Enterprise profile v2", title: "High-traffic product journey" }
+                p { "{realm.enterprise_profile.timing}" }
+                div { class: "benchmark-console-mix",
+                    for item in realm.enterprise_profile.mix {
+                        article {
+                            strong { "{item.percent}%" }
+                            span { "{item.operation}" }
+                            meter { min: 0, max: 100, value: item.percent, "{item.percent}%" }
+                        }
+                    }
+                }
+            }
+
+            if let Some(chart) = primary_chart {
+                section { class: "panel benchmark-console-chart",
+                    PanelHeader { eyebrow: "Measured curve", title: chart.title.clone() }
+                    p { "{chart.description}" }
+                    div { class: "benchmark-console-chart-legend",
+                        span { "{chart.y_unit} by {chart.x_unit}" }
+                        for series in chart.series {
+                            article {
+                                strong { "{series.name}" }
+                                div {
+                                    for point in series.points {
+                                        span {
+                                            title: format!("{} {} · {:.1} {}", point.x, chart.x_unit, point.y, chart.y_unit),
+                                            i { style: format!("height: {}%", (point.y / 150.0 * 100.0).clamp(2.0, 100.0)) }
+                                            small { "{format_benchmark_value(point.x)}" }
+                                        }
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
             }

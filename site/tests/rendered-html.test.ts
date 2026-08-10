@@ -145,10 +145,17 @@ Deno.test("renders the reviewed single-realm capacity baseline", async () => {
   assertMatch(html, /239\.5325/);
   assertMatch(html, /8,064,000/);
   assertMatch(html, /lower bound rather than an absolute breakpoint/i);
+  assertMatch(html, /Each qualified realm adds another capacity unit/);
+  assertMatch(html, /Does this prove Facebook scale/);
+  assertMatch(html, /No—not yet/);
+  assertMatch(html, /Latency remains flat as traffic rises/);
+  assertMatch(html, /high-traffic product journey/i);
+  assertMatch(html, /2,400 RPS traffic spike/);
+  assertMatch(html, /Not demonstrated/);
   assertEquals(html.match(/<h1\b/g)?.length, 1);
 
   const catalogue = JSON.parse(await Deno.readTextFile("dist/benchmarks/catalog.json"));
-  assertEquals(catalogue.schemaVersion, 1);
+  assertEquals(catalogue.schemaVersion, 2);
   assertEquals(catalogue.programs[0].state, "active");
   assertEquals(
     catalogue.reports[0].results.find((result: { key: string }) =>

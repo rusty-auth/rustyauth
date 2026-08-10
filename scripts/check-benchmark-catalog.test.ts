@@ -2,7 +2,7 @@ import { assertEquals, assertMatch } from "@std/assert";
 import { validateBenchmarkCatalog } from "./check-benchmark-catalog.ts";
 
 const catalogue = () => ({
-  schemaVersion: 1,
+  schemaVersion: 2,
   updatedAt: "2026-08-10T10:00:00Z",
   publicationPolicy: { summary: "Synthetic only", isolation: "Separate project", promotion: "Reviewed" },
   programs: [{
@@ -14,6 +14,17 @@ const catalogue = () => ({
     resourceTiers: [],
     userProfiles: [],
     gates: [],
+    decisionGuide: {
+      headline: "Measured",
+      measured: "Measured evidence",
+      inferred: "Declared inference",
+      notDemonstrated: "Explicit boundary",
+      scaleStrategy: "Cells",
+    },
+    enterpriseProfile: {
+      name: "Enterprise",
+      mix: [{ operation: "Read", percent: 100 }],
+    },
   }],
   reports: [],
 });

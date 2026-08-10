@@ -23,6 +23,7 @@ pub mod metrics_rpc;
 pub mod operator_auth;
 pub mod organization_rpc;
 pub mod rate_limit;
+pub mod request_timing;
 pub mod rpc;
 pub mod service_account_rpc;
 pub mod store;

@@ -30,6 +30,35 @@ pub struct BenchmarkProgram {
     pub resource_tiers: Vec<ResourceTier>,
     pub user_profiles: Vec<UserProfile>,
     pub gates: Vec<String>,
+    #[serde(default)]
+    pub decision_guide: DecisionGuide,
+    #[serde(default)]
+    pub enterprise_profile: EnterpriseProfile,
+}
+
+#[derive(Clone, Debug, Default, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct DecisionGuide {
+    pub headline: String,
+    pub measured: String,
+    pub inferred: String,
+    pub not_demonstrated: String,
+    pub scale_strategy: String,
+}
+
+#[derive(Clone, Debug, Default, Deserialize, PartialEq)]
+pub struct EnterpriseProfile {
+    pub name: String,
+    pub state: String,
+    pub mix: Vec<WorkloadMix>,
+    pub phases: Vec<String>,
+    pub timing: String,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq)]
+pub struct WorkloadMix {
+    pub operation: String,
+    pub percent: u64,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq)]
@@ -65,7 +94,53 @@ pub struct BenchmarkReport {
     pub summary: String,
     pub dataset: Vec<BenchmarkDatum>,
     pub results: Vec<BenchmarkResult>,
+    #[serde(default)]
+    pub capacity_models: Vec<CapacityModel>,
+    #[serde(default)]
+    pub charts: Vec<BenchmarkChart>,
+    #[serde(default)]
+    pub confidence: Option<BenchmarkConfidence>,
     pub evidence: Vec<EvidenceLink>,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct CapacityModel {
+    pub profile: String,
+    pub requests_per_minute: u64,
+    pub active_users: u64,
+    pub basis: String,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct BenchmarkChart {
+    pub id: String,
+    pub title: String,
+    pub description: String,
+    pub x_unit: String,
+    pub y_unit: String,
+    pub series: Vec<BenchmarkSeries>,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq)]
+pub struct BenchmarkSeries {
+    pub name: String,
+    pub points: Vec<BenchmarkPoint>,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq)]
+pub struct BenchmarkPoint {
+    pub x: f64,
+    pub y: f64,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct BenchmarkConfidence {
+    pub measured: String,
+    pub inferred: String,
+    pub not_proven: String,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq)]
@@ -103,7 +178,7 @@ mod tests {
     #[test]
     fn embedded_catalogue_contains_the_reviewed_realm_baseline() {
         let catalogue = catalogue().expect("benchmark catalogue should parse");
-        assert_eq!(catalogue.schema_version, 1);
+        assert_eq!(catalogue.schema_version, 2);
         let realm = catalogue
             .programs
             .iter()

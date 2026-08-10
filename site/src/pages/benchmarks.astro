@@ -5,6 +5,9 @@ import "../styles/benchmarks.css";
 
 const realmProgram = catalogue.programs.find((program) => program.id === "single-realm-capacity");
 if (!realmProgram) throw new Error("single-realm-capacity benchmark programme is missing");
+const decisionGuide = realmProgram.decisionGuide;
+const enterpriseProfile = realmProgram.enterpriseProfile;
+if (!decisionGuide || !enterpriseProfile) throw new Error("single-realm decision guide is missing");
 
 const number = new Intl.NumberFormat("en-GB");
 const resultNumber = new Intl.NumberFormat("en-GB", { maximumFractionDigits: 4 });
@@ -15,6 +18,33 @@ const updated = new Intl.DateTimeFormat("en-GB", {
   timeZone: "UTC",
 }).format(new Date(catalogue.updatedAt));
 const realmReports = catalogue.reports.filter((report) => report.programId === realmProgram.id);
+const starterReport = realmReports.find((report) => report.status === "passed");
+if (!starterReport) throw new Error("passed single-realm benchmark report is missing");
+const result = (key: string) => starterReport.results.find((item) => item.key === key)?.value ?? 0;
+const primaryChart = starterReport.charts?.[0];
+if (!primaryChart) throw new Error("single-realm latency chart is missing");
+const chartWidth = 780;
+const chartHeight = 310;
+const chartLeft = 55;
+const chartRight = 18;
+const chartTop = 24;
+const chartBottom = 43;
+const chartMaxY = Math.ceil(
+  Math.max(...primaryChart.series.flatMap((series) => series.points.map((point) => point.y))) / 50,
+) * 50;
+const chartX = (index: number, count: number) =>
+  chartLeft + index * ((chartWidth - chartLeft - chartRight) / Math.max(1, count - 1));
+const chartY = (value: number) =>
+  chartTop + (chartMaxY - value) / chartMaxY * (chartHeight - chartTop - chartBottom);
+const chartPoints = (points: { x: number; y: number }[]) =>
+  points.map((point, index) => `${chartX(index, points.length)},${chartY(point.y)}`).join(" ");
+const typicalUsers = result("supported_typical_active_users");
+const cellScale = [1, 2, 10, 100, 1_000, 10_000].map((realms) => ({
+  realms,
+  activeUsers: realms * typicalUsers,
+  rps: realms * result("sustainable_authenticated_rps"),
+  kind: realms === 1 ? "measured" : "extrapolated",
+}));
 ---
 
 <BaseLayout
@@ -60,6 +90,105 @@ const realmReports = catalogue.reports.filter((report) => report.programId === r
           <div><dt>Catalogue updated</dt><dd>{updated}</dd></div>
         </dl>
       </aside>
+    </section>
+
+    <section class="benchmark-outcome shell" aria-label="Current benchmark outcome">
+      <article><small>Measured throughput floor</small><strong>{number.format(result("sustainable_authenticated_rps"))}</strong><span>authenticated RPS</span></article>
+      <article><small>Typical active users</small><strong>{number.format(typicalUsers)}</strong><span>per starter realm · 30% headroom</span></article>
+      <article><small>Latency at 800 RPS</small><strong>{resultNumber.format(result("authenticated_read_p95_ms"))}</strong><span>ms p95 · public edge</span></article>
+      <article><small>Reliability</small><strong>{number.format(result("failed_requests"))}</strong><span>failed requests</span></article>
+    </section>
+
+    <section class="benchmark-section shell benchmark-decision">
+      <header class="benchmark-section-heading">
+        <p>Decision brief</p>
+        <div><h2>What the evidence says—and where it stops.</h2><p>{decisionGuide.headline}</p></div>
+      </header>
+      <div class="benchmark-confidence-grid">
+        <article class="measured"><span>Measured</span><h3>Safe to use in a decision</h3><p>{decisionGuide.measured}</p></article>
+        <article class="inferred"><span>Modelled</span><h3>Useful with assumptions</h3><p>{decisionGuide.inferred}</p></article>
+        <article class="unproven"><span>Not demonstrated</span><h3>Do not claim yet</h3><p>{decisionGuide.notDemonstrated}</p></article>
+      </div>
+    </section>
+
+    <section class="benchmark-chart-section">
+      <div class="shell">
+        <header class="benchmark-section-heading">
+          <p>Latency curve</p>
+          <div><h2>{primaryChart.title}</h2><p>{primaryChart.description}</p></div>
+        </header>
+        <figure class="benchmark-line-chart">
+          <figcaption>
+            <span>End-to-end latency · milliseconds</span>
+            <div>{primaryChart.series.map((series) => <b class={`legend-${series.name}`}>{series.name}</b>)}</div>
+          </figcaption>
+          <svg viewBox={`0 0 ${chartWidth} ${chartHeight}`} role="img" aria-label="Authenticated read latency from 25 to 800 requests per second">
+            {[0, 50, 100, 150].filter((tick) => tick <= chartMaxY).map((tick) => (
+              <g>
+                <line x1={chartLeft} x2={chartWidth - chartRight} y1={chartY(tick)} y2={chartY(tick)} />
+                <text x={chartLeft - 10} y={chartY(tick) + 4}>{tick}</text>
+              </g>
+            ))}
+            {primaryChart.series[0].points.map((point, index) => (
+              <text class="x-label" x={chartX(index, primaryChart.series[0].points.length)} y={chartHeight - 13}>{point.x}</text>
+            ))}
+            {primaryChart.series.map((series) => (
+              <g class={`chart-${series.name}`}>
+                <polyline points={chartPoints(series.points)} />
+                {series.points.map((point, index) => <circle cx={chartX(index, series.points.length)} cy={chartY(point.y)} r="4" />)}
+              </g>
+            ))}
+          </svg>
+          <p><strong>Reading the curve:</strong> p50 stayed close to 25 ms while p95 moved from 74.5 ms at 25 RPS to 76.5 ms at 800 RPS. The curve had not bent into saturation, so 800 RPS is deliberately reported as a floor.</p>
+        </figure>
+      </div>
+    </section>
+
+    <section class="benchmark-section shell benchmark-cells">
+      <header class="benchmark-section-heading">
+        <p>Cell scaling</p>
+        <div><h2>Each qualified realm adds another capacity unit.</h2><p>{decisionGuide.scaleStrategy}</p></div>
+      </header>
+      <div class="benchmark-scale-table" role="table" aria-label="Realm cell capacity extrapolation">
+        <div class="benchmark-scale-head" role="row"><span>Realm cells</span><span>Authenticated throughput</span><span>Typical active users</span><span>Evidence class</span></div>
+        {cellScale.map((scale) => (
+          <div role="row">
+            <strong>{number.format(scale.realms)}</strong>
+            <span>{number.format(scale.rps)} RPS</span>
+            <span>{number.format(scale.activeUsers)}</span>
+            <em class:list={{ measured: scale.kind === "measured" }}>{scale.kind}</em>
+          </div>
+        ))}
+      </div>
+      <aside class="benchmark-facebook-answer">
+        <span>Does this prove Facebook scale?</span>
+        <strong>No—not yet.</strong>
+        <p>The cell arithmetic shows how independently sharded capacity can accumulate; it does not prove Fleet coordination, global routing, multi-region recovery or billions of identities. Those become measured claims only after multi-realm qualification.</p>
+      </aside>
+    </section>
+
+    <section class="benchmark-enterprise">
+      <div class="shell">
+        <header class="benchmark-section-heading">
+          <p>Enterprise profile v2</p>
+          <div><h2>A high-traffic product journey, not one hot endpoint.</h2><p>{enterpriseProfile.timing}</p></div>
+        </header>
+        <div class="benchmark-enterprise-grid">
+          <article>
+            <h3>Traffic mix</h3>
+            {enterpriseProfile.mix.map((item) => <div><span style={`--mix:${item.percent}%`}></span><strong>{item.percent}%</strong><p>{item.operation}</p></div>)}
+          </article>
+          <article>
+            <h3>Pressure sequence</h3>
+            <ol>{enterpriseProfile.phases.map((phase) => <li>{phase}</li>)}</ol>
+          </article>
+          <article>
+            <h3>Latency waterfall</h3>
+            <div class="benchmark-waterfall"><span>External path</span><span>API work</span><span>SableDB</span></div>
+            <p>Every measured response separates runner/edge/network time, application processing and accumulated datastore round trips. Spike recovery and a one-hour soak prevent a short burst from masquerading as sustainable capacity.</p>
+          </article>
+        </div>
+      </div>
     </section>
 
     <section class="benchmark-boundary">

@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "updatedAt": "2026-08-10T15:12:00Z",
   "publicationPolicy": {
     "summary": "Only synthetic, reproducible benchmark evidence is published. Customer data and production traffic are never used.",
@@ -60,7 +60,32 @@
         "Writes below 500 ms p95 and 1 second p99",
         "No readiness loss, restart or out-of-memory event",
         "Published user capacity retains 30% measured throughput headroom"
-      ]
+      ],
+      "decisionGuide": {
+        "headline": "A starter realm has demonstrated 800 authenticated requests per second with zero failures; the measured breakpoint is still above that rate.",
+        "measured": "One single-writer Railway realm, 10,000 accounts, 10,000 sessions, 141,764 authenticated reads and complete passkey ceremonies on pinned 1.0.0 images.",
+        "inferred": "At the published 30% headroom rule, the measured lower bound translates to 5,600 typical active users, 16,800 light users or 1,680 heavy administrative users per starter realm.",
+        "notDemonstrated": "A single realm has not been shown at Facebook-scale traffic, multi-region active-active writes or billions of accounts. Those require many independently isolated realm cells and separate Fleet-scale qualification.",
+        "scaleStrategy": "Scale vertically within a realm until its measured gate, then add realm cells by tenant, geography or workload boundary. Fleet coordinates those cells without putting customer database credentials in the control plane."
+      },
+      "enterpriseProfile": {
+        "name": "High-traffic product journey v2",
+        "state": "ready-for-run",
+        "mix": [
+          { "operation": "Session-backed account read", "percent": 60 },
+          { "operation": "User token mint", "percent": 20 },
+          { "operation": "Passkey inventory read", "percent": 15 },
+          { "operation": "Public signing-key discovery", "percent": 5 }
+        ],
+        "phases": [
+          "Warm-up and connection establishment",
+          "800–2,000 RPS sustained capacity steps",
+          "2,400 RPS traffic spike",
+          "Return to 800 RPS and verify recovery",
+          "One-hour 70%-headroom soak after breakpoint review"
+        ],
+        "timing": "Secret-gated Server-Timing separates the external path, API application work and every API-to-SableDB command or pipeline."
+      }
     },
     {
       "id": "fleet-analytics-query",
@@ -224,6 +249,75 @@
           "outcome": "pass"
         }
       ],
+      "capacityModels": [
+        {
+          "profile": "Light SaaS",
+          "requestsPerMinute": 2,
+          "activeUsers": 16800,
+          "basis": "800 RPS × 60 × 70% ÷ 2"
+        },
+        {
+          "profile": "Typical application",
+          "requestsPerMinute": 6,
+          "activeUsers": 5600,
+          "basis": "800 RPS × 60 × 70% ÷ 6"
+        },
+        {
+          "profile": "Heavy administration",
+          "requestsPerMinute": 20,
+          "activeUsers": 1680,
+          "basis": "800 RPS × 60 × 70% ÷ 20"
+        }
+      ],
+      "charts": [
+        {
+          "id": "authenticated-read-latency",
+          "title": "Latency remains flat as traffic rises",
+          "description": "End-to-end public Railway latency at each fixed authenticated-read arrival rate. The 800 RPS point is a measured lower bound, not the breakpoint.",
+          "xUnit": "RPS",
+          "yUnit": "ms",
+          "series": [
+            {
+              "name": "p50",
+              "points": [
+                { "x": 25, "y": 25.8239975 },
+                { "x": 50, "y": 25.028347 },
+                { "x": 100, "y": 24.96317 },
+                { "x": 200, "y": 24.531987 },
+                { "x": 400, "y": 24.624215 },
+                { "x": 800, "y": 25.305971 }
+              ]
+            },
+            {
+              "name": "p95",
+              "points": [
+                { "x": 25, "y": 74.4825078 },
+                { "x": 50, "y": 65.139034 },
+                { "x": 100, "y": 66.949184 },
+                { "x": 200, "y": 73.31633 },
+                { "x": 400, "y": 75.495421 },
+                { "x": 800, "y": 76.456158 }
+              ]
+            },
+            {
+              "name": "p99",
+              "points": [
+                { "x": 25, "y": 108.21646818 },
+                { "x": 50, "y": 99.226223 },
+                { "x": 100, "y": 104.14369 },
+                { "x": 200, "y": 113.83114789 },
+                { "x": 400, "y": 112.36823 },
+                { "x": 800, "y": 130.792856 }
+              ]
+            }
+          ]
+        }
+      ],
+      "confidence": {
+        "measured": "Pinned Railway resources and images; real public edge; production session validation; zero failures through 800 RPS.",
+        "inferred": "Active-user figures apply the disclosed request-frequency model and reserve 30% throughput headroom.",
+        "notProven": "The absolute single-realm breakpoint, one-hour mixed-workload soak, multi-region cells and Facebook-scale Fleet cardinality remain separate evidence gates."
+      },
       "evidence": [
         {
           "label": "Reviewed report",
