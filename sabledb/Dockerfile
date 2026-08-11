@@ -7,6 +7,38 @@ RUN apt-get update \
   && rm -rf /var/lib/apt/lists/* \
   && cargo install cargo-auditable --version 0.7.5 --locked
 WORKDIR /src
+
+# Compile the locked third-party graph in a layer that changes only when a
+# manifest or lockfile changes. SableDB source is patched frequently during
+# qualification; copying the complete checkout before the first Cargo build
+# forced RocksDB and the full dependency graph to rebuild on every source-only
+# change in both CI and the production publisher.
+COPY vendor/sabledb/Cargo.toml ./Cargo.toml
+COPY vendor/sabledb/crates/libsabledb/Cargo.toml ./crates/libsabledb/Cargo.toml
+COPY vendor/sabledb/crates/libsabledb/build.rs ./crates/libsabledb/build.rs
+COPY vendor/sabledb/crates/sabledb/Cargo.toml ./crates/sabledb/Cargo.toml
+COPY vendor/sabledb/crates/sabledb/build.rs ./crates/sabledb/build.rs
+COPY vendor/sabledb/crates/sdb-admin/Cargo.toml ./crates/sdb-admin/Cargo.toml
+COPY vendor/sabledb/crates/sdb-cli/Cargo.toml ./crates/sdb-cli/Cargo.toml
+COPY vendor/sabledb/submodules/benchmark/Cargo.toml ./submodules/benchmark/Cargo.toml
+COPY vendor/sabledb/submodules/benchmark/common/Cargo.toml ./submodules/benchmark/common/Cargo.toml
+COPY vendor/sabledb/submodules/benchmark/sabledb-benchmark/Cargo.toml ./submodules/benchmark/sabledb-benchmark/Cargo.toml
+COPY sabledb/Cargo.lock /rustyauth-sabledb.Cargo.lock
+RUN cp /rustyauth-sabledb.Cargo.lock Cargo.lock \
+  && mkdir -p \
+     crates/libsabledb/src \
+     crates/sabledb/src \
+     crates/sdb-admin/src \
+     crates/sdb-cli/src \
+     submodules/benchmark/common/src \
+     submodules/benchmark/sabledb-benchmark/src \
+  && printf 'pub fn dependency_cache_marker() {}\n' > crates/libsabledb/src/lib.rs \
+  && printf 'pub fn dependency_cache_marker() {}\n' > submodules/benchmark/common/src/lib.rs \
+  && printf 'fn main() {}\n' > crates/sabledb/src/main.rs \
+  && printf 'fn main() {}\n' > crates/sdb-admin/src/main.rs \
+  && printf 'fn main() {}\n' > crates/sdb-cli/src/main.rs \
+  && printf 'fn main() {}\n' > submodules/benchmark/sabledb-benchmark/src/main.rs \
+  && cargo auditable build --locked --release --bin sabledb
 COPY vendor/sabledb/ ./
 COPY sabledb/Cargo.lock /rustyauth-sabledb.Cargo.lock
 RUN cp /rustyauth-sabledb.Cargo.lock Cargo.lock \
