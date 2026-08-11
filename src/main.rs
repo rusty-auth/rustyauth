@@ -22,7 +22,7 @@ use axum::{
     response::IntoResponse,
     routing::get,
 };
-use redis::AsyncCommands;
+use redis::{AsyncCommands, IntoConnectionInfo};
 use secrecy::ExposeSecret;
 use serde::Serialize;
 use tokio::{net::TcpListener, sync::watch};
@@ -74,6 +74,22 @@ const RATE_LIMIT_TRACKING_CAPACITY: usize = 65_536;
 /// across its worker threads. Cloning one manager does not create a new TCP
 /// connection and would leave every authenticated request behind one queue.
 const STORE_CONNECTION_POOL_SIZE: usize = 4;
+
+/// Build the datastore client with low-latency request/response semantics.
+///
+/// redis-rs deliberately leaves `TCP_NODELAY` disabled by default. That is a
+/// poor fit for the small sequential GETs on RustyAuth's authentication path:
+/// Linux delayed acknowledgements can turn sub-millisecond SableDB work into
+/// roughly 40-100 ms round trips. SableDB also disables Nagle's algorithm on
+/// accepted sockets; doing the same on every client connection removes the
+/// transport interaction without changing durability or consistency.
+fn sabledb_client(url: &str) -> Result<redis::Client> {
+    let connection_info = url
+        .into_connection_info()
+        .context("parse SableDB connection URL")?
+        .set_tcp_settings(redis::io::tcp::TcpSettings::default().set_nodelay(true));
+    redis::Client::open(connection_info).context("create SableDB client")
+}
 
 #[derive(Serialize)]
 struct Health<'a> {
@@ -154,8 +170,7 @@ async fn main() -> Result<()> {
         "configuration accepted"
     );
 
-    let redis_client = redis::Client::open(config.sabledb_url.expose_secret().to_owned())
-        .context("create SableDB client")?;
+    let redis_client = sabledb_client(config.sabledb_url.expose_secret())?;
     let redis = redis::aio::ConnectionManager::new_with_config(
         redis_client.clone(),
         redis::aio::ConnectionManagerConfig::new()
@@ -854,6 +869,14 @@ mod tests {
     use axum::routing::post;
     use http::Request;
     use tower::ServiceExt;
+
+    #[test]
+    fn sabledb_connections_disable_nagle_delay() {
+        let client =
+            sabledb_client("redis://sabledb.railway.internal:6379").expect("valid SableDB URL");
+
+        assert!(client.get_connection_info().tcp_settings().nodelay());
+    }
 
     /// Applies the real transport policy to a trivial router.
     ///
