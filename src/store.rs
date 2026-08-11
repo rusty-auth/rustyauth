@@ -167,8 +167,12 @@ const MAX_IDENTIFIERS: usize = 20;
 // end of the results: it returns the last account it examined as its cursor, so
 // the caller pages on instead of losing everything past the budget.
 const MAX_SEARCH_CANDIDATES: usize = 2_000;
-const MAX_PENDING_SESSION_TOUCHES: usize = 1_024;
-const SESSION_TOUCH_BATCH_INTERVAL: std::time::Duration = std::time::Duration::from_millis(250);
+// Ten seconds is still a small fraction of the minimum supported five-minute
+// idle window, and a dropped/delayed observation can only end a session early.
+// The larger queue covers more than ten seconds of touch traffic for the next
+// 100,000-session qualification tier without making it an unbounded buffer.
+const MAX_PENDING_SESSION_TOUCHES: usize = 8_192;
+const SESSION_TOUCH_BATCH_INTERVAL: std::time::Duration = std::time::Duration::from_secs(10);
 
 #[derive(Debug)]
 struct SessionTouch {
@@ -405,10 +409,10 @@ fn spawn_session_touch_writer(
     tokio::spawn(async move {
         while let Some(first) = receiver.recv().await {
             // This timestamp is operational telemetry rather than a grant. A
-            // quarter-second delay is far below the five-minute persistence
-            // interval, while grouping a busy realm's independent SETEX calls
-            // into one RocksDB transaction prevents sliding sessions from
-            // creating an L0 file/compaction stream.
+            // ten-second delay is far below the five-minute persistence
+            // interval. Grouping a busy realm's independent SETEX calls keeps
+            // SableDB write maintenance from imposing its fixed storage tail on
+            // a large fraction of otherwise sub-millisecond point reads.
             tokio::time::sleep(SESSION_TOUCH_BATCH_INTERVAL).await;
             let mut touches = BTreeMap::new();
             insert_latest_session_touch(&mut touches, first);
