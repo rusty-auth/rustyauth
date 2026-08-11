@@ -140,9 +140,13 @@ impl Store {
         let key = session_key(token);
         let activity_key = session_activity_key(token);
         let mut connection = self.redis.clone();
-        let (session_json, activity): (Option<String>, Option<u64>) = redis::pipe()
-            .get(&key)
-            .get(&activity_key)
+        // One MGET returns one RESP array. A two-command wire pipeline returns
+        // two separately scheduled responses; on a remote SableDB path that
+        // occasionally exposed the transport's delayed-response tail even
+        // though both point lookups completed in microseconds.
+        let (session_json, activity): (Option<String>, Option<u64>) = redis::cmd("MGET")
+            .arg(&key)
+            .arg(&activity_key)
             .query_async(&mut connection)
             .await?;
         let Some(session_json) = session_json else {
