@@ -420,11 +420,7 @@ fn spawn_session_touch_writer(
                 }
             }
 
-            let mut pipeline = redis::pipe();
-            pipeline.atomic();
-            for (key, (observed_at, ttl_seconds)) in touches {
-                pipeline.set_ex(key, observed_at, ttl_seconds).ignore();
-            }
+            let pipeline = session_touch_pipeline(touches);
             let mut connection = redis.clone();
             let result: redis::RedisResult<()> = pipeline.query_async(&mut connection).await;
             if let Err(error) = result {
@@ -434,6 +430,19 @@ fn spawn_session_touch_writer(
             }
         }
     });
+}
+
+fn session_touch_pipeline(touches: BTreeMap<String, (u64, u64)>) -> redis::Pipeline {
+    let mut pipeline = redis::pipe();
+    for (key, (observed_at, ttl_seconds)) in touches {
+        pipeline.set_ex(key, observed_at, ttl_seconds).ignore();
+    }
+    // Each activity key is independent operational telemetry. MULTI/EXEC adds
+    // no correctness guarantee here, but SableDB has to calculate and lock the
+    // complete transaction before it can answer unrelated reads. A regular
+    // wire pipeline retains one network round trip without creating that
+    // global transaction pause.
+    pipeline
 }
 
 fn insert_latest_session_touch(touches: &mut BTreeMap<String, (u64, u64)>, touch: SessionTouch) {
@@ -506,7 +515,9 @@ fn handoff_key(code: &str) -> String {
 mod connection_pool_tests {
     use std::collections::BTreeMap;
 
-    use super::{SessionTouch, connection_pool_index, insert_latest_session_touch};
+    use super::{
+        SessionTouch, connection_pool_index, insert_latest_session_touch, session_touch_pipeline,
+    };
 
     #[test]
     fn request_connections_are_selected_round_robin() {
@@ -548,6 +559,21 @@ mod connection_pool_tests {
             touches.get("auth:session-activity:first"),
             Some(&(120, 880))
         );
+    }
+
+    #[test]
+    fn session_touch_batch_is_pipelined_without_a_global_transaction() {
+        let touches = BTreeMap::from([
+            ("auth:session-activity:first".into(), (100, 900)),
+            ("auth:session-activity:second".into(), (110, 890)),
+        ]);
+
+        let packed = String::from_utf8(session_touch_pipeline(touches).get_packed_pipeline())
+            .expect("Redis commands are UTF-8 in this fixture");
+
+        assert_eq!(packed.matches("SETEX").count(), 2);
+        assert!(!packed.contains("MULTI"));
+        assert!(!packed.contains("EXEC"));
     }
 }
 
