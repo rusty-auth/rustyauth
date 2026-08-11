@@ -283,14 +283,24 @@ fn empty_event_data() -> serde_json::Value {
 }
 
 pub(super) fn queue_events(pipeline: &mut redis::Pipeline, events: &[AuthEvent]) -> Result<()> {
+    let Some(last) = events.last() else {
+        return Ok(());
+    };
+
+    // MSET is atomic and SableDB applies it as one storage batch. Keeping one
+    // command inside the caller's wider MULTI/EXEC transaction avoids parsing,
+    // slot preparation and transaction-cache work once per event while still
+    // committing the records and their cursor together with every surrounding
+    // account/session mutation.
+    let command = pipeline.cmd("MSET");
     for event in events {
-        pipeline.set(
-            format!("auth:event:{}", event.sequence),
-            serde_json::to_string(event)?,
-        );
+        command
+            .arg(format!("auth:event:{}", event.sequence))
+            .arg(serde_json::to_string(event)?);
     }
-    if let Some(event) = events.last() {
-        pipeline.set("auth:event-sequence", event.sequence);
-    }
+    command
+        .arg("auth:event-sequence")
+        .arg(last.sequence)
+        .ignore();
     Ok(())
 }
