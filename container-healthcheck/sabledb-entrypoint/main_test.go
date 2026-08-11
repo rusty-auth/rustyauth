@@ -88,17 +88,20 @@ func TestMaterializeRuntimeConfigOverridesValidatedBlockCache(t *testing.T) {
 	root := t.TempDir()
 	basePath := filepath.Join(root, "server.ini")
 	targetPath := filepath.Join(root, "runtime-server.ini")
-	if err := os.WriteFile(basePath, []byte("[general]\nworkers = 4\n[rocksdb]\nblock_cache_size = 128MB\n"), 0o640); err != nil {
+	if err := os.WriteFile(basePath, []byte("[general]\nworkers = 4\n[cron]\nscan_keys_secs = 60\n[rocksdb]\nblock_cache_size = 128MB\n"), 0o640); err != nil {
 		t.Fatal(err)
 	}
-	if err := materializeRuntimeConfig(basePath, targetPath, "512MB", os.Getuid(), os.Getgid()); err != nil {
+	if err := materializeRuntimeConfig(basePath, targetPath, "512MB", "3600", os.Getuid(), os.Getgid()); err != nil {
 		t.Fatal(err)
 	}
 	contents, err := os.ReadFile(targetPath)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := string(contents); !strings.Contains(got, "block_cache_size = 512MB") || strings.Contains(got, "block_cache_size = 128MB") {
+	if got := string(contents); !strings.Contains(got, "block_cache_size = 512MB") ||
+		strings.Contains(got, "block_cache_size = 128MB") ||
+		!strings.Contains(got, "scan_keys_secs = 3600") ||
+		strings.Contains(got, "scan_keys_secs = 60") {
 		t.Fatalf("runtime config = %q, want only the validated override", got)
 	}
 	if info, err := os.Stat(targetPath); err != nil {
@@ -115,7 +118,7 @@ func TestMaterializeRuntimeConfigRejectsInjection(t *testing.T) {
 	if err := os.WriteFile(basePath, []byte("[rocksdb]\nblock_cache_size = 128MB\n"), 0o640); err != nil {
 		t.Fatal(err)
 	}
-	err := materializeRuntimeConfig(basePath, targetPath, "512MB\nworkers = 99", os.Getuid(), os.Getgid())
+	err := materializeRuntimeConfig(basePath, targetPath, "512MB\nworkers = 99", "", os.Getuid(), os.Getgid())
 	if err == nil || !strings.Contains(err.Error(), cacheEnv) {
 		t.Fatalf("materializeRuntimeConfig() error = %v, want validated-size rejection", err)
 	}
@@ -130,8 +133,26 @@ func TestMaterializeRuntimeConfigRequiresExactlyOneAssignment(t *testing.T) {
 	if err := os.WriteFile(basePath, []byte("[rocksdb]\nwrite_buffer_size = 32MB\n"), 0o640); err != nil {
 		t.Fatal(err)
 	}
-	err := materializeRuntimeConfig(basePath, filepath.Join(root, "runtime-server.ini"), "512MB", os.Getuid(), os.Getgid())
+	err := materializeRuntimeConfig(basePath, filepath.Join(root, "runtime-server.ini"), "512MB", "", os.Getuid(), os.Getgid())
 	if err == nil || !strings.Contains(err.Error(), "exactly one") {
 		t.Fatalf("materializeRuntimeConfig() error = %v, want assignment-count rejection", err)
+	}
+}
+
+func TestMaterializeRuntimeConfigRejectsUnsafeScanInterval(t *testing.T) {
+	root := t.TempDir()
+	basePath := filepath.Join(root, "server.ini")
+	targetPath := filepath.Join(root, "runtime-server.ini")
+	if err := os.WriteFile(basePath, []byte("[cron]\nscan_keys_secs = 60\n"), 0o640); err != nil {
+		t.Fatal(err)
+	}
+	for _, value := range []string{"0", "59", "86401", "3600\nworkers = 99", "not-a-number"} {
+		err := materializeRuntimeConfig(basePath, targetPath, "", value, os.Getuid(), os.Getgid())
+		if err == nil || !strings.Contains(err.Error(), scanEnv) {
+			t.Fatalf("materializeRuntimeConfig(scan=%q) error = %v, want validated-interval rejection", value, err)
+		}
+		if _, err := os.Stat(targetPath); !os.IsNotExist(err) {
+			t.Fatalf("unsafe runtime config was created for %q: %v", value, err)
+		}
 	}
 }

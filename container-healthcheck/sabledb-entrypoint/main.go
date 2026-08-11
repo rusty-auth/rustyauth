@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"syscall"
 )
@@ -16,6 +17,7 @@ const (
 	dataRoot   = "/var/lib/sabledb"
 	binaryPath = "/usr/local/bin/sabledb"
 	cacheEnv   = "SABLEDB_BLOCK_CACHE_SIZE"
+	scanEnv    = "SABLEDB_SCAN_KEYS_SECS"
 )
 
 var byteSizePattern = regexp.MustCompile(`^[1-9][0-9]*(?:KB|MB|GB)$`)
@@ -110,14 +112,20 @@ func prepareUnprivilegedDataRoot(root string) error {
 	return nil
 }
 
-// materializeRuntimeConfig applies the one deployment-specific SableDB tuning
-// value that must vary with the container memory tier. The override is kept
-// deliberately narrow and validated before it reaches the INI document; this
+// materializeRuntimeConfig applies the deployment-specific SableDB values that
+// vary with realm size. The overrides are kept deliberately narrow and
+// validated before they reach the INI document; this
 // avoids treating an environment variable as an arbitrary configuration-file
 // injection surface.
-func materializeRuntimeConfig(basePath, targetPath, blockCacheSize string, uid, gid int) error {
-	if !byteSizePattern.MatchString(blockCacheSize) {
+func materializeRuntimeConfig(basePath, targetPath, blockCacheSize, scanKeysSeconds string, uid, gid int) error {
+	if blockCacheSize != "" && !byteSizePattern.MatchString(blockCacheSize) {
 		return fmt.Errorf("%s must be a positive integer followed by KB, MB, or GB", cacheEnv)
+	}
+	if scanKeysSeconds != "" {
+		seconds, err := strconv.ParseUint(scanKeysSeconds, 10, 32)
+		if err != nil || seconds < 60 || seconds > 86_400 {
+			return fmt.Errorf("%s must be an integer from 60 through 86400", scanEnv)
+		}
 	}
 	contents, err := os.ReadFile(basePath)
 	if err != nil {
@@ -125,15 +133,24 @@ func materializeRuntimeConfig(basePath, targetPath, blockCacheSize string, uid, 
 	}
 
 	lines := strings.Split(string(contents), "\n")
-	replacements := 0
+	cacheReplacements := 0
+	scanReplacements := 0
 	for index, line := range lines {
-		if strings.HasPrefix(strings.TrimSpace(line), "block_cache_size =") {
+		trimmed := strings.TrimSpace(line)
+		if blockCacheSize != "" && strings.HasPrefix(trimmed, "block_cache_size =") {
 			lines[index] = "block_cache_size = " + blockCacheSize
-			replacements++
+			cacheReplacements++
+		}
+		if scanKeysSeconds != "" && strings.HasPrefix(trimmed, "scan_keys_secs =") {
+			lines[index] = "scan_keys_secs = " + scanKeysSeconds
+			scanReplacements++
 		}
 	}
-	if replacements != 1 {
-		return fmt.Errorf("SableDB base config must contain exactly one block_cache_size assignment; found %d", replacements)
+	if blockCacheSize != "" && cacheReplacements != 1 {
+		return fmt.Errorf("SableDB base config must contain exactly one block_cache_size assignment; found %d", cacheReplacements)
+	}
+	if scanKeysSeconds != "" && scanReplacements != 1 {
+		return fmt.Errorf("SableDB base config must contain exactly one scan_keys_secs assignment; found %d", scanReplacements)
 	}
 
 	directory := filepath.Dir(targetPath)
@@ -197,17 +214,19 @@ func dropPrivileges(uid, gid int) error {
 
 func run() error {
 	runtimeConfig := ""
+	blockCacheSize := os.Getenv(cacheEnv)
+	scanKeysSeconds := os.Getenv(scanEnv)
 	switch os.Geteuid() {
 	case 0:
 		if err := prepareDataRoot(dataRoot, sableDBUID, sableDBGID); err != nil {
 			return err
 		}
-		if blockCacheSize := os.Getenv(cacheEnv); blockCacheSize != "" {
+		if blockCacheSize != "" || scanKeysSeconds != "" {
 			if len(os.Args) != 2 {
-				return fmt.Errorf("%s requires exactly one SableDB config argument", cacheEnv)
+				return fmt.Errorf("SableDB runtime tuning requires exactly one config argument")
 			}
 			runtimeConfig = filepath.Join(dataRoot, "conf", "runtime-server.ini")
-			if err := materializeRuntimeConfig(os.Args[1], runtimeConfig, blockCacheSize, sableDBUID, sableDBGID); err != nil {
+			if err := materializeRuntimeConfig(os.Args[1], runtimeConfig, blockCacheSize, scanKeysSeconds, sableDBUID, sableDBGID); err != nil {
 				return err
 			}
 		}
@@ -221,12 +240,12 @@ func run() error {
 		if err := prepareUnprivilegedDataRoot(dataRoot); err != nil {
 			return err
 		}
-		if blockCacheSize := os.Getenv(cacheEnv); blockCacheSize != "" {
+		if blockCacheSize != "" || scanKeysSeconds != "" {
 			if len(os.Args) != 2 {
-				return fmt.Errorf("%s requires exactly one SableDB config argument", cacheEnv)
+				return fmt.Errorf("SableDB runtime tuning requires exactly one config argument")
 			}
 			runtimeConfig = filepath.Join(dataRoot, "conf", "runtime-server.ini")
-			if err := materializeRuntimeConfig(os.Args[1], runtimeConfig, blockCacheSize, sableDBUID, sableDBGID); err != nil {
+			if err := materializeRuntimeConfig(os.Args[1], runtimeConfig, blockCacheSize, scanKeysSeconds, sableDBUID, sableDBGID); err != nil {
 				return err
 			}
 		}

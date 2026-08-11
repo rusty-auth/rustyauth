@@ -186,6 +186,11 @@
           "defaultValue": "256MB",
           "description": "RocksDB point-read cache sized for the Railway realm tier; lightweight Helm installs retain the conservative image default.",
           "isOptional": false
+        },
+        "SABLEDB_SCAN_KEYS_SECS": {
+          "defaultValue": "3600",
+          "description": "Full key-count telemetry interval; avoids a once-per-minute database walk competing with authentication on larger realms.",
+          "isOptional": false
         }
       },
       "volumeMounts": {
