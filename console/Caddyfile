@@ -40,14 +40,27 @@
  /v1/passkeys/registration/verify \
  /v1/passkeys/authentication/options \
  /v1/passkeys/authentication/verify \
+ /v1/passkeys/registration/add/options \
+ /v1/passkeys/registration/add/verify \
  /v1/passkeys/step-up/options \
  /v1/passkeys/step-up/verify \
  /v1/passkeys/recovery/options \
  /v1/passkeys/recovery/verify \
+ /v1/token \
  /v1/device-tokens \
+ /v1/account \
+ /v1/account/profile \
+ /v1/account/identifiers \
+ /v1/account/identifiers/remove \
+ /v1/account/identifiers/primary \
  /v1/account/recovery-codes \
  /v1/account/identifiers/verification/request \
  /v1/account/identifiers/verification/verify \
+ /v1/credentials \
+ /v1/credentials/rename \
+ /v1/credentials/revoke \
+ /v1/events \
+ /v1/email-links \
  /v1/sessions/revoke-all \
  /v1/sign-out \
  /.well-known/openid-configuration \

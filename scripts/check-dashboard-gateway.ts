@@ -1,16 +1,29 @@
 const clientPath = "console/src/fleet_client.rs";
 const gatewayPath = "console/Caddyfile";
 const appPath = "console/src/app.rs";
+const authRouterPath = "src/auth.rs";
 
-const [client, gateway, app] = await Promise.all([
+const [client, gateway, app, authRouter] = await Promise.all([
   Deno.readTextFile(clientPath),
   Deno.readTextFile(gatewayPath),
   Deno.readTextFile(appPath),
+  Deno.readTextFile(authRouterPath),
 ]);
 
-const httpPaths = new Set(
+const clientHttpPaths = new Set(
   [...client.matchAll(/"((?:\/v1|\/\.well-known)[A-Za-z0-9_./-]*)"/g)].map((match) => match[1]),
 );
+// The dashboard is the only public service in the integrated topology. Test
+// the complete production REST contract, not only the subset the current WASM
+// client happens to call, so SDK/token routes cannot silently fall through to
+// index.html. The local agent handoff is deliberately local-development-only.
+const excludedProductionPaths = new Set(["/v1/local-agent-handoff"]);
+const authHttpPaths = new Set(
+  [...authRouter.matchAll(/\.route\(\s*"((?:\/v1|\/\.well-known)[A-Za-z0-9_./-]*)"/gs)]
+    .map((match) => match[1])
+    .filter((path) => !excludedProductionPaths.has(path)),
+);
+const httpPaths = new Set([...clientHttpPaths, ...authHttpPaths]);
 const gatewayTokens = new Set(gateway.split(/\s+/));
 const missingHttpPaths = [...httpPaths].filter((path) => !gatewayTokens.has(path));
 
