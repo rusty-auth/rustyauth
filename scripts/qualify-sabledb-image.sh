@@ -13,8 +13,12 @@ maximum_storage_mb=64
 cleanup() {
   exit_code=$?
   if [[ $exit_code -ne 0 ]]; then
-    docker logs --tail 200 "$railway_container" 2>&1 || true
-    docker logs --tail 200 "$kubernetes_container" 2>&1 || true
+    if docker container inspect "$railway_container" >/dev/null 2>&1; then
+      docker logs --tail 200 "$railway_container" 2>&1 || true
+    fi
+    if docker container inspect "$kubernetes_container" >/dev/null 2>&1; then
+      docker logs --tail 200 "$kubernetes_container" 2>&1 || true
+    fi
   fi
   docker rm -f "$railway_container" "$kubernetes_container" >/dev/null 2>&1 || true
   docker volume rm "$railway_volume" "$kubernetes_volume" >/dev/null 2>&1 || true
@@ -105,23 +109,88 @@ with socket.create_connection(("127.0.0.1", port), timeout=5) as connection:
         connection.sendall(b"".join(encode(*command) for command in commands))
         for _ in commands:
             read_reply(stream)
+
+    # A completed transaction must not be replayed by the next EXEC on this
+    # connection. An abandoned transaction must not leak into a later EXEC.
+    commands = [
+        ("MULTI",),
+        ("SET", "auth:replay-guard", "old"),
+        ("EXEC",),
+        ("SET", "auth:replay-guard", "new"),
+        ("MULTI",),
+        ("SET", "auth:replay-companion", "committed"),
+        ("EXEC",),
+        ("GET", "auth:replay-guard"),
+        ("MULTI",),
+        ("SET", "auth:discard-guard", "must-not-persist"),
+        ("DISCARD",),
+        ("MULTI",),
+        ("SET", "auth:discard-companion", "committed"),
+        ("EXEC",),
+        ("GET", "auth:discard-guard"),
+    ]
+    connection.sendall(b"".join(encode(*command) for command in commands))
+    replies = [read_reply(stream) for _ in commands]
+    if replies[7] != b"new":
+        raise RuntimeError(f"completed transaction was replayed: {replies[7]!r}")
+    if replies[14] is not None:
+        raise RuntimeError(f"discarded transaction was replayed: {replies[14]!r}")
 PY
 }
 
 assert_storage_survived_restart() {
   port=$(mapped_port "$railway_container")
-  expected=$((storage_accounts * 8 + 1))
-  python3 - "$port" "$expected" <<'PY'
+  python3 - "$port" "$storage_accounts" <<'PY'
 import socket
 import sys
 
 port = int(sys.argv[1])
-expected = int(sys.argv[2])
+accounts = int(sys.argv[2])
+
+def encode(*parts):
+    result = [f"*{len(parts)}\r\n".encode()]
+    for part in parts:
+        if isinstance(part, str):
+            part = part.encode()
+        result.extend((f"${len(part)}\r\n".encode(), part, b"\r\n"))
+    return b"".join(result)
+
+def read_reply(stream):
+    marker = stream.read(1)
+    if marker == b"$":
+        size = int(stream.readline())
+        if size == -1:
+            return None
+        payload = stream.read(size)
+        if len(payload) != size or stream.read(2) != b"\r\n":
+            raise RuntimeError("truncated Redis bulk response")
+        return payload
+    raise RuntimeError(f"unexpected Redis response marker {marker!r}")
+
+last = accounts - 1
+checks = {
+    "auth:user:0:5": b"x" * 1024,
+    f"auth:user:{last}:5": b"x" * 1024,
+    "auth:session:0": b"x" * 1024,
+    f"auth:session:{last}": b"x" * 1024,
+    "auth:event:0": b"x" * 1024,
+    f"auth:event:{last}": b"x" * 1024,
+    "auth:event-sequence": str(last).encode(),
+    "auth:replay-guard": b"new",
+    "auth:replay-companion": b"committed",
+    "auth:discard-guard": None,
+    "auth:discard-companion": b"committed",
+}
 with socket.create_connection(("127.0.0.1", port), timeout=5) as connection:
-    connection.sendall(b"*1\r\n$6\r\nDBSIZE\r\n")
-    response = connection.recv(128)
-if response != f":{expected}\r\n".encode():
-    raise SystemExit(f"unexpected DBSIZE response after restart: {response!r}")
+    connection.settimeout(5)
+    stream = connection.makefile("rb")
+    connection.sendall(b"".join(encode("GET", key) for key in checks))
+    for key, expected in checks.items():
+        actual = read_reply(stream)
+        if actual != expected:
+            raise SystemExit(
+                f"unexpected persisted value for {key!r}: {actual!r} != {expected!r}"
+            )
 PY
 }
 
