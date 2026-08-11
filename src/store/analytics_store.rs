@@ -168,7 +168,12 @@ impl LocalMetricBucket {
                 true
             }
             "token.user.issued" => {
-                increment(&mut self.user_tokens_issued);
+                let count = event
+                    .data
+                    .get("count")
+                    .and_then(serde_json::Value::as_u64)
+                    .unwrap_or(1);
+                self.user_tokens_issued = self.user_tokens_issued.saturating_add(count);
                 true
             }
             "service_account.token.issued" => {
@@ -229,6 +234,19 @@ impl LocalMetricBucket {
                 && let Some(subject) = event.subject
             {
                 self.active_subjects.insert(subject);
+            }
+            if event.event_type == "token.user.issued"
+                && let Some(subjects) = event
+                    .data
+                    .get("subjectIds")
+                    .and_then(serde_json::Value::as_array)
+            {
+                self.active_subjects.extend(
+                    subjects
+                        .iter()
+                        .filter_map(serde_json::Value::as_str)
+                        .filter_map(|subject| Uuid::parse_str(subject).ok()),
+                );
             }
         }
         contributed
@@ -841,6 +859,31 @@ mod tests {
             ..Default::default()
         })
         .unwrap();
+    }
+
+    #[test]
+    fn aggregated_token_telemetry_preserves_counts_and_active_accounts() {
+        let first = Uuid::new_v4();
+        let second = Uuid::new_v4();
+        let mut aggregate = event(
+            1,
+            "token.user.issued",
+            json!({
+                "count": 17,
+                "subjectIds": [first, second, first],
+            }),
+        );
+        aggregate.subject = None;
+        let mut bucket = LocalMetricBucket::new(aligned_bucket_start(1_722_000_001));
+
+        assert!(bucket.apply(&aggregate));
+        assert_eq!(bucket.user_tokens_issued, 17);
+        assert_eq!(bucket.active_subjects, BTreeSet::from([first, second]));
+
+        let encoded = bucket.to_telemetry_bucket("realm-id", 7).encode_to_vec();
+        assert!(!encoded.windows(36).any(|window| {
+            window == first.to_string().as_bytes() || window == second.to_string().as_bytes()
+        }));
     }
 
     #[test]

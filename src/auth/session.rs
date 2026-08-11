@@ -40,12 +40,7 @@ pub(super) async fn token(
     headers: HeaderMap,
 ) -> Result<Response, ApiError> {
     let (raw, session, user) = authenticated(&state, &headers).await?;
-    record_telemetry_event(
-        &state.auth_telemetry,
-        "token.user.issued",
-        Some(user.id),
-        json!({}),
-    );
+    state.auth_telemetry.record_user_token_issued(user.id);
     token_response(&state, &user, &session, raw, StatusCode::OK)
 }
 
