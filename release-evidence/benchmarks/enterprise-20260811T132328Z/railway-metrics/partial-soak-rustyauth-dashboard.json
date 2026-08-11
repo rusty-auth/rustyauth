@@ -1,0 +1,79 @@
+{
+  "cpu": {
+    "average": 0.00005538378378378377,
+    "current": 0.00014783333333333334,
+    "limit": 24.0,
+    "max": 0.0002693666666666667,
+    "unit": "vCPU",
+    "utilization_pct": 0.0
+  },
+  "deployments": [
+    {
+      "created_at": "2026-08-11T14:16:16.185+00:00",
+      "id": "b440436e-31e1-41f6-95f6-f0193e77b8f5",
+      "status": "REMOVED"
+    },
+    {
+      "created_at": "2026-08-11T05:25:46.386+00:00",
+      "id": "5839058b-4d49-4a99-ace9-8454ccf40cd9",
+      "status": "REMOVED"
+    },
+    {
+      "created_at": "2026-08-10T22:07:21.671+00:00",
+      "id": "18d3f2d2-74ef-4945-9af1-b074dc451387",
+      "status": "REMOVED"
+    },
+    {
+      "created_at": "2026-08-10T14:34:44.511+00:00",
+      "id": "bfcf93f3-cefa-4945-90b5-79fb03263115",
+      "status": "REMOVED"
+    },
+    {
+      "created_at": "2026-08-10T14:24:57.271+00:00",
+      "id": "7b17f60d-82b1-471b-8ece-79080ce61d31",
+      "status": "REMOVED"
+    }
+  ],
+  "disk": {
+    "average_mb": 0.0,
+    "current_mb": 0.0,
+    "max_mb": 0.0
+  },
+  "environment": "production",
+  "http": {
+    "2xx": 1,
+    "3xx": 0,
+    "4xx": 0,
+    "5xx": 0,
+    "error_rate": 0.0,
+    "p50_ms": 26,
+    "p90_ms": 26,
+    "p95_ms": 26,
+    "p99_ms": 26,
+    "total": 1
+  },
+  "memory": {
+    "average_mb": 53.46212913816215,
+    "current_mb": 53.489958912,
+    "limit_mb": 24576.0,
+    "max_mb": 53.993275392,
+    "utilization_pct": 0.2
+  },
+  "public_network_traffic": {
+    "egress": {
+      "average_mb": 0.000019234594594594595,
+      "current_mb": 0.0,
+      "max_mb": 0.00142336
+    },
+    "ingress": {
+      "average_mb": 0.000011208648648648649,
+      "current_mb": 0.0,
+      "max_mb": 0.00082944
+    }
+  },
+  "service": "rustyauth-dashboard",
+  "window": {
+    "since": "2026-08-11T13:36:08+00:00",
+    "until": "2026-08-11T14:12:49+00:00"
+  }
+}

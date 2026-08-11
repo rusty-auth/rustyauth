@@ -46,6 +46,7 @@ Deno.test("renders the RustyAuth landing page", async () => {
   assertNotMatch(html, /agent-thesis-compact|capability-editorial|pathway-list/);
   assertNotMatch(html, /codex-preview|Your site is taking shape/);
   const header = html.match(/<header class="site-header">[\s\S]*?<\/header>/)?.[0] ?? "";
+  assertMatch(header, /href="\/benchmarks">Benchmarks<\/a>/);
   assertNotMatch(header, />GitHub<\/a>/);
   assertMatch(header, /github-proof/);
 });
@@ -133,24 +134,41 @@ Deno.test("publishes crawler controls and a real 404 document", async () => {
   assertMatch(notFound, /name="robots" content="noindex, follow"/);
 });
 
-Deno.test("renders the reviewed single-realm capacity baseline", async () => {
+Deno.test("renders the passed baseline and retained informational enterprise boundary", async () => {
   const html = await Deno.readTextFile(outputFor("/benchmarks"));
   assertMatch(html, /Benchmarks,/);
   assertMatch(html, /Active baseline/);
   assertMatch(html, /Separate benchmark project/);
   assertMatch(html, /Starter single-realm Railway baseline/);
+  assertMatch(html, /Enterprise mixed-journey Railway boundary and soak/);
+  assertMatch(html, /Mixed authenticated boundary/);
+  assertMatch(html, /2,400/);
+  assertMatch(html, /href="#latency-curve">See the performance curve/);
+  assertMatch(html, /Supported planning today/);
+  assertMatch(html, /560 RPS · 5,600 typical active users/);
+  assertMatch(html, /Retained performance signal/);
+  assertMatch(html, /1,680 RPS · 16,800 candidate typical active users/);
   assertMatch(html, /5,600/);
   assertMatch(html, /76\.4562/);
+  assertMatch(html, /16,800/);
+  assertMatch(html, /173\.2931/);
+  assertMatch(html, /548/);
   assertMatch(html, /Medium-tier 28-day organization query/);
   assertMatch(html, /239\.5325/);
   assertMatch(html, /8,064,000/);
   assertMatch(html, /lower bound rather than an absolute breakpoint/i);
-  assertMatch(html, /Each qualified realm adds another capacity unit/);
+  assertMatch(html, /Realm cells make the scale story legible/);
   assertMatch(html, /Does this prove Facebook scale/);
   assertMatch(html, /No—not yet/);
-  assertMatch(html, /Latency remains flat as traffic rises/);
+  assertMatch(html, /one-hour operating-rate qualification remains incomplete/);
   assertMatch(html, /high-traffic product journey/i);
-  assertMatch(html, /2,400 RPS traffic spike/);
+  assertMatch(html, /stopped after 37 minutes 40\.7 seconds/i);
+  assertMatch(html, /candidate, not a qualified production claim/i);
+  assertMatch(html, /Use the last fully published 800 RPS baseline/i);
+  assertMatch(html, /informational/);
+  assertMatch(html, /Keycloak/);
+  assertMatch(html, /Clerk/);
+  assertMatch(html, /Auth0/);
   assertMatch(html, /Not demonstrated/);
   assertEquals(html.match(/<h1\b/g)?.length, 1);
 
@@ -159,6 +177,24 @@ Deno.test("renders the reviewed single-realm capacity baseline", async () => {
   assertEquals(catalogue.programs[0].state, "active");
   assertEquals(
     catalogue.reports[0].results.find((result: { key: string }) =>
+      result.key === "sustainable_authenticated_rps"
+    ).value,
+    2400,
+  );
+  assertEquals(catalogue.reports[0].status, "informational");
+  assertEquals(
+    catalogue.reports[0].results.find((result: { key: string }) => result.key === "candidate_operating_rps")
+      .value,
+    1680,
+  );
+  assertEquals(
+    catalogue.reports[0].results.find((result: { key: string }) =>
+      result.key === "partial_soak_duration_seconds"
+    ).value,
+    2260.7,
+  );
+  assertEquals(
+    catalogue.reports[1].results.find((result: { key: string }) =>
       result.key === "sustainable_authenticated_rps"
     ).value,
     800,

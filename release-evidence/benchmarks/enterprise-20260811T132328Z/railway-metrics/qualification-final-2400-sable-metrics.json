@@ -1,0 +1,57 @@
+{
+  "cpu": {
+    "average": 0.47604058,
+    "current": 0.0,
+    "limit": 4.0,
+    "max": 0.8352498333333334,
+    "unit": "vCPU",
+    "utilization_pct": 0.0
+  },
+  "deployments": [
+    {
+      "created_at": "2026-08-11T12:50:54.662+00:00",
+      "id": "425c0fc6-9d98-4b7c-b2d2-74ad1fc083e3",
+      "status": "SUCCESS"
+    },
+    {
+      "created_at": "2026-08-11T12:50:28.365+00:00",
+      "id": "e85c8e69-ecb3-4890-9cb6-56fd2384e5d8",
+      "status": "REMOVED"
+    }
+  ],
+  "environment": "production",
+  "memory": {
+    "average_mb": 239.129853952,
+    "current_mb": 309.766127616,
+    "limit_mb": 4095.997902848,
+    "max_mb": 309.766127616,
+    "utilization_pct": 7.6
+  },
+  "public_network_traffic": {
+    "egress": {
+      "average_mb": 0.0,
+      "current_mb": 0.0,
+      "max_mb": 0.0
+    },
+    "ingress": {
+      "average_mb": 0.0,
+      "current_mb": 0.0,
+      "max_mb": 0.0
+    }
+  },
+  "service": "SableDB-fresh",
+  "volumes": [
+    {
+      "average_mb": 724.6113144832001,
+      "current_mb": 911.229321216,
+      "limit_mb": 50000.0,
+      "max_mb": 911.229321216,
+      "mount_path": "/var/lib/sabledb",
+      "name": "sabledb-fresh-volume"
+    }
+  ],
+  "window": {
+    "since": "2026-08-11T13:26:28+00:00",
+    "until": "2026-08-11T13:28:28+00:00"
+  }
+}

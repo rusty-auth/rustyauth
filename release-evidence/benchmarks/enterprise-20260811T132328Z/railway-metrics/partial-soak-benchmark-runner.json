@@ -1,0 +1,72 @@
+{
+  "cpu": {
+    "average": 1.5533766234234234,
+    "current": 1.8660218,
+    "limit": 4.0,
+    "max": 2.5063847999999997,
+    "unit": "vCPU",
+    "utilization_pct": 46.7
+  },
+  "deployments": [
+    {
+      "created_at": "2026-08-11T14:16:02.181+00:00",
+      "id": "f6204fb8-edd0-469a-9d6c-afdaa2f190f1",
+      "status": "BUILDING"
+    },
+    {
+      "created_at": "2026-08-11T12:51:49.593+00:00",
+      "id": "9ca438d1-f5dc-4bcc-8ad1-2e89cf8a8798",
+      "status": "REMOVED"
+    },
+    {
+      "created_at": "2026-08-11T10:41:39.911+00:00",
+      "id": "85eb7ef5-f35c-4266-81da-b1224813f709",
+      "status": "REMOVED"
+    },
+    {
+      "created_at": "2026-08-11T07:39:58.279+00:00",
+      "id": "664bb2ff-6d18-4a08-8ea2-2222b5b9274d",
+      "status": "REMOVED"
+    },
+    {
+      "created_at": "2026-08-10T22:05:22.991+00:00",
+      "id": "d5da7d02-3220-47b4-9ffa-8971c34e43ac",
+      "status": "REMOVED"
+    }
+  ],
+  "environment": "production",
+  "memory": {
+    "average_mb": 1572.5094112726483,
+    "current_mb": 2534.789873664,
+    "limit_mb": 4095.997902848,
+    "max_mb": 2534.789873664,
+    "utilization_pct": 61.9
+  },
+  "public_network_traffic": {
+    "egress": {
+      "average_mb": 14.69636345081081,
+      "current_mb": 16.764378112,
+      "max_mb": 19.8476032
+    },
+    "ingress": {
+      "average_mb": 43.647542479567576,
+      "current_mb": 50.601962496,
+      "max_mb": 59.473912832
+    }
+  },
+  "service": "benchmark-runner",
+  "volumes": [
+    {
+      "average_mb": 910.1221383195677,
+      "current_mb": 925.72483584,
+      "limit_mb": 50000.0,
+      "max_mb": 925.72483584,
+      "mount_path": "/data",
+      "name": "benchmark-runner-volume"
+    }
+  ],
+  "window": {
+    "since": "2026-08-11T13:36:08+00:00",
+    "until": "2026-08-11T14:12:49+00:00"
+  }
+}

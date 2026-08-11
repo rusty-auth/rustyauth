@@ -1,0 +1,12 @@
+{
+  "validatedSessions": 10000,
+  "refreshedSessions": 10000,
+  "activityBackedSessions": 7619,
+  "recreatedSessions": 0,
+  "prunedSessions": 0,
+  "refreshedAt": 1786455234,
+  "idleSeconds": 1800,
+  "absoluteSeconds": 86400,
+  "settleSeconds": 60,
+  "touchStaggerSeconds": 240
+}

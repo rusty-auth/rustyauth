@@ -1,0 +1,1054 @@
+
+         /\      Grafana   /‾‾/  
+    /\  /  \     |\  __   /  /   
+   /  \/    \    | |/ /  /   ‾‾\ 
+  /          \   |   (  |  (‾)  |
+ / __________ \  |_|\_\  \_____/ 
+
+     execution: local
+        script: /tmp/k6-consume/enterprise-realm.js
+        output: -
+
+     scenarios: (100.00%) 1 scenario, 3200 max VUs, 3m20s max duration (incl. graceful stop):
+              * qualification: 3200.00 iterations/s for 3m0s (maxVUs: 1600-3200, exec: enterpriseJourney, gracefulStop: 20s)
+
+time="2026-08-11T13:29:59Z" level=warning msg="Request Failed" error="stream error: stream ID 1; CANCEL; received from peer"
+time="2026-08-11T13:29:59Z" level=error msg="{\"durationMs\":57.404391,\"error\":\"http2: stream error with http2 ErrCode CANCEL\",\"errorCode\":1639,\"operation\":\"token\",\"status\":0}" source=console
+
+running (0m00.2s), 0333/1600 VUs, 10 complete and 0 interrupted iterations
+qualification   [   0% ] 0333/1600 VUs  0m00.2s/3m0s  3200.00 iters/s
+time="2026-08-11T13:29:59Z" level=warning msg="Request Failed" error="stream error: stream ID 1; CANCEL; received from peer"
+time="2026-08-11T13:29:59Z" level=error msg="{\"durationMs\":47.325441,\"error\":\"http2: stream error with http2 ErrCode CANCEL\",\"errorCode\":1639,\"operation\":\"token\",\"status\":0}" source=console
+
+running (0m01.2s), 1600/1601 VUs, 178 complete and 0 interrupted iterations
+qualification   [   1% ] 1600/1601 VUs  0m01.2s/3m0s  3200.00 iters/s
+time="2026-08-11T13:30:01Z" level=warning msg="Request Failed" error="stream error: stream ID 1; CANCEL; received from peer"
+time="2026-08-11T13:30:01Z" level=error msg="{\"durationMs\":507.417805,\"error\":\"http2: stream error with http2 ErrCode CANCEL\",\"errorCode\":1639,\"operation\":\"token\",\"status\":0}" source=console
+time="2026-08-11T13:30:01Z" level=warning msg="Request Failed" error="stream error: stream ID 3; CANCEL; received from peer"
+time="2026-08-11T13:30:01Z" level=error msg="{\"durationMs\":499.615469,\"error\":\"http2: stream error with http2 ErrCode CANCEL\",\"errorCode\":1639,\"operation\":\"token\",\"status\":0}" source=console
+time="2026-08-11T13:30:01Z" level=warning msg="Request Failed" error="stream error: stream ID 1; CANCEL; received from peer"
+time="2026-08-11T13:30:01Z" level=error msg="{\"durationMs\":95.627151,\"error\":\"http2: stream error with http2 ErrCode CANCEL\",\"errorCode\":1639,\"operation\":\"token\",\"status\":0}" source=console
+
+running (0m02.2s), 1372/1605 VUs, 1916 complete and 0 interrupted iterations
+qualification   [   1% ] 1372/1605 VUs  0m02.2s/3m0s  3200.00 iters/s
+
+running (0m03.2s), 0608/1609 VUs, 5286 complete and 0 interrupted iterations
+qualification   [   2% ] 0608/1609 VUs  0m03.2s/3m0s  3200.00 iters/s
+
+running (0m04.2s), 0399/1609 VUs, 8336 complete and 0 interrupted iterations
+qualification   [   2% ] 0399/1609 VUs  0m04.2s/3m0s  3200.00 iters/s
+time="2026-08-11T13:30:03Z" level=warning msg="Request Failed" error="stream error: stream ID 13; CANCEL; received from peer"
+time="2026-08-11T13:30:03Z" level=error msg="{\"durationMs\":92.412078,\"error\":\"http2: stream error with http2 ErrCode CANCEL\",\"errorCode\":1639,\"operation\":\"token\",\"status\":0}" source=console
+
+running (0m05.2s), 0932/1609 VUs, 11361 complete and 0 interrupted iterations
+qualification   [   3% ] 0932/1609 VUs  0m05.2s/3m0s  3200.00 iters/s
+
+running (0m06.2s), 1652/1664 VUs, 13050 complete and 0 interrupted iterations
+qualification   [   3% ] 1652/1664 VUs  0m06.2s/3m0s  3200.00 iters/s
+
+running (0m07.4s), 1699/1925 VUs, 15890 complete and 0 interrupted iterations
+qualification   [   4% ] 1699/1925 VUs  0m07.4s/3m0s  3200.00 iters/s
+
+running (0m08.2s), 1264/1925 VUs, 18946 complete and 0 interrupted iterations
+qualification   [   5% ] 1264/1925 VUs  0m08.2s/3m0s  3200.00 iters/s
+
+running (0m09.5s), 0902/1925 VUs, 23033 complete and 0 interrupted iterations
+qualification   [   5% ] 0902/1925 VUs  0m09.5s/3m0s  3200.00 iters/s
+time="2026-08-11T13:30:08Z" level=warning msg="Request Failed" error="stream error: stream ID 29; CANCEL; received from peer"
+time="2026-08-11T13:30:08Z" level=error msg="{\"durationMs\":15.076417,\"error\":\"http2: stream error with http2 ErrCode CANCEL\",\"errorCode\":1639,\"operation\":\"token\",\"status\":0}" source=console
+time="2026-08-11T13:30:08Z" level=warning msg="Request Failed" error="stream error: stream ID 29; CANCEL; received from peer"
+time="2026-08-11T13:30:08Z" level=error msg="{\"durationMs\":15.366113,\"error\":\"http2: stream error with http2 ErrCode CANCEL\",\"errorCode\":1639,\"operation\":\"token\",\"status\":0}" source=console
+
+running (0m10.2s), 0287/1925 VUs, 26326 complete and 0 interrupted iterations
+qualification   [   6% ] 0287/1925 VUs  0m10.2s/3m0s  3200.00 iters/s
+
+running (0m11.2s), 0389/1925 VUs, 29501 complete and 0 interrupted iterations
+qualification   [   6% ] 0389/1925 VUs  0m11.2s/3m0s  3200.00 iters/s
+time="2026-08-11T13:30:10Z" level=warning msg="Request Failed" error="stream error: stream ID 33; CANCEL; received from peer"
+time="2026-08-11T13:30:10Z" level=error msg="{\"durationMs\":25.643659,\"error\":\"http2: stream error with http2 ErrCode CANCEL\",\"errorCode\":1639,\"operation\":\"token\",\"status\":0}" source=console
+
+running (0m12.2s), 0576/1925 VUs, 32437 complete and 0 interrupted iterations
+qualification   [   7% ] 0576/1925 VUs  0m12.2s/3m0s  3200.00 iters/s
+
+running (0m13.2s), 0341/1925 VUs, 35953 complete and 0 interrupted iterations
+qualification   [   7% ] 0341/1925 VUs  0m13.2s/3m0s  3200.00 iters/s
+
+running (0m14.2s), 0331/1925 VUs, 39082 complete and 0 interrupted iterations
+qualification   [   8% ] 0331/1925 VUs  0m14.2s/3m0s  3200.00 iters/s
+time="2026-08-11T13:30:14Z" level=warning msg="Request Failed" error="stream error: stream ID 47; CANCEL; received from peer"
+time="2026-08-11T13:30:14Z" level=error msg="{\"durationMs\":0.666588,\"error\":\"http2: stream error with http2 ErrCode CANCEL\",\"errorCode\":1639,\"operation\":\"token\",\"status\":0}" source=console
+
+running (0m15.2s), 0398/1925 VUs, 42215 complete and 0 interrupted iterations
+qualification   [   8% ] 0398/1925 VUs  0m15.2s/3m0s  3200.00 iters/s
+
+running (0m16.2s), 0219/1925 VUs, 45594 complete and 0 interrupted iterations
+qualification   [   9% ] 0219/1925 VUs  0m16.2s/3m0s  3200.00 iters/s
+time="2026-08-11T13:30:15Z" level=warning msg="Request Failed" error="stream error: stream ID 53; CANCEL; received from peer"
+time="2026-08-11T13:30:15Z" level=error msg="{\"durationMs\":41.605562,\"error\":\"http2: stream error with http2 ErrCode CANCEL\",\"errorCode\":1639,\"operation\":\"token\",\"status\":0}" source=console
+
+running (0m17.2s), 0329/1925 VUs, 48686 complete and 0 interrupted iterations
+qualification   [  10% ] 0329/1925 VUs  0m17.2s/3m0s  3200.00 iters/s
+time="2026-08-11T13:30:17Z" level=warning msg="Request Failed" error="stream error: stream ID 61; CANCEL; received from peer"
+time="2026-08-11T13:30:17Z" level=error msg="{\"durationMs\":0.630822,\"error\":\"http2: stream error with http2 ErrCode CANCEL\",\"errorCode\":1639,\"operation\":\"token\",\"status\":0}" source=console
+
+running (0m18.2s), 0356/1925 VUs, 51926 complete and 0 interrupted iterations
+qualification   [  10% ] 0355/1925 VUs  0m18.2s/3m0s  3200.00 iters/s
+time="2026-08-11T13:30:17Z" level=warning msg="Request Failed" error="stream error: stream ID 59; CANCEL; received from peer"
+time="2026-08-11T13:30:17Z" level=error msg="{\"durationMs\":39.781492,\"error\":\"http2: stream error with http2 ErrCode CANCEL\",\"errorCode\":1639,\"operation\":\"token\",\"status\":0}" source=console
+time="2026-08-11T13:30:17Z" level=warning msg="Request Failed" error="stream error: stream ID 53; CANCEL; received from peer"
+time="2026-08-11T13:30:17Z" level=error msg="{\"durationMs\":45.211628,\"error\":\"http2: stream error with http2 ErrCode CANCEL\",\"errorCode\":1639,\"operation\":\"token\",\"status\":0}" source=console
+time="2026-08-11T13:30:17Z" level=warning msg="Request Failed" error="stream error: stream ID 57; CANCEL; received from peer"
+time="2026-08-11T13:30:17Z" level=error msg="{\"durationMs\":39.943915,\"error\":\"http2: stream error with http2 ErrCode CANCEL\",\"errorCode\":1639,\"operation\":\"token\",\"status\":0}" source=console
+time="2026-08-11T13:30:17Z" level=warning msg="Request Failed" error="stream error: stream ID 59; CANCEL; received from peer"
+time="2026-08-11T13:30:17Z" level=error msg="{\"durationMs\":43.942098,\"error\":\"http2: stream error with http2 ErrCode CANCEL\",\"errorCode\":1639,\"operation\":\"token\",\"status\":0}" source=console
+
+running (0m19.2s), 0462/1925 VUs, 54951 complete and 0 interrupted iterations
+qualification   [  11% ] 0462/1925 VUs  0m19.2s/3m0s  3200.00 iters/s
+
+running (0m20.2s), 0415/1925 VUs, 58263 complete and 0 interrupted iterations
+qualification   [  11% ] 0415/1925 VUs  0m20.2s/3m0s  3200.00 iters/s
+time="2026-08-11T13:30:19Z" level=warning msg="Request Failed" error="stream error: stream ID 63; CANCEL; received from peer"
+time="2026-08-11T13:30:19Z" level=error msg="{\"durationMs\":57.344526,\"error\":\"http2: stream error with http2 ErrCode CANCEL\",\"errorCode\":1639,\"operation\":\"token\",\"status\":0}" source=console
+
+running (0m21.2s), 0150/1925 VUs, 61661 complete and 0 interrupted iterations
+qualification   [  12% ] 0150/1925 VUs  0m21.2s/3m0s  3200.00 iters/s
+
+running (0m22.2s), 0564/1925 VUs, 64515 complete and 0 interrupted iterations
+qualification   [  12% ] 0564/1925 VUs  0m22.2s/3m0s  3200.00 iters/s
+time="2026-08-11T13:30:21Z" level=warning msg="Request Failed" error="stream error: stream ID 73; CANCEL; received from peer"
+time="2026-08-11T13:30:21Z" level=error msg="{\"durationMs\":98.53306,\"error\":\"http2: stream error with http2 ErrCode CANCEL\",\"errorCode\":1639,\"operation\":\"token\",\"status\":0}" source=console
+
+running (0m23.2s), 0320/1925 VUs, 67892 complete and 0 interrupted iterations
+qualification   [  13% ] 0320/1925 VUs  0m23.2s/3m0s  3200.00 iters/s
+
+running (0m24.2s), 0472/1925 VUs, 70918 complete and 0 interrupted iterations
+qualification   [  13% ] 0472/1925 VUs  0m24.2s/3m0s  3200.00 iters/s
+
+running (0m25.2s), 0188/1925 VUs, 74425 complete and 0 interrupted iterations
+qualification   [  14% ] 0188/1925 VUs  0m25.2s/3m0s  3200.00 iters/s
+
+running (0m26.2s), 0254/1925 VUs, 77560 complete and 0 interrupted iterations
+qualification   [  15% ] 0254/1925 VUs  0m26.2s/3m0s  3200.00 iters/s
+
+running (0m27.2s), 0264/1925 VUs, 80751 complete and 0 interrupted iterations
+qualification   [  15% ] 0265/1925 VUs  0m27.2s/3m0s  3200.00 iters/s
+time="2026-08-11T13:30:26Z" level=warning msg="Request Failed" error="stream error: stream ID 71; CANCEL; received from peer"
+time="2026-08-11T13:30:26Z" level=error msg="{\"durationMs\":88.895021,\"error\":\"http2: stream error with http2 ErrCode CANCEL\",\"errorCode\":1639,\"operation\":\"token\",\"status\":0}" source=console
+
+running (0m28.2s), 0359/1925 VUs, 83855 complete and 0 interrupted iterations
+qualification   [  16% ] 0359/1925 VUs  0m28.2s/3m0s  3200.00 iters/s
+
+running (0m29.2s), 0189/1925 VUs, 87224 complete and 0 interrupted iterations
+qualification   [  16% ] 0189/1925 VUs  0m29.2s/3m0s  3200.00 iters/s
+
+running (0m30.2s), 0175/1925 VUs, 90438 complete and 0 interrupted iterations
+qualification   [  17% ] 0175/1925 VUs  0m30.2s/3m0s  3200.00 iters/s
+
+running (0m31.2s), 0670/1925 VUs, 93105 complete and 0 interrupted iterations
+qualification   [  17% ] 0670/1925 VUs  0m31.2s/3m0s  3200.00 iters/s
+
+running (0m32.2s), 0327/1925 VUs, 96688 complete and 0 interrupted iterations
+qualification   [  18% ] 0327/1925 VUs  0m32.2s/3m0s  3200.00 iters/s
+
+running (0m33.2s), 0208/1925 VUs, 100005 complete and 0 interrupted iterations
+qualification   [  18% ] 0208/1925 VUs  0m33.2s/3m0s  3200.00 iters/s
+
+running (0m34.2s), 0366/1925 VUs, 103047 complete and 0 interrupted iterations
+qualification   [  19% ] 0366/1925 VUs  0m34.2s/3m0s  3200.00 iters/s
+
+running (0m35.2s), 0362/1925 VUs, 106251 complete and 0 interrupted iterations
+qualification   [  20% ] 0362/1925 VUs  0m35.2s/3m0s  3200.00 iters/s
+
+running (0m36.2s), 1052/1925 VUs, 108761 complete and 0 interrupted iterations
+qualification   [  20% ] 1052/1925 VUs  0m36.2s/3m0s  3200.00 iters/s
+time="2026-08-11T13:30:36Z" level=warning msg="Request Failed" error="stream error: stream ID 119; CANCEL; received from peer"
+time="2026-08-11T13:30:36Z" level=error msg="{\"durationMs\":96.093621,\"error\":\"http2: stream error with http2 ErrCode CANCEL\",\"errorCode\":1639,\"operation\":\"token\",\"status\":0}" source=console
+
+running (0m37.3s), 0374/1925 VUs, 112753 complete and 0 interrupted iterations
+qualification   [  21% ] 0374/1925 VUs  0m37.3s/3m0s  3200.00 iters/s
+
+running (0m38.2s), 0198/1925 VUs, 116015 complete and 0 interrupted iterations
+qualification   [  21% ] 0198/1925 VUs  0m38.2s/3m0s  3200.00 iters/s
+
+running (0m39.2s), 0528/1925 VUs, 118823 complete and 0 interrupted iterations
+qualification   [  22% ] 0531/1925 VUs  0m39.2s/3m0s  3200.00 iters/s
+
+running (0m40.2s), 0205/1925 VUs, 122410 complete and 0 interrupted iterations
+qualification   [  22% ] 0205/1925 VUs  0m40.2s/3m0s  3200.00 iters/s
+time="2026-08-11T13:30:40Z" level=warning msg="Request Failed" error="stream error: stream ID 137; CANCEL; received from peer"
+time="2026-08-11T13:30:40Z" level=error msg="{\"durationMs\":64.542286,\"error\":\"http2: stream error with http2 ErrCode CANCEL\",\"errorCode\":1639,\"operation\":\"token\",\"status\":0}" source=console
+
+running (0m41.2s), 0777/1925 VUs, 125037 complete and 0 interrupted iterations
+qualification   [  23% ] 0777/1925 VUs  0m41.2s/3m0s  3200.00 iters/s
+
+running (0m42.2s), 0206/1925 VUs, 128807 complete and 0 interrupted iterations
+qualification   [  23% ] 0206/1925 VUs  0m42.2s/3m0s  3200.00 iters/s
+time="2026-08-11T13:30:41Z" level=warning msg="Request Failed" error="stream error: stream ID 137; CANCEL; received from peer"
+time="2026-08-11T13:30:41Z" level=error msg="{\"durationMs\":49.765213,\"error\":\"http2: stream error with http2 ErrCode CANCEL\",\"errorCode\":1639,\"operation\":\"token\",\"status\":0}" source=console
+time="2026-08-11T13:30:41Z" level=warning msg="Request Failed" error="stream error: stream ID 135; CANCEL; received from peer"
+time="2026-08-11T13:30:41Z" level=error msg="{\"durationMs\":0.189492,\"error\":\"http2: stream error with http2 ErrCode CANCEL\",\"errorCode\":1639,\"operation\":\"token\",\"status\":0}" source=console
+time="2026-08-11T13:30:41Z" level=warning msg="Request Failed" error="stream error: stream ID 117; CANCEL; received from peer"
+time="2026-08-11T13:30:41Z" level=error msg="{\"durationMs\":43.997776,\"error\":\"http2: stream error with http2 ErrCode CANCEL\",\"errorCode\":1639,\"operation\":\"token\",\"status\":0}" source=console
+time="2026-08-11T13:30:41Z" level=warning msg="Request Failed" error="stream error: stream ID 141; CANCEL; received from peer"
+time="2026-08-11T13:30:41Z" level=warning msg="Request Failed" error="stream error: stream ID 141; CANCEL; received from peer"
+time="2026-08-11T13:30:41Z" level=error msg="{\"durationMs\":43.908802,\"error\":\"http2: stream error with http2 ErrCode CANCEL\",\"errorCode\":1639,\"operation\":\"token\",\"status\":0}" source=console
+time="2026-08-11T13:30:41Z" level=error msg="{\"durationMs\":44.903872,\"error\":\"http2: stream error with http2 ErrCode CANCEL\",\"errorCode\":1639,\"operation\":\"token\",\"status\":0}" source=console
+
+running (0m43.2s), 0150/1925 VUs, 132062 complete and 0 interrupted iterations
+qualification   [  24% ] 0150/1925 VUs  0m43.2s/3m0s  3200.00 iters/s
+
+running (0m44.2s), 0298/1925 VUs, 135117 complete and 0 interrupted iterations
+qualification   [  25% ] 0298/1925 VUs  0m44.2s/3m0s  3200.00 iters/s
+time="2026-08-11T13:30:43Z" level=warning msg="Request Failed" error="stream error: stream ID 149; CANCEL; received from peer"
+time="2026-08-11T13:30:43Z" level=error msg="{\"durationMs\":31.05197,\"error\":\"http2: stream error with http2 ErrCode CANCEL\",\"errorCode\":1639,\"operation\":\"token\",\"status\":0}" source=console
+time="2026-08-11T13:30:43Z" level=warning msg="Request Failed" error="stream error: stream ID 131; CANCEL; received from peer"
+time="2026-08-11T13:30:43Z" level=error msg="{\"durationMs\":52.29769,\"error\":\"http2: stream error with http2 ErrCode CANCEL\",\"errorCode\":1639,\"operation\":\"token\",\"status\":0}" source=console
+
+running (0m45.2s), 0187/1925 VUs, 138426 complete and 0 interrupted iterations
+qualification   [  25% ] 0187/1925 VUs  0m45.2s/3m0s  3200.00 iters/s
+
+running (0m46.2s), 0360/1925 VUs, 141453 complete and 0 interrupted iterations
+qualification   [  26% ] 0360/1925 VUs  0m46.2s/3m0s  3200.00 iters/s
+time="2026-08-11T13:30:45Z" level=warning msg="Request Failed" error="stream error: stream ID 149; CANCEL; received from peer"
+time="2026-08-11T13:30:45Z" level=error msg="{\"durationMs\":87.403903,\"error\":\"http2: stream error with http2 ErrCode CANCEL\",\"errorCode\":1639,\"operation\":\"token\",\"status\":0}" source=console
+time="2026-08-11T13:30:45Z" level=warning msg="Request Failed" error="stream error: stream ID 151; CANCEL; received from peer"
+time="2026-08-11T13:30:45Z" level=error msg="{\"durationMs\":54.646684,\"error\":\"http2: stream error with http2 ErrCode CANCEL\",\"errorCode\":1639,\"operation\":\"token\",\"status\":0}" source=console
+time="2026-08-11T13:30:45Z" level=warning msg="Request Failed" error="stream error: stream ID 151; CANCEL; received from peer"
+time="2026-08-11T13:30:45Z" level=error msg="{\"durationMs\":0.664768,\"error\":\"http2: stream error with http2 ErrCode CANCEL\",\"errorCode\":1639,\"operation\":\"token\",\"status\":0}" source=console
+
+running (0m47.2s), 0322/1925 VUs, 144693 complete and 0 interrupted iterations
+qualification   [  26% ] 0322/1925 VUs  0m47.2s/3m0s  3200.00 iters/s
+
+running (0m48.2s), 0262/1925 VUs, 147952 complete and 0 interrupted iterations
+qualification   [  27% ] 0262/1925 VUs  0m48.2s/3m0s  3200.00 iters/s
+time="2026-08-11T13:30:47Z" level=warning msg="Request Failed" error="stream error: stream ID 159; CANCEL; received from peer"
+time="2026-08-11T13:30:47Z" level=error msg="{\"durationMs\":46.506701,\"error\":\"http2: stream error with http2 ErrCode CANCEL\",\"errorCode\":1639,\"operation\":\"token\",\"status\":0}" source=console
+time="2026-08-11T13:30:47Z" level=warning msg="Request Failed" error="stream error: stream ID 161; CANCEL; received from peer"
+time="2026-08-11T13:30:47Z" level=error msg="{\"durationMs\":90.737503,\"error\":\"http2: stream error with http2 ErrCode CANCEL\",\"errorCode\":1639,\"operation\":\"token\",\"status\":0}" source=console
+time="2026-08-11T13:30:47Z" level=warning msg="Request Failed" error="stream error: stream ID 157; CANCEL; received from peer"
+time="2026-08-11T13:30:47Z" level=error msg="{\"durationMs\":48.64427,\"error\":\"http2: stream error with http2 ErrCode CANCEL\",\"errorCode\":1639,\"operation\":\"token\",\"status\":0}" source=console
+time="2026-08-11T13:30:47Z" level=warning msg="Request Failed" error="stream error: stream ID 159; CANCEL; received from peer"
+time="2026-08-11T13:30:47Z" level=error msg="{\"durationMs\":1.918011,\"error\":\"http2: stream error with http2 ErrCode CANCEL\",\"errorCode\":1639,\"operation\":\"token\",\"status\":0}" source=console
+
+running (0m49.2s), 0222/1925 VUs, 151191 complete and 0 interrupted iterations
+qualification   [  27% ] 0222/1925 VUs  0m49.2s/3m0s  3200.00 iters/s
+
+running (0m50.2s), 0186/1925 VUs, 154429 complete and 0 interrupted iterations
+qualification   [  28% ] 0186/1925 VUs  0m50.2s/3m0s  3200.00 iters/s
+time="2026-08-11T13:30:49Z" level=warning msg="Request Failed" error="stream error: stream ID 161; CANCEL; received from peer"
+time="2026-08-11T13:30:49Z" level=error msg="{\"durationMs\":0.829761,\"error\":\"http2: stream error with http2 ErrCode CANCEL\",\"errorCode\":1639,\"operation\":\"token\",\"status\":0}" source=console
+time="2026-08-11T13:30:49Z" level=warning msg="Request Failed" error="stream error: stream ID 163; CANCEL; received from peer"
+time="2026-08-11T13:30:49Z" level=error msg="{\"durationMs\":55.708207,\"error\":\"http2: stream error with http2 ErrCode CANCEL\",\"errorCode\":1639,\"operation\":\"token\",\"status\":0}" source=console
+
+running (0m51.2s), 0190/1925 VUs, 157623 complete and 0 interrupted iterations
+qualification   [  28% ] 0190/1925 VUs  0m51.2s/3m0s  3200.00 iters/s
+
+running (0m52.2s), 0219/1925 VUs, 160862 complete and 0 interrupted iterations
+qualification   [  29% ] 0219/1925 VUs  0m52.2s/3m0s  3200.00 iters/s
+time="2026-08-11T13:30:51Z" level=warning msg="Request Failed" error="stream error: stream ID 173; CANCEL; received from peer"
+time="2026-08-11T13:30:51Z" level=error msg="{\"durationMs\":43.374033,\"error\":\"http2: stream error with http2 ErrCode CANCEL\",\"errorCode\":1639,\"operation\":\"token\",\"status\":0}" source=console
+time="2026-08-11T13:30:51Z" level=warning msg="Request Failed" error="stream error: stream ID 171; CANCEL; received from peer"
+time="2026-08-11T13:30:51Z" level=error msg="{\"durationMs\":39.734564,\"error\":\"http2: stream error with http2 ErrCode CANCEL\",\"errorCode\":1639,\"operation\":\"token\",\"status\":0}" source=console
+time="2026-08-11T13:30:51Z" level=warning msg="Request Failed" error="stream error: stream ID 147; CANCEL; received from peer"
+time="2026-08-11T13:30:51Z" level=error msg="{\"durationMs\":2.369145,\"error\":\"http2: stream error with http2 ErrCode CANCEL\",\"errorCode\":1639,\"operation\":\"token\",\"status\":0}" source=console
+
+running (0m53.2s), 0390/1925 VUs, 163823 complete and 0 interrupted iterations
+qualification   [  30% ] 0390/1925 VUs  0m53.2s/3m0s  3200.00 iters/s
+
+running (0m54.2s), 0460/1925 VUs, 167029 complete and 0 interrupted iterations
+qualification   [  30% ] 0460/1925 VUs  0m54.2s/3m0s  3200.00 iters/s
+
+running (0m55.2s), 0142/1925 VUs, 170476 complete and 0 interrupted iterations
+qualification   [  31% ] 0142/1925 VUs  0m55.2s/3m0s  3200.00 iters/s
+
+running (0m56.2s), 0372/1925 VUs, 173426 complete and 0 interrupted iterations
+qualification   [  31% ] 0372/1925 VUs  0m56.2s/3m0s  3200.00 iters/s
+
+running (0m57.2s), 0179/1925 VUs, 176834 complete and 0 interrupted iterations
+qualification   [  32% ] 0179/1925 VUs  0m57.2s/3m0s  3200.00 iters/s
+
+running (0m58.2s), 0300/1925 VUs, 179998 complete and 0 interrupted iterations
+qualification   [  32% ] 0300/1925 VUs  0m58.2s/3m0s  3200.00 iters/s
+time="2026-08-11T13:30:57Z" level=warning msg="Request Failed" error="stream error: stream ID 195; CANCEL; received from peer"
+time="2026-08-11T13:30:57Z" level=error msg="{\"durationMs\":43.629917,\"error\":\"http2: stream error with http2 ErrCode CANCEL\",\"errorCode\":1639,\"operation\":\"token\",\"status\":0}" source=console
+time="2026-08-11T13:30:57Z" level=warning msg="Request Failed" error="stream error: stream ID 195; CANCEL; received from peer"
+time="2026-08-11T13:30:57Z" level=error msg="{\"durationMs\":43.409019,\"error\":\"http2: stream error with http2 ErrCode CANCEL\",\"errorCode\":1639,\"operation\":\"token\",\"status\":0}" source=console
+
+running (0m59.2s), 0542/1925 VUs, 182874 complete and 0 interrupted iterations
+qualification   [  33% ] 0542/1925 VUs  0m59.2s/3m0s  3200.00 iters/s
+time="2026-08-11T13:30:59Z" level=warning msg="Request Failed" error="stream error: stream ID 193; CANCEL; received from peer"
+time="2026-08-11T13:30:59Z" level=error msg="{\"durationMs\":0.146059,\"error\":\"http2: stream error with http2 ErrCode CANCEL\",\"errorCode\":1639,\"operation\":\"token\",\"status\":0}" source=console
+
+running (1m00.3s), 0771/1925 VUs, 185987 complete and 0 interrupted iterations
+qualification   [  33% ] 0771/1925 VUs  1m00.3s/3m0s  3200.00 iters/s
+time="2026-08-11T13:30:59Z" level=warning msg="Request Failed" error="stream error: stream ID 195; CANCEL; received from peer"
+time="2026-08-11T13:30:59Z" level=error msg="{\"durationMs\":41.118047,\"error\":\"http2: stream error with http2 ErrCode CANCEL\",\"errorCode\":1639,\"operation\":\"token\",\"status\":0}" source=console
+
+running (1m01.2s), 0278/1925 VUs, 189574 complete and 0 interrupted iterations
+qualification   [  34% ] 0278/1925 VUs  1m01.2s/3m0s  3200.00 iters/s
+
+running (1m02.2s), 1038/1925 VUs, 192051 complete and 0 interrupted iterations
+qualification   [  35% ] 1038/1925 VUs  1m02.2s/3m0s  3200.00 iters/s
+
+running (1m03.2s), 0222/1925 VUs, 195991 complete and 0 interrupted iterations
+qualification   [  35% ] 0222/1925 VUs  1m03.2s/3m0s  3200.00 iters/s
+time="2026-08-11T13:31:02Z" level=warning msg="Request Failed" error="stream error: stream ID 201; CANCEL; received from peer"
+time="2026-08-11T13:31:02Z" level=error msg="{\"durationMs\":1.516446,\"error\":\"http2: stream error with http2 ErrCode CANCEL\",\"errorCode\":1639,\"operation\":\"token\",\"status\":0}" source=console
+time="2026-08-11T13:31:03Z" level=warning msg="Request Failed" error="stream error: stream ID 205; CANCEL; received from peer"
+time="2026-08-11T13:31:03Z" level=error msg="{\"durationMs\":57.618622,\"error\":\"http2: stream error with http2 ErrCode CANCEL\",\"errorCode\":1639,\"operation\":\"token\",\"status\":0}" source=console
+time="2026-08-11T13:31:03Z" level=warning msg="Request Failed" error="stream error: stream ID 209; CANCEL; received from peer"
+time="2026-08-11T13:31:03Z" level=error msg="{\"durationMs\":55.630583,\"error\":\"http2: stream error with http2 ErrCode CANCEL\",\"errorCode\":1639,\"operation\":\"token\",\"status\":0}" source=console
+time="2026-08-11T13:31:03Z" level=warning msg="Request Failed" error="stream error: stream ID 211; CANCEL; received from peer"
+time="2026-08-11T13:31:03Z" level=error msg="{\"durationMs\":59.141469,\"error\":\"http2: stream error with http2 ErrCode CANCEL\",\"errorCode\":1639,\"operation\":\"token\",\"status\":0}" source=console
+
+running (1m04.2s), 0168/1925 VUs, 199245 complete and 0 interrupted iterations
+qualification   [  36% ] 0168/1925 VUs  1m04.2s/3m0s  3200.00 iters/s
+
+running (1m05.2s), 0340/1925 VUs, 202274 complete and 0 interrupted iterations
+qualification   [  36% ] 0340/1925 VUs  1m05.2s/3m0s  3200.00 iters/s
+time="2026-08-11T13:31:04Z" level=warning msg="Request Failed" error="stream error: stream ID 215; CANCEL; received from peer"
+time="2026-08-11T13:31:04Z" level=error msg="{\"durationMs\":88.904746,\"error\":\"http2: stream error with http2 ErrCode CANCEL\",\"errorCode\":1639,\"operation\":\"token\",\"status\":0}" source=console
+time="2026-08-11T13:31:05Z" level=warning msg="Request Failed" error="stream error: stream ID 197; CANCEL; received from peer"
+time="2026-08-11T13:31:05Z" level=error msg="{\"durationMs\":32.463139,\"error\":\"http2: stream error with http2 ErrCode CANCEL\",\"errorCode\":1639,\"operation\":\"token\",\"status\":0}" source=console
+
+running (1m06.2s), 0142/1925 VUs, 205671 complete and 0 interrupted iterations
+qualification   [  37% ] 0142/1925 VUs  1m06.2s/3m0s  3200.00 iters/s
+time="2026-08-11T13:31:06Z" level=warning msg="Request Failed" error="stream error: stream ID 219; CANCEL; received from peer"
+time="2026-08-11T13:31:06Z" level=error msg="{\"durationMs\":47.919823,\"error\":\"http2: stream error with http2 ErrCode CANCEL\",\"errorCode\":1639,\"operation\":\"token\",\"status\":0}" source=console
+time="2026-08-11T13:31:06Z" level=warning msg="Request Failed" error="stream error: stream ID 219; CANCEL; received from peer"
+time="2026-08-11T13:31:06Z" level=error msg="{\"durationMs\":53.160496,\"error\":\"http2: stream error with http2 ErrCode CANCEL\",\"errorCode\":1639,\"operation\":\"token\",\"status\":0}" source=console
+time="2026-08-11T13:31:06Z" level=warning msg="Request Failed" error="stream error: stream ID 219; CANCEL; received from peer"
+time="2026-08-11T13:31:06Z" level=error msg="{\"durationMs\":42.978262,\"error\":\"http2: stream error with http2 ErrCode CANCEL\",\"errorCode\":1639,\"operation\":\"token\",\"status\":0}" source=console
+
+running (1m07.2s), 0908/1925 VUs, 208184 complete and 0 interrupted iterations
+qualification   [  37% ] 0908/1925 VUs  1m07.2s/3m0s  3200.00 iters/s
+time="2026-08-11T13:31:06Z" level=warning msg="Request Failed" error="stream error: stream ID 219; CANCEL; received from peer"
+time="2026-08-11T13:31:06Z" level=error msg="{\"durationMs\":39.201593,\"error\":\"http2: stream error with http2 ErrCode CANCEL\",\"errorCode\":1639,\"operation\":\"token\",\"status\":0}" source=console
+time="2026-08-11T13:31:06Z" level=warning msg="Request Failed" error="stream error: stream ID 221; CANCEL; received from peer"
+time="2026-08-11T13:31:06Z" level=error msg="{\"durationMs\":35.781572,\"error\":\"http2: stream error with http2 ErrCode CANCEL\",\"errorCode\":1639,\"operation\":\"token\",\"status\":0}" source=console
+
+running (1m08.2s), 0367/1930 VUs, 211841 complete and 0 interrupted iterations
+qualification   [  38% ] 0367/1930 VUs  1m08.2s/3m0s  3200.00 iters/s
+time="2026-08-11T13:31:08Z" level=warning msg="Request Failed" error="stream error: stream ID 225; CANCEL; received from peer"
+time="2026-08-11T13:31:08Z" level=error msg="{\"durationMs\":79.691928,\"error\":\"http2: stream error with http2 ErrCode CANCEL\",\"errorCode\":1639,\"operation\":\"token\",\"status\":0}" source=console
+time="2026-08-11T13:31:08Z" level=warning msg="Request Failed" error="stream error: stream ID 223; CANCEL; received from peer"
+time="2026-08-11T13:31:08Z" level=error msg="{\"durationMs\":2.906066,\"error\":\"http2: stream error with http2 ErrCode CANCEL\",\"errorCode\":1639,\"operation\":\"token\",\"status\":0}" source=console
+
+running (1m09.2s), 1135/1930 VUs, 214232 complete and 0 interrupted iterations
+qualification   [  38% ] 1135/1930 VUs  1m09.2s/3m0s  3200.00 iters/s
+
+running (1m10.2s), 0446/1930 VUs, 218163 complete and 0 interrupted iterations
+qualification   [  39% ] 0446/1930 VUs  1m10.2s/3m0s  3200.00 iters/s
+time="2026-08-11T13:31:10Z" level=warning msg="Request Failed" error="stream error: stream ID 229; CANCEL; received from peer"
+time="2026-08-11T13:31:10Z" level=error msg="{\"durationMs\":54.590193,\"error\":\"http2: stream error with http2 ErrCode CANCEL\",\"errorCode\":1639,\"operation\":\"token\",\"status\":0}" source=console
+
+running (1m11.2s), 0222/1930 VUs, 221586 complete and 0 interrupted iterations
+qualification   [  40% ] 0222/1930 VUs  1m11.2s/3m0s  3200.00 iters/s
+
+running (1m12.2s), 0155/1930 VUs, 224853 complete and 0 interrupted iterations
+qualification   [  40% ] 0155/1930 VUs  1m12.2s/3m0s  3200.00 iters/s
+time="2026-08-11T13:31:11Z" level=warning msg="Request Failed" error="stream error: stream ID 233; CANCEL; received from peer"
+time="2026-08-11T13:31:11Z" level=error msg="{\"durationMs\":42.90774,\"error\":\"http2: stream error with http2 ErrCode CANCEL\",\"errorCode\":1639,\"operation\":\"token\",\"status\":0}" source=console
+time="2026-08-11T13:31:11Z" level=warning msg="Request Failed" error="stream error: stream ID 243; CANCEL; received from peer"
+time="2026-08-11T13:31:11Z" level=error msg="{\"durationMs\":43.274806,\"error\":\"http2: stream error with http2 ErrCode CANCEL\",\"errorCode\":1639,\"operation\":\"token\",\"status\":0}" source=console
+time="2026-08-11T13:31:11Z" level=warning msg="Request Failed" error="stream error: stream ID 221; CANCEL; received from peer"
+time="2026-08-11T13:31:11Z" level=error msg="{\"durationMs\":44.599432,\"error\":\"http2: stream error with http2 ErrCode CANCEL\",\"errorCode\":1639,\"operation\":\"token\",\"status\":0}" source=console
+time="2026-08-11T13:31:11Z" level=warning msg="Request Failed" error="stream error: stream ID 237; CANCEL; received from peer"
+time="2026-08-11T13:31:11Z" level=error msg="{\"durationMs\":44.05917,\"error\":\"http2: stream error with http2 ErrCode CANCEL\",\"errorCode\":1639,\"operation\":\"token\",\"status\":0}" source=console
+time="2026-08-11T13:31:11Z" level=warning msg="Request Failed" error="stream error: stream ID 241; CANCEL; received from peer"
+time="2026-08-11T13:31:11Z" level=error msg="{\"durationMs\":46.411813,\"error\":\"http2: stream error with http2 ErrCode CANCEL\",\"errorCode\":1639,\"operation\":\"token\",\"status\":0}" source=console
+time="2026-08-11T13:31:11Z" level=warning msg="Request Failed" error="stream error: stream ID 217; CANCEL; received from peer"
+time="2026-08-11T13:31:11Z" level=error msg="{\"durationMs\":50.369974,\"error\":\"http2: stream error with http2 ErrCode CANCEL\",\"errorCode\":1639,\"operation\":\"token\",\"status\":0}" source=console
+
+running (1m13.2s), 0196/1930 VUs, 228012 complete and 0 interrupted iterations
+qualification   [  41% ] 0196/1930 VUs  1m13.2s/3m0s  3200.00 iters/s
+time="2026-08-11T13:31:13Z" level=warning msg="Request Failed" error="stream error: stream ID 237; CANCEL; received from peer"
+time="2026-08-11T13:31:13Z" level=warning msg="Request Failed" error="stream error: stream ID 245; CANCEL; received from peer"
+time="2026-08-11T13:31:13Z" level=error msg="{\"durationMs\":44.999645,\"error\":\"http2: stream error with http2 ErrCode CANCEL\",\"errorCode\":1639,\"operation\":\"token\",\"status\":0}" source=console
+time="2026-08-11T13:31:13Z" level=error msg="{\"durationMs\":46.947599,\"error\":\"http2: stream error with http2 ErrCode CANCEL\",\"errorCode\":1639,\"operation\":\"token\",\"status\":0}" source=console
+
+running (1m14.2s), 0693/1930 VUs, 230807 complete and 0 interrupted iterations
+qualification   [  41% ] 0694/1930 VUs  1m14.2s/3m0s  3200.00 iters/s
+time="2026-08-11T13:31:13Z" level=warning msg="Request Failed" error="stream error: stream ID 247; CANCEL; received from peer"
+time="2026-08-11T13:31:13Z" level=error msg="{\"durationMs\":43.977401,\"error\":\"http2: stream error with http2 ErrCode CANCEL\",\"errorCode\":1639,\"operation\":\"token\",\"status\":0}" source=console
+time="2026-08-11T13:31:13Z" level=warning msg="Request Failed" error="stream error: stream ID 227; CANCEL; received from peer"
+time="2026-08-11T13:31:13Z" level=error msg="{\"durationMs\":0.150587,\"error\":\"http2: stream error with http2 ErrCode CANCEL\",\"errorCode\":1639,\"operation\":\"token\",\"status\":0}" source=console
+
+running (1m15.2s), 0176/1933 VUs, 234430 complete and 0 interrupted iterations
+qualification   [  42% ] 0176/1933 VUs  1m15.2s/3m0s  3200.00 iters/s
+time="2026-08-11T13:31:15Z" level=warning msg="Request Failed" error="stream error: stream ID 251; CANCEL; received from peer"
+time="2026-08-11T13:31:15Z" level=error msg="{\"durationMs\":45.456398,\"error\":\"http2: stream error with http2 ErrCode CANCEL\",\"errorCode\":1639,\"operation\":\"token\",\"status\":0}" source=console
+
+running (1m16.2s), 0674/1933 VUs, 237202 complete and 0 interrupted iterations
+qualification   [  42% ] 0674/1933 VUs  1m16.2s/3m0s  3200.00 iters/s
+
+running (1m17.2s), 0175/1933 VUs, 240830 complete and 0 interrupted iterations
+qualification   [  43% ] 0175/1933 VUs  1m17.2s/3m0s  3200.00 iters/s
+time="2026-08-11T13:31:16Z" level=warning msg="Request Failed" error="stream error: stream ID 261; CANCEL; received from peer"
+time="2026-08-11T13:31:16Z" level=error msg="{\"durationMs\":80.712521,\"error\":\"http2: stream error with http2 ErrCode CANCEL\",\"errorCode\":1639,\"operation\":\"token\",\"status\":0}" source=console
+time="2026-08-11T13:31:16Z" level=warning msg="Request Failed" error="stream error: stream ID 251; CANCEL; received from peer"
+time="2026-08-11T13:31:16Z" level=error msg="{\"durationMs\":46.022487,\"error\":\"http2: stream error with http2 ErrCode CANCEL\",\"errorCode\":1639,\"operation\":\"token\",\"status\":0}" source=console
+time="2026-08-11T13:31:16Z" level=warning msg="Request Failed" error="stream error: stream ID 253; CANCEL; received from peer"
+time="2026-08-11T13:31:16Z" level=error msg="{\"durationMs\":47.568306,\"error\":\"http2: stream error with http2 ErrCode CANCEL\",\"errorCode\":1639,\"operation\":\"token\",\"status\":0}" source=console
+time="2026-08-11T13:31:17Z" level=warning msg="Request Failed" error="stream error: stream ID 237; CANCEL; received from peer"
+time="2026-08-11T13:31:17Z" level=error msg="{\"durationMs\":2.671265,\"error\":\"http2: stream error with http2 ErrCode CANCEL\",\"errorCode\":1639,\"operation\":\"token\",\"status\":0}" source=console
+time="2026-08-11T13:31:17Z" level=warning msg="Request Failed" error="stream error: stream ID 259; CANCEL; received from peer"
+time="2026-08-11T13:31:17Z" level=error msg="{\"durationMs\":43.430465,\"error\":\"http2: stream error with http2 ErrCode CANCEL\",\"errorCode\":1639,\"operation\":\"token\",\"status\":0}" source=console
+time="2026-08-11T13:31:17Z" level=warning msg="Request Failed" error="stream error: stream ID 251; CANCEL; received from peer"
+time="2026-08-11T13:31:17Z" level=error msg="{\"durationMs\":43.999332,\"error\":\"http2: stream error with http2 ErrCode CANCEL\",\"errorCode\":1639,\"operation\":\"token\",\"status\":0}" source=console
+time="2026-08-11T13:31:17Z" level=warning msg="Request Failed" error="stream error: stream ID 249; CANCEL; received from peer"
+time="2026-08-11T13:31:17Z" level=error msg="{\"durationMs\":48.735951,\"error\":\"http2: stream error with http2 ErrCode CANCEL\",\"errorCode\":1639,\"operation\":\"token\",\"status\":0}" source=console
+time="2026-08-11T13:31:17Z" level=warning msg="Request Failed" error="stream error: stream ID 259; CANCEL; received from peer"
+time="2026-08-11T13:31:17Z" level=warning msg="Request Failed" error="stream error: stream ID 257; CANCEL; received from peer"
+time="2026-08-11T13:31:17Z" level=error msg="{\"durationMs\":40.328331,\"error\":\"http2: stream error with http2 ErrCode CANCEL\",\"errorCode\":1639,\"operation\":\"token\",\"status\":0}" source=console
+time="2026-08-11T13:31:17Z" level=error msg="{\"durationMs\":1.750592,\"error\":\"http2: stream error with http2 ErrCode CANCEL\",\"errorCode\":1639,\"operation\":\"token\",\"status\":0}" source=console
+
+running (1m18.2s), 0189/1933 VUs, 244015 complete and 0 interrupted iterations
+qualification   [  43% ] 0189/1933 VUs  1m18.2s/3m0s  3200.00 iters/s
+
+running (1m19.2s), 0206/1933 VUs, 247200 complete and 0 interrupted iterations
+qualification   [  44% ] 0206/1933 VUs  1m19.2s/3m0s  3200.00 iters/s
+
+running (1m20.2s), 0295/1933 VUs, 250309 complete and 0 interrupted iterations
+qualification   [  45% ] 0295/1933 VUs  1m20.2s/3m0s  3200.00 iters/s
+
+running (1m21.2s), 1058/1933 VUs, 252821 complete and 0 interrupted iterations
+qualification   [  45% ] 1058/1933 VUs  1m21.2s/3m0s  3200.00 iters/s
+time="2026-08-11T13:31:20Z" level=warning msg="Request Failed" error="stream error: stream ID 249; CANCEL; received from peer"
+time="2026-08-11T13:31:20Z" level=error msg="{\"durationMs\":47.967237,\"error\":\"http2: stream error with http2 ErrCode CANCEL\",\"errorCode\":1639,\"operation\":\"token\",\"status\":0}" source=console
+
+running (1m22.2s), 0172/1934 VUs, 256832 complete and 0 interrupted iterations
+qualification   [  46% ] 0172/1934 VUs  1m22.2s/3m0s  3200.00 iters/s
+time="2026-08-11T13:31:22Z" level=warning msg="Request Failed" error="stream error: stream ID 277; CANCEL; received from peer"
+time="2026-08-11T13:31:22Z" level=error msg="{\"durationMs\":62.837014,\"error\":\"http2: stream error with http2 ErrCode CANCEL\",\"errorCode\":1639,\"operation\":\"token\",\"status\":0}" source=console
+time="2026-08-11T13:31:22Z" level=warning msg="Request Failed" error="stream error: stream ID 269; CANCEL; received from peer"
+time="2026-08-11T13:31:22Z" level=error msg="{\"durationMs\":114.430939,\"error\":\"http2: stream error with http2 ErrCode CANCEL\",\"errorCode\":1639,\"operation\":\"token\",\"status\":0}" source=console
+time="2026-08-11T13:31:22Z" level=warning msg="Request Failed" error="stream error: stream ID 263; CANCEL; received from peer"
+time="2026-08-11T13:31:22Z" level=error msg="{\"durationMs\":3.845922,\"error\":\"http2: stream error with http2 ErrCode CANCEL\",\"errorCode\":1639,\"operation\":\"token\",\"status\":0}" source=console
+
+running (1m23.2s), 0414/1934 VUs, 259790 complete and 0 interrupted iterations
+qualification   [  46% ] 0414/1934 VUs  1m23.2s/3m0s  3200.00 iters/s
+
+running (1m24.2s), 0250/1934 VUs, 263156 complete and 0 interrupted iterations
+qualification   [  47% ] 0250/1934 VUs  1m24.2s/3m0s  3200.00 iters/s
+time="2026-08-11T13:31:23Z" level=warning msg="Request Failed" error="stream error: stream ID 271; CANCEL; received from peer"
+time="2026-08-11T13:31:23Z" level=error msg="{\"durationMs\":43.279657,\"error\":\"http2: stream error with http2 ErrCode CANCEL\",\"errorCode\":1639,\"operation\":\"token\",\"status\":0}" source=console
+time="2026-08-11T13:31:23Z" level=warning msg="Request Failed" error="stream error: stream ID 275; CANCEL; received from peer"
+time="2026-08-11T13:31:23Z" level=error msg="{\"durationMs\":43.235015,\"error\":\"http2: stream error with http2 ErrCode CANCEL\",\"errorCode\":1639,\"operation\":\"token\",\"status\":0}" source=console
+time="2026-08-11T13:31:23Z" level=warning msg="Request Failed" error="stream error: stream ID 275; CANCEL; received from peer"
+time="2026-08-11T13:31:23Z" level=error msg="{\"durationMs\":42.887422,\"error\":\"http2: stream error with http2 ErrCode CANCEL\",\"errorCode\":1639,\"operation\":\"token\",\"status\":0}" source=console
+
+running (1m25.2s), 0220/1934 VUs, 266384 complete and 0 interrupted iterations
+qualification   [  47% ] 0220/1934 VUs  1m25.2s/3m0s  3200.00 iters/s
+
+running (1m26.2s), 0835/1934 VUs, 269040 complete and 0 interrupted iterations
+qualification   [  48% ] 0835/1934 VUs  1m26.2s/3m0s  3200.00 iters/s
+time="2026-08-11T13:31:25Z" level=warning msg="Request Failed" error="stream error: stream ID 285; CANCEL; received from peer"
+time="2026-08-11T13:31:25Z" level=error msg="{\"durationMs\":6.327243,\"error\":\"http2: stream error with http2 ErrCode CANCEL\",\"errorCode\":1639,\"operation\":\"token\",\"status\":0}" source=console
+time="2026-08-11T13:31:25Z" level=warning msg="Request Failed" error="stream error: stream ID 265; CANCEL; received from peer"
+time="2026-08-11T13:31:25Z" level=error msg="{\"durationMs\":42.710051,\"error\":\"http2: stream error with http2 ErrCode CANCEL\",\"errorCode\":1639,\"operation\":\"token\",\"status\":0}" source=console
+time="2026-08-11T13:31:25Z" level=warning msg="Request Failed" error="stream error: stream ID 281; CANCEL; received from peer"
+time="2026-08-11T13:31:25Z" level=error msg="{\"durationMs\":110.370424,\"error\":\"http2: stream error with http2 ErrCode CANCEL\",\"errorCode\":1639,\"operation\":\"token\",\"status\":0}" source=console
+
+running (1m27.2s), 0622/1934 VUs, 272382 complete and 0 interrupted iterations
+qualification   [  48% ] 0622/1934 VUs  1m27.2s/3m0s  3200.00 iters/s
+
+running (1m28.2s), 1864/1934 VUs, 274227 complete and 0 interrupted iterations
+qualification   [  49% ] 1864/1934 VUs  1m28.2s/3m0s  3200.00 iters/s
+
+running (1m29.2s), 1707/1943 VUs, 277573 complete and 0 interrupted iterations
+qualification   [  50% ] 1707/1943 VUs  1m29.2s/3m0s  3200.00 iters/s
+time="2026-08-11T13:31:28Z" level=warning msg="Request Failed" error="stream error: stream ID 295; CANCEL; received from peer"
+time="2026-08-11T13:31:28Z" level=error msg="{\"durationMs\":90.675654,\"error\":\"http2: stream error with http2 ErrCode CANCEL\",\"errorCode\":1639,\"operation\":\"token\",\"status\":0}" source=console
+
+running (1m30.2s), 1404/1965 VUs, 281058 complete and 0 interrupted iterations
+qualification   [  50% ] 1404/1965 VUs  1m30.2s/3m0s  3200.00 iters/s
+
+running (1m31.2s), 0515/1965 VUs, 285148 complete and 0 interrupted iterations
+qualification   [  51% ] 0515/1965 VUs  1m31.2s/3m0s  3200.00 iters/s
+time="2026-08-11T13:31:30Z" level=warning msg="Request Failed" error="stream error: stream ID 299; CANCEL; received from peer"
+time="2026-08-11T13:31:30Z" level=error msg="{\"durationMs\":52.66307,\"error\":\"http2: stream error with http2 ErrCode CANCEL\",\"errorCode\":1639,\"operation\":\"token\",\"status\":0}" source=console
+time="2026-08-11T13:31:30Z" level=warning msg="Request Failed" error="stream error: stream ID 297; CANCEL; received from peer"
+time="2026-08-11T13:31:30Z" level=error msg="{\"durationMs\":90.545442,\"error\":\"http2: stream error with http2 ErrCode CANCEL\",\"errorCode\":1639,\"operation\":\"token\",\"status\":0}" source=console
+time="2026-08-11T13:31:30Z" level=warning msg="Request Failed" error="stream error: stream ID 295; CANCEL; received from peer"
+time="2026-08-11T13:31:30Z" level=error msg="{\"durationMs\":56.932153,\"error\":\"http2: stream error with http2 ErrCode CANCEL\",\"errorCode\":1639,\"operation\":\"token\",\"status\":0}" source=console
+
+running (1m32.2s), 0633/1965 VUs, 288224 complete and 0 interrupted iterations
+qualification   [  51% ] 0633/1965 VUs  1m32.2s/3m0s  3200.00 iters/s
+
+running (1m33.2s), 0393/1965 VUs, 291601 complete and 0 interrupted iterations
+qualification   [  52% ] 0393/1965 VUs  1m33.2s/3m0s  3200.00 iters/s
+time="2026-08-11T13:31:32Z" level=warning msg="Request Failed" error="stream error: stream ID 307; CANCEL; received from peer"
+time="2026-08-11T13:31:32Z" level=error msg="{\"durationMs\":87.45603,\"error\":\"http2: stream error with http2 ErrCode CANCEL\",\"errorCode\":1639,\"operation\":\"token\",\"status\":0}" source=console
+time="2026-08-11T13:31:32Z" level=warning msg="Request Failed" error="stream error: stream ID 311; CANCEL; received from peer"
+time="2026-08-11T13:31:32Z" level=error msg="{\"durationMs\":42.579712,\"error\":\"http2: stream error with http2 ErrCode CANCEL\",\"errorCode\":1639,\"operation\":\"token\",\"status\":0}" source=console
+time="2026-08-11T13:31:32Z" level=warning msg="Request Failed" error="stream error: stream ID 285; CANCEL; received from peer"
+time="2026-08-11T13:31:32Z" level=error msg="{\"durationMs\":46.645288,\"error\":\"http2: stream error with http2 ErrCode CANCEL\",\"errorCode\":1639,\"operation\":\"token\",\"status\":0}" source=console
+time="2026-08-11T13:31:32Z" level=warning msg="Request Failed" error="stream error: stream ID 311; CANCEL; received from peer"
+time="2026-08-11T13:31:32Z" level=error msg="{\"durationMs\":46.66715,\"error\":\"http2: stream error with http2 ErrCode CANCEL\",\"errorCode\":1639,\"operation\":\"token\",\"status\":0}" source=console
+
+running (1m34.2s), 0230/1965 VUs, 295027 complete and 0 interrupted iterations
+qualification   [  52% ] 0230/1965 VUs  1m34.2s/3m0s  3200.00 iters/s
+time="2026-08-11T13:31:34Z" level=warning msg="Request Failed" error="stream error: stream ID 307; CANCEL; received from peer"
+time="2026-08-11T13:31:34Z" level=error msg="{\"durationMs\":57.37955,\"error\":\"http2: stream error with http2 ErrCode CANCEL\",\"errorCode\":1639,\"operation\":\"token\",\"status\":0}" source=console
+
+running (1m35.2s), 0797/1965 VUs, 297673 complete and 0 interrupted iterations
+qualification   [  53% ] 0798/1965 VUs  1m35.2s/3m0s  3200.00 iters/s
+
+running (1m36.2s), 0181/1965 VUs, 301476 complete and 0 interrupted iterations
+qualification   [  53% ] 0181/1965 VUs  1m36.2s/3m0s  3200.00 iters/s
+time="2026-08-11T13:31:36Z" level=warning msg="Request Failed" error="stream error: stream ID 319; CANCEL; received from peer"
+time="2026-08-11T13:31:36Z" level=error msg="{\"durationMs\":2.989108,\"error\":\"http2: stream error with http2 ErrCode CANCEL\",\"errorCode\":1639,\"operation\":\"token\",\"status\":0}" source=console
+time="2026-08-11T13:31:36Z" level=warning msg="Request Failed" error="stream error: stream ID 309; CANCEL; received from peer"
+time="2026-08-11T13:31:36Z" level=error msg="{\"durationMs\":82.019357,\"error\":\"http2: stream error with http2 ErrCode CANCEL\",\"errorCode\":1639,\"operation\":\"token\",\"status\":0}" source=console
+time="2026-08-11T13:31:36Z" level=warning msg="Request Failed" error="stream error: stream ID 321; CANCEL; received from peer"
+time="2026-08-11T13:31:36Z" level=error msg="{\"durationMs\":49.941938,\"error\":\"http2: stream error with http2 ErrCode CANCEL\",\"errorCode\":1639,\"operation\":\"token\",\"status\":0}" source=console
+time="2026-08-11T13:31:36Z" level=warning msg="Request Failed" error="stream error: stream ID 319; CANCEL; received from peer"
+time="2026-08-11T13:31:36Z" level=error msg="{\"durationMs\":62.227228,\"error\":\"http2: stream error with http2 ErrCode CANCEL\",\"errorCode\":1639,\"operation\":\"token\",\"status\":0}" source=console
+
+running (1m37.2s), 1390/1965 VUs, 303469 complete and 0 interrupted iterations
+qualification   [  54% ] 1390/1965 VUs  1m37.2s/3m0s  3200.00 iters/s
+
+running (1m38.2s), 0278/1965 VUs, 307777 complete and 0 interrupted iterations
+qualification   [  55% ] 0278/1965 VUs  1m38.2s/3m0s  3200.00 iters/s
+time="2026-08-11T13:31:37Z" level=warning msg="Request Failed" error="stream error: stream ID 327; CANCEL; received from peer"
+time="2026-08-11T13:31:37Z" level=error msg="{\"durationMs\":56.779997,\"error\":\"http2: stream error with http2 ErrCode CANCEL\",\"errorCode\":1639,\"operation\":\"token\",\"status\":0}" source=console
+time="2026-08-11T13:31:37Z" level=warning msg="Request Failed" error="stream error: stream ID 319; CANCEL; received from peer"
+time="2026-08-11T13:31:37Z" level=error msg="{\"durationMs\":63.18074,\"error\":\"http2: stream error with http2 ErrCode CANCEL\",\"errorCode\":1639,\"operation\":\"token\",\"status\":0}" source=console
+time="2026-08-11T13:31:37Z" level=warning msg="Request Failed" error="stream error: stream ID 311; CANCEL; received from peer"
+time="2026-08-11T13:31:37Z" level=error msg="{\"durationMs\":54.301451,\"error\":\"http2: stream error with http2 ErrCode CANCEL\",\"errorCode\":1639,\"operation\":\"token\",\"status\":0}" source=console
+time="2026-08-11T13:31:38Z" level=warning msg="Request Failed" error="stream error: stream ID 327; CANCEL; received from peer"
+time="2026-08-11T13:31:38Z" level=error msg="{\"durationMs\":100.987612,\"error\":\"http2: stream error with http2 ErrCode CANCEL\",\"errorCode\":1639,\"operation\":\"token\",\"status\":0}" source=console
+time="2026-08-11T13:31:38Z" level=warning msg="Request Failed" error="stream error: stream ID 307; CANCEL; received from peer"
+time="2026-08-11T13:31:38Z" level=error msg="{\"durationMs\":89.508252,\"error\":\"http2: stream error with http2 ErrCode CANCEL\",\"errorCode\":1639,\"operation\":\"token\",\"status\":0}" source=console
+time="2026-08-11T13:31:38Z" level=warning msg="Request Failed" error="stream error: stream ID 329; CANCEL; received from peer"
+time="2026-08-11T13:31:38Z" level=error msg="{\"durationMs\":62.465952,\"error\":\"http2: stream error with http2 ErrCode CANCEL\",\"errorCode\":1639,\"operation\":\"token\",\"status\":0}" source=console
+
+running (1m39.2s), 0299/1965 VUs, 310958 complete and 0 interrupted iterations
+qualification   [  55% ] 0299/1965 VUs  1m39.2s/3m0s  3200.00 iters/s
+
+running (1m40.2s), 0314/1965 VUs, 314143 complete and 0 interrupted iterations
+qualification   [  56% ] 0314/1965 VUs  1m40.2s/3m0s  3200.00 iters/s
+time="2026-08-11T13:31:39Z" level=warning msg="Request Failed" error="stream error: stream ID 331; CANCEL; received from peer"
+time="2026-08-11T13:31:39Z" level=error msg="{\"durationMs\":93.381502,\"error\":\"http2: stream error with http2 ErrCode CANCEL\",\"errorCode\":1639,\"operation\":\"token\",\"status\":0}" source=console
+time="2026-08-11T13:31:39Z" level=warning msg="Request Failed" error="stream error: stream ID 327; CANCEL; received from peer"
+time="2026-08-11T13:31:39Z" level=error msg="{\"durationMs\":3.181738,\"error\":\"http2: stream error with http2 ErrCode CANCEL\",\"errorCode\":1639,\"operation\":\"token\",\"status\":0}" source=console
+time="2026-08-11T13:31:40Z" level=warning msg="Request Failed" error="stream error: stream ID 333; CANCEL; received from peer"
+time="2026-08-11T13:31:40Z" level=error msg="{\"durationMs\":99.725187,\"error\":\"http2: stream error with http2 ErrCode CANCEL\",\"errorCode\":1639,\"operation\":\"token\",\"status\":0}" source=console
+
+running (1m41.2s), 0598/1965 VUs, 317059 complete and 0 interrupted iterations
+qualification   [  56% ] 0598/1965 VUs  1m41.2s/3m0s  3200.00 iters/s
+
+running (1m42.2s), 0512/1965 VUs, 320338 complete and 0 interrupted iterations
+qualification   [  57% ] 0512/1965 VUs  1m42.2s/3m0s  3200.00 iters/s
+
+running (1m43.2s), 0450/1965 VUs, 323607 complete and 0 interrupted iterations
+qualification   [  57% ] 0450/1965 VUs  1m43.2s/3m0s  3200.00 iters/s
+
+running (1m44.3s), 1195/1965 VUs, 326323 complete and 0 interrupted iterations
+qualification   [  58% ] 1195/1965 VUs  1m44.3s/3m0s  3200.00 iters/s
+
+running (1m45.2s), 0197/1975 VUs, 330250 complete and 0 interrupted iterations
+qualification   [  58% ] 0197/1975 VUs  1m45.2s/3m0s  3200.00 iters/s
+
+running (1m46.2s), 0881/1975 VUs, 332757 complete and 0 interrupted iterations
+qualification   [  59% ] 0881/1975 VUs  1m46.2s/3m0s  3200.00 iters/s
+
+running (1m47.2s), 0383/1975 VUs, 336465 complete and 0 interrupted iterations
+qualification   [  60% ] 0383/1975 VUs  1m47.2s/3m0s  3200.00 iters/s
+time="2026-08-11T13:31:47Z" level=warning msg="Request Failed" error="stream error: stream ID 351; CANCEL; received from peer"
+time="2026-08-11T13:31:47Z" level=error msg="{\"durationMs\":99.128561,\"error\":\"http2: stream error with http2 ErrCode CANCEL\",\"errorCode\":1639,\"operation\":\"token\",\"status\":0}" source=console
+time="2026-08-11T13:31:47Z" level=warning msg="Request Failed" error="stream error: stream ID 355; CANCEL; received from peer"
+time="2026-08-11T13:31:47Z" level=error msg="{\"durationMs\":45.457224,\"error\":\"http2: stream error with http2 ErrCode CANCEL\",\"errorCode\":1639,\"operation\":\"token\",\"status\":0}" source=console
+
+running (1m48.2s), 0327/1975 VUs, 339721 complete and 0 interrupted iterations
+qualification   [  60% ] 0327/1975 VUs  1m48.2s/3m0s  3200.00 iters/s
+
+running (1m49.2s), 0253/1975 VUs, 342994 complete and 0 interrupted iterations
+qualification   [  61% ] 0253/1975 VUs  1m49.2s/3m0s  3200.00 iters/s
+
+running (1m50.2s), 0300/1975 VUs, 346147 complete and 0 interrupted iterations
+qualification   [  61% ] 0300/1975 VUs  1m50.2s/3m0s  3200.00 iters/s
+
+running (1m51.2s), 0220/1975 VUs, 349427 complete and 0 interrupted iterations
+qualification   [  62% ] 0220/1975 VUs  1m51.2s/3m0s  3200.00 iters/s
+time="2026-08-11T13:31:50Z" level=warning msg="Request Failed" error="stream error: stream ID 357; CANCEL; received from peer"
+time="2026-08-11T13:31:50Z" level=error msg="{\"durationMs\":42.917144,\"error\":\"http2: stream error with http2 ErrCode CANCEL\",\"errorCode\":1639,\"operation\":\"token\",\"status\":0}" source=console
+time="2026-08-11T13:31:50Z" level=warning msg="Request Failed" error="stream error: stream ID 365; CANCEL; received from peer"
+time="2026-08-11T13:31:50Z" level=error msg="{\"durationMs\":47.922964,\"error\":\"http2: stream error with http2 ErrCode CANCEL\",\"errorCode\":1639,\"operation\":\"token\",\"status\":0}" source=console
+
+running (1m52.2s), 0221/1975 VUs, 352627 complete and 0 interrupted iterations
+qualification   [  62% ] 0221/1975 VUs  1m52.2s/3m0s  3200.00 iters/s
+
+running (1m53.2s), 0543/1975 VUs, 355504 complete and 0 interrupted iterations
+qualification   [  63% ] 0543/1975 VUs  1m53.2s/3m0s  3200.00 iters/s
+time="2026-08-11T13:31:52Z" level=warning msg="Request Failed" error="stream error: stream ID 357; CANCEL; received from peer"
+time="2026-08-11T13:31:52Z" level=error msg="{\"durationMs\":41.366189,\"error\":\"http2: stream error with http2 ErrCode CANCEL\",\"errorCode\":1639,\"operation\":\"token\",\"status\":0}" source=console
+time="2026-08-11T13:31:52Z" level=warning msg="Request Failed" error="stream error: stream ID 369; CANCEL; received from peer"
+time="2026-08-11T13:31:52Z" level=error msg="{\"durationMs\":55.767344,\"error\":\"http2: stream error with http2 ErrCode CANCEL\",\"errorCode\":1639,\"operation\":\"token\",\"status\":0}" source=console
+
+running (1m54.2s), 0277/1977 VUs, 358968 complete and 0 interrupted iterations
+qualification   [  63% ] 0277/1977 VUs  1m54.2s/3m0s  3200.00 iters/s
+
+running (1m55.2s), 0296/1977 VUs, 362212 complete and 0 interrupted iterations
+qualification   [  64% ] 0296/1977 VUs  1m55.2s/3m0s  3200.00 iters/s
+time="2026-08-11T13:31:54Z" level=warning msg="Request Failed" error="stream error: stream ID 379; CANCEL; received from peer"
+time="2026-08-11T13:31:54Z" level=error msg="{\"durationMs\":0.331862,\"error\":\"http2: stream error with http2 ErrCode CANCEL\",\"errorCode\":1639,\"operation\":\"token\",\"status\":0}" source=console
+
+running (1m56.2s), 0200/1977 VUs, 365443 complete and 0 interrupted iterations
+qualification   [  65% ] 0200/1977 VUs  1m56.2s/3m0s  3200.00 iters/s
+time="2026-08-11T13:31:56Z" level=warning msg="Request Failed" error="stream error: stream ID 383; CANCEL; received from peer"
+time="2026-08-11T13:31:56Z" level=error msg="{\"durationMs\":92.014144,\"error\":\"http2: stream error with http2 ErrCode CANCEL\",\"errorCode\":1639,\"operation\":\"token\",\"status\":0}" source=console
+time="2026-08-11T13:31:56Z" level=warning msg="Request Failed" error="stream error: stream ID 385; CANCEL; received from peer"
+time="2026-08-11T13:31:56Z" level=error msg="{\"durationMs\":93.513924,\"error\":\"http2: stream error with http2 ErrCode CANCEL\",\"errorCode\":1639,\"operation\":\"token\",\"status\":0}" source=console
+time="2026-08-11T13:31:56Z" level=warning msg="Request Failed" error="stream error: stream ID 383; CANCEL; received from peer"
+time="2026-08-11T13:31:56Z" level=error msg="{\"durationMs\":0.069668,\"error\":\"http2: stream error with http2 ErrCode CANCEL\",\"errorCode\":1639,\"operation\":\"token\",\"status\":0}" source=console
+
+running (1m57.2s), 0590/1977 VUs, 368227 complete and 0 interrupted iterations
+qualification   [  65% ] 0590/1977 VUs  1m57.2s/3m0s  3200.00 iters/s
+
+running (1m58.2s), 0554/1977 VUs, 371491 complete and 0 interrupted iterations
+qualification   [  66% ] 0554/1977 VUs  1m58.2s/3m0s  3200.00 iters/s
+
+running (1m59.2s), 0393/1977 VUs, 374852 complete and 0 interrupted iterations
+qualification   [  66% ] 0393/1977 VUs  1m59.2s/3m0s  3200.00 iters/s
+
+running (2m00.2s), 0341/1977 VUs, 378104 complete and 0 interrupted iterations
+qualification   [  67% ] 0341/1977 VUs  2m00.2s/3m0s  3200.00 iters/s
+
+running (2m01.2s), 0391/1977 VUs, 381252 complete and 0 interrupted iterations
+qualification   [  67% ] 0391/1977 VUs  2m01.2s/3m0s  3200.00 iters/s
+
+running (2m02.2s), 0272/1977 VUs, 384647 complete and 0 interrupted iterations
+qualification   [  68% ] 0272/1977 VUs  2m02.2s/3m0s  3200.00 iters/s
+
+running (2m03.2s), 0397/1977 VUs, 387650 complete and 0 interrupted iterations
+qualification   [  68% ] 0397/1977 VUs  2m03.2s/3m0s  3200.00 iters/s
+time="2026-08-11T13:32:03Z" level=warning msg="Request Failed" error="stream error: stream ID 389; CANCEL; received from peer"
+time="2026-08-11T13:32:03Z" level=error msg="{\"durationMs\":39.710703,\"error\":\"http2: stream error with http2 ErrCode CANCEL\",\"errorCode\":1639,\"operation\":\"token\",\"status\":0}" source=console
+time="2026-08-11T13:32:03Z" level=warning msg="Request Failed" error="stream error: stream ID 405; CANCEL; received from peer"
+time="2026-08-11T13:32:03Z" level=error msg="{\"durationMs\":49.782823,\"error\":\"http2: stream error with http2 ErrCode CANCEL\",\"errorCode\":1639,\"operation\":\"token\",\"status\":0}" source=console
+
+running (2m04.2s), 0778/1977 VUs, 390562 complete and 0 interrupted iterations
+qualification   [  69% ] 0778/1977 VUs  2m04.2s/3m0s  3200.00 iters/s
+
+running (2m05.2s), 0131/1977 VUs, 394314 complete and 0 interrupted iterations
+qualification   [  70% ] 0131/1977 VUs  2m05.2s/3m0s  3200.00 iters/s
+time="2026-08-11T13:32:05Z" level=warning msg="Request Failed" error="stream error: stream ID 393; CANCEL; received from peer"
+time="2026-08-11T13:32:05Z" level=error msg="{\"durationMs\":47.234095,\"error\":\"http2: stream error with http2 ErrCode CANCEL\",\"errorCode\":1639,\"operation\":\"token\",\"status\":0}" source=console
+
+running (2m06.2s), 0559/1977 VUs, 397029 complete and 0 interrupted iterations
+qualification   [  70% ] 0559/1977 VUs  2m06.2s/3m0s  3200.00 iters/s
+
+running (2m07.2s), 0133/1977 VUs, 400712 complete and 0 interrupted iterations
+qualification   [  71% ] 0133/1977 VUs  2m07.2s/3m0s  3200.00 iters/s
+time="2026-08-11T13:32:06Z" level=warning msg="Request Failed" error="stream error: stream ID 421; CANCEL; received from peer"
+time="2026-08-11T13:32:06Z" level=error msg="{\"durationMs\":55.627495,\"error\":\"http2: stream error with http2 ErrCode CANCEL\",\"errorCode\":1639,\"operation\":\"token\",\"status\":0}" source=console
+time="2026-08-11T13:32:06Z" level=warning msg="Request Failed" error="stream error: stream ID 421; CANCEL; received from peer"
+time="2026-08-11T13:32:06Z" level=error msg="{\"durationMs\":57.485092,\"error\":\"http2: stream error with http2 ErrCode CANCEL\",\"errorCode\":1639,\"operation\":\"token\",\"status\":0}" source=console
+
+running (2m08.2s), 0415/1977 VUs, 403630 complete and 0 interrupted iterations
+qualification   [  71% ] 0415/1977 VUs  2m08.2s/3m0s  3200.00 iters/s
+
+running (2m09.2s), 0179/1977 VUs, 407067 complete and 0 interrupted iterations
+qualification   [  72% ] 0180/1977 VUs  2m09.2s/3m0s  3200.00 iters/s
+time="2026-08-11T13:32:08Z" level=warning msg="Request Failed" error="stream error: stream ID 427; CANCEL; received from peer"
+time="2026-08-11T13:32:08Z" level=error msg="{\"durationMs\":45.352109,\"error\":\"http2: stream error with http2 ErrCode CANCEL\",\"errorCode\":1639,\"operation\":\"token\",\"status\":0}" source=console
+
+running (2m10.2s), 0152/1977 VUs, 410294 complete and 0 interrupted iterations
+qualification   [  72% ] 0152/1977 VUs  2m10.2s/3m0s  3200.00 iters/s
+
+running (2m11.2s), 0355/1977 VUs, 413375 complete and 0 interrupted iterations
+qualification   [  73% ] 0355/1977 VUs  2m11.2s/3m0s  3200.00 iters/s
+time="2026-08-11T13:32:10Z" level=warning msg="Request Failed" error="stream error: stream ID 429; CANCEL; received from peer"
+time="2026-08-11T13:32:10Z" level=error msg="{\"durationMs\":52.982536,\"error\":\"http2: stream error with http2 ErrCode CANCEL\",\"errorCode\":1639,\"operation\":\"token\",\"status\":0}" source=console
+time="2026-08-11T13:32:10Z" level=warning msg="Request Failed" error="stream error: stream ID 431; CANCEL; received from peer"
+time="2026-08-11T13:32:10Z" level=error msg="{\"durationMs\":45.485933,\"error\":\"http2: stream error with http2 ErrCode CANCEL\",\"errorCode\":1639,\"operation\":\"token\",\"status\":0}" source=console
+time="2026-08-11T13:32:10Z" level=warning msg="Request Failed" error="stream error: stream ID 433; CANCEL; received from peer"
+time="2026-08-11T13:32:10Z" level=error msg="{\"durationMs\":48.28684,\"error\":\"http2: stream error with http2 ErrCode CANCEL\",\"errorCode\":1639,\"operation\":\"token\",\"status\":0}" source=console
+
+running (2m12.2s), 0162/1977 VUs, 416683 complete and 0 interrupted iterations
+qualification   [  73% ] 0162/1977 VUs  2m12.2s/3m0s  3200.00 iters/s
+
+running (2m13.2s), 0460/1977 VUs, 419647 complete and 0 interrupted iterations
+qualification   [  74% ] 0460/1977 VUs  2m13.2s/3m0s  3200.00 iters/s
+time="2026-08-11T13:32:12Z" level=warning msg="Request Failed" error="stream error: stream ID 437; CANCEL; received from peer"
+time="2026-08-11T13:32:12Z" level=error msg="{\"durationMs\":0.917857,\"error\":\"http2: stream error with http2 ErrCode CANCEL\",\"errorCode\":1639,\"operation\":\"token\",\"status\":0}" source=console
+time="2026-08-11T13:32:12Z" level=warning msg="Request Failed" error="stream error: stream ID 439; CANCEL; received from peer"
+time="2026-08-11T13:32:12Z" level=error msg="{\"durationMs\":86.076047,\"error\":\"http2: stream error with http2 ErrCode CANCEL\",\"errorCode\":1639,\"operation\":\"token\",\"status\":0}" source=console
+time="2026-08-11T13:32:13Z" level=warning msg="Request Failed" error="stream error: stream ID 433; CANCEL; received from peer"
+time="2026-08-11T13:32:13Z" level=error msg="{\"durationMs\":40.969555,\"error\":\"http2: stream error with http2 ErrCode CANCEL\",\"errorCode\":1639,\"operation\":\"token\",\"status\":0}" source=console
+
+running (2m14.2s), 0388/1977 VUs, 422857 complete and 0 interrupted iterations
+qualification   [  75% ] 0388/1977 VUs  2m14.2s/3m0s  3200.00 iters/s
+
+running (2m15.2s), 0374/1977 VUs, 426140 complete and 0 interrupted iterations
+qualification   [  75% ] 0374/1977 VUs  2m15.2s/3m0s  3200.00 iters/s
+time="2026-08-11T13:32:14Z" level=warning msg="Request Failed" error="stream error: stream ID 447; CANCEL; received from peer"
+time="2026-08-11T13:32:14Z" level=error msg="{\"durationMs\":42.044355,\"error\":\"http2: stream error with http2 ErrCode CANCEL\",\"errorCode\":1639,\"operation\":\"token\",\"status\":0}" source=console
+time="2026-08-11T13:32:14Z" level=warning msg="Request Failed" error="stream error: stream ID 443; CANCEL; received from peer"
+time="2026-08-11T13:32:14Z" level=warning msg="Request Failed" error="stream error: stream ID 449; CANCEL; received from peer"
+time="2026-08-11T13:32:14Z" level=error msg="{\"durationMs\":39.912053,\"error\":\"http2: stream error with http2 ErrCode CANCEL\",\"errorCode\":1639,\"operation\":\"token\",\"status\":0}" source=console
+time="2026-08-11T13:32:14Z" level=error msg="{\"durationMs\":51.938877,\"error\":\"http2: stream error with http2 ErrCode CANCEL\",\"errorCode\":1639,\"operation\":\"token\",\"status\":0}" source=console
+time="2026-08-11T13:32:14Z" level=warning msg="Request Failed" error="stream error: stream ID 445; CANCEL; received from peer"
+time="2026-08-11T13:32:14Z" level=error msg="{\"durationMs\":2.648834,\"error\":\"http2: stream error with http2 ErrCode CANCEL\",\"errorCode\":1639,\"operation\":\"token\",\"status\":0}" source=console
+time="2026-08-11T13:32:14Z" level=warning msg="Request Failed" error="stream error: stream ID 431; CANCEL; received from peer"
+time="2026-08-11T13:32:14Z" level=error msg="{\"durationMs\":46.845528,\"error\":\"http2: stream error with http2 ErrCode CANCEL\",\"errorCode\":1639,\"operation\":\"token\",\"status\":0}" source=console
+time="2026-08-11T13:32:14Z" level=warning msg="Request Failed" error="stream error: stream ID 445; CANCEL; received from peer"
+time="2026-08-11T13:32:14Z" level=error msg="{\"durationMs\":98.513156,\"error\":\"http2: stream error with http2 ErrCode CANCEL\",\"errorCode\":1639,\"operation\":\"token\",\"status\":0}" source=console
+
+running (2m16.2s), 0238/1977 VUs, 429407 complete and 0 interrupted iterations
+qualification   [  76% ] 0238/1977 VUs  2m16.2s/3m0s  3200.00 iters/s
+time="2026-08-11T13:32:16Z" level=warning msg="Request Failed" error="stream error: stream ID 451; CANCEL; received from peer"
+time="2026-08-11T13:32:16Z" level=error msg="{\"durationMs\":55.96969,\"error\":\"http2: stream error with http2 ErrCode CANCEL\",\"errorCode\":1639,\"operation\":\"token\",\"status\":0}" source=console
+time="2026-08-11T13:32:16Z" level=warning msg="Request Failed" error="stream error: stream ID 447; CANCEL; received from peer"
+time="2026-08-11T13:32:16Z" level=error msg="{\"durationMs\":55.201585,\"error\":\"http2: stream error with http2 ErrCode CANCEL\",\"errorCode\":1639,\"operation\":\"token\",\"status\":0}" source=console
+time="2026-08-11T13:32:16Z" level=warning msg="Request Failed" error="stream error: stream ID 441; CANCEL; received from peer"
+time="2026-08-11T13:32:16Z" level=error msg="{\"durationMs\":62.266682,\"error\":\"http2: stream error with http2 ErrCode CANCEL\",\"errorCode\":1639,\"operation\":\"token\",\"status\":0}" source=console
+time="2026-08-11T13:32:16Z" level=warning msg="Request Failed" error="stream error: stream ID 443; CANCEL; received from peer"
+time="2026-08-11T13:32:16Z" level=error msg="{\"durationMs\":99.445716,\"error\":\"http2: stream error with http2 ErrCode CANCEL\",\"errorCode\":1639,\"operation\":\"token\",\"status\":0}" source=console
+
+running (2m17.2s), 1003/1977 VUs, 431829 complete and 0 interrupted iterations
+qualification   [  76% ] 1003/1977 VUs  2m17.2s/3m0s  3200.00 iters/s
+
+running (2m18.2s), 0539/1977 VUs, 435506 complete and 0 interrupted iterations
+qualification   [  77% ] 0539/1977 VUs  2m18.2s/3m0s  3200.00 iters/s
+time="2026-08-11T13:32:18Z" level=warning msg="Request Failed" error="stream error: stream ID 457; CANCEL; received from peer"
+time="2026-08-11T13:32:18Z" level=error msg="{\"durationMs\":57.129301,\"error\":\"http2: stream error with http2 ErrCode CANCEL\",\"errorCode\":1639,\"operation\":\"token\",\"status\":0}" source=console
+
+running (2m19.2s), 0744/1977 VUs, 438491 complete and 0 interrupted iterations
+qualification   [  77% ] 0744/1977 VUs  2m19.2s/3m0s  3200.00 iters/s
+
+running (2m20.2s), 0142/1977 VUs, 442304 complete and 0 interrupted iterations
+qualification   [  78% ] 0142/1977 VUs  2m20.2s/3m0s  3200.00 iters/s
+time="2026-08-11T13:32:20Z" level=warning msg="Request Failed" error="stream error: stream ID 451; CANCEL; received from peer"
+time="2026-08-11T13:32:20Z" level=error msg="{\"durationMs\":44.89854,\"error\":\"http2: stream error with http2 ErrCode CANCEL\",\"errorCode\":1639,\"operation\":\"token\",\"status\":0}" source=console
+time="2026-08-11T13:32:20Z" level=warning msg="Request Failed" error="stream error: stream ID 443; CANCEL; received from peer"
+time="2026-08-11T13:32:20Z" level=error msg="{\"durationMs\":45.772642,\"error\":\"http2: stream error with http2 ErrCode CANCEL\",\"errorCode\":1639,\"operation\":\"token\",\"status\":0}" source=console
+
+running (2m21.2s), 0131/1977 VUs, 445517 complete and 0 interrupted iterations
+qualification   [  78% ] 0131/1977 VUs  2m21.2s/3m0s  3200.00 iters/s
+
+running (2m22.2s), 0283/1977 VUs, 448562 complete and 0 interrupted iterations
+qualification   [  79% ] 0283/1977 VUs  2m22.2s/3m0s  3200.00 iters/s
+time="2026-08-11T13:32:21Z" level=warning msg="Request Failed" error="stream error: stream ID 463; CANCEL; received from peer"
+time="2026-08-11T13:32:21Z" level=error msg="{\"durationMs\":53.762507,\"error\":\"http2: stream error with http2 ErrCode CANCEL\",\"errorCode\":1639,\"operation\":\"token\",\"status\":0}" source=console
+time="2026-08-11T13:32:21Z" level=warning msg="Request Failed" error="stream error: stream ID 465; CANCEL; received from peer"
+time="2026-08-11T13:32:21Z" level=error msg="{\"durationMs\":49.212531,\"error\":\"http2: stream error with http2 ErrCode CANCEL\",\"errorCode\":1639,\"operation\":\"token\",\"status\":0}" source=console
+time="2026-08-11T13:32:21Z" level=warning msg="Request Failed" error="stream error: stream ID 445; CANCEL; received from peer"
+time="2026-08-11T13:32:21Z" level=error msg="{\"durationMs\":99.477252,\"error\":\"http2: stream error with http2 ErrCode CANCEL\",\"errorCode\":1639,\"operation\":\"token\",\"status\":0}" source=console
+time="2026-08-11T13:32:21Z" level=warning msg="Request Failed" error="stream error: stream ID 465; CANCEL; received from peer"
+time="2026-08-11T13:32:21Z" level=error msg="{\"durationMs\":41.934533,\"error\":\"http2: stream error with http2 ErrCode CANCEL\",\"errorCode\":1639,\"operation\":\"token\",\"status\":0}" source=console
+time="2026-08-11T13:32:21Z" level=warning msg="Request Failed" error="stream error: stream ID 465; CANCEL; received from peer"
+time="2026-08-11T13:32:21Z" level=error msg="{\"durationMs\":0.309915,\"error\":\"http2: stream error with http2 ErrCode CANCEL\",\"errorCode\":1639,\"operation\":\"token\",\"status\":0}" source=console
+time="2026-08-11T13:32:21Z" level=warning msg="Request Failed" error="stream error: stream ID 465; CANCEL; received from peer"
+time="2026-08-11T13:32:21Z" level=error msg="{\"durationMs\":41.034152,\"error\":\"http2: stream error with http2 ErrCode CANCEL\",\"errorCode\":1639,\"operation\":\"token\",\"status\":0}" source=console
+time="2026-08-11T13:32:21Z" level=warning msg="Request Failed" error="stream error: stream ID 465; CANCEL; received from peer"
+time="2026-08-11T13:32:21Z" level=error msg="{\"durationMs\":40.382024,\"error\":\"http2: stream error with http2 ErrCode CANCEL\",\"errorCode\":1639,\"operation\":\"token\",\"status\":0}" source=console
+time="2026-08-11T13:32:21Z" level=warning msg="Request Failed" error="stream error: stream ID 473; CANCEL; received from peer"
+time="2026-08-11T13:32:21Z" level=warning msg="Request Failed" error="stream error: stream ID 465; CANCEL; received from peer"
+time="2026-08-11T13:32:21Z" level=error msg="{\"durationMs\":44.689611,\"error\":\"http2: stream error with http2 ErrCode CANCEL\",\"errorCode\":1639,\"operation\":\"token\",\"status\":0}" source=console
+time="2026-08-11T13:32:21Z" level=error msg="{\"durationMs\":42.030651,\"error\":\"http2: stream error with http2 ErrCode CANCEL\",\"errorCode\":1639,\"operation\":\"token\",\"status\":0}" source=console
+
+running (2m23.2s), 0484/1977 VUs, 451561 complete and 0 interrupted iterations
+qualification   [  80% ] 0484/1977 VUs  2m23.2s/3m0s  3200.00 iters/s
+
+running (2m24.2s), 0234/1977 VUs, 455012 complete and 0 interrupted iterations
+qualification   [  80% ] 0234/1977 VUs  2m24.2s/3m0s  3200.00 iters/s
+time="2026-08-11T13:32:23Z" level=warning msg="Request Failed" error="stream error: stream ID 479; CANCEL; received from peer"
+time="2026-08-11T13:32:23Z" level=error msg="{\"durationMs\":52.652004,\"error\":\"http2: stream error with http2 ErrCode CANCEL\",\"errorCode\":1639,\"operation\":\"token\",\"status\":0}" source=console
+time="2026-08-11T13:32:23Z" level=warning msg="Request Failed" error="stream error: stream ID 471; CANCEL; received from peer"
+time="2026-08-11T13:32:23Z" level=error msg="{\"durationMs\":40.661047,\"error\":\"http2: stream error with http2 ErrCode CANCEL\",\"errorCode\":1639,\"operation\":\"token\",\"status\":0}" source=console
+
+running (2m25.2s), 0176/1977 VUs, 458270 complete and 0 interrupted iterations
+qualification   [  81% ] 0176/1977 VUs  2m25.2s/3m0s  3200.00 iters/s
+
+running (2m26.3s), 0915/1977 VUs, 460991 complete and 0 interrupted iterations
+qualification   [  81% ] 0915/1977 VUs  2m26.3s/3m0s  3200.00 iters/s
+
+running (2m27.2s), 0232/1977 VUs, 464615 complete and 0 interrupted iterations
+qualification   [  82% ] 0232/1977 VUs  2m27.2s/3m0s  3200.00 iters/s
+time="2026-08-11T13:32:27Z" level=warning msg="Request Failed" error="stream error: stream ID 479; CANCEL; received from peer"
+time="2026-08-11T13:32:27Z" level=error msg="{\"durationMs\":57.517181,\"error\":\"http2: stream error with http2 ErrCode CANCEL\",\"errorCode\":1639,\"operation\":\"token\",\"status\":0}" source=console
+
+running (2m28.2s), 0845/1977 VUs, 467200 complete and 0 interrupted iterations
+qualification   [  82% ] 0845/1977 VUs  2m28.2s/3m0s  3200.00 iters/s
+
+running (2m29.2s), 2037/2039 VUs, 469046 complete and 0 interrupted iterations
+qualification   [  83% ] 2037/2039 VUs  2m29.2s/3m0s  3200.00 iters/s
+
+running (2m30.2s), 2091/2092 VUs, 471307 complete and 0 interrupted iterations
+qualification   [  83% ] 2091/2092 VUs  2m30.2s/3m0s  3200.00 iters/s
+
+running (2m31.2s), 1143/2112 VUs, 476171 complete and 0 interrupted iterations
+qualification   [  84% ] 1143/2112 VUs  2m31.2s/3m0s  3200.00 iters/s
+time="2026-08-11T13:32:31Z" level=warning msg="Request Failed" error="stream error: stream ID 495; CANCEL; received from peer"
+time="2026-08-11T13:32:31Z" level=error msg="{\"durationMs\":56.929908,\"error\":\"http2: stream error with http2 ErrCode CANCEL\",\"errorCode\":1639,\"operation\":\"token\",\"status\":0}" source=console
+
+running (2m32.2s), 2045/2112 VUs, 478469 complete and 0 interrupted iterations
+qualification   [  85% ] 2046/2112 VUs  2m32.2s/3m0s  3200.00 iters/s
+
+running (2m33.2s), 0201/2118 VUs, 483506 complete and 0 interrupted iterations
+qualification   [  85% ] 0201/2118 VUs  2m33.2s/3m0s  3200.00 iters/s
+
+running (2m34.2s), 1636/2118 VUs, 485272 complete and 0 interrupted iterations
+qualification   [  86% ] 1636/2118 VUs  2m34.2s/3m0s  3200.00 iters/s
+time="2026-08-11T13:32:33Z" level=warning msg="Request Failed" error="stream error: stream ID 503; CANCEL; received from peer"
+time="2026-08-11T13:32:33Z" level=error msg="{\"durationMs\":201.79242,\"error\":\"http2: stream error with http2 ErrCode CANCEL\",\"errorCode\":1639,\"operation\":\"token\",\"status\":0}" source=console
+
+running (2m35.2s), 0683/2118 VUs, 489425 complete and 0 interrupted iterations
+qualification   [  86% ] 0683/2118 VUs  2m35.2s/3m0s  3200.00 iters/s
+time="2026-08-11T13:32:35Z" level=warning msg="Request Failed" error="stream error: stream ID 499; CANCEL; received from peer"
+time="2026-08-11T13:32:35Z" level=error msg="{\"durationMs\":39.69923,\"error\":\"http2: stream error with http2 ErrCode CANCEL\",\"errorCode\":1639,\"operation\":\"token\",\"status\":0}" source=console
+
+running (2m36.2s), 1055/2118 VUs, 492182 complete and 0 interrupted iterations
+qualification   [  87% ] 1055/2118 VUs  2m36.2s/3m0s  3200.00 iters/s
+
+running (2m37.2s), 0436/2118 VUs, 496071 complete and 0 interrupted iterations
+qualification   [  87% ] 0436/2118 VUs  2m37.2s/3m0s  3200.00 iters/s
+time="2026-08-11T13:32:37Z" level=warning msg="Request Failed" error="stream error: stream ID 507; CANCEL; received from peer"
+time="2026-08-11T13:32:37Z" level=error msg="{\"durationMs\":0.387612,\"error\":\"http2: stream error with http2 ErrCode CANCEL\",\"errorCode\":1639,\"operation\":\"token\",\"status\":0}" source=console
+
+running (2m38.2s), 1059/2118 VUs, 498629 complete and 0 interrupted iterations
+qualification   [  88% ] 1061/2118 VUs  2m38.2s/3m0s  3200.00 iters/s
+time="2026-08-11T13:32:37Z" level=warning msg="Request Failed" error="stream error: stream ID 523; CANCEL; received from peer"
+time="2026-08-11T13:32:37Z" level=error msg="{\"durationMs\":32.829383,\"error\":\"http2: stream error with http2 ErrCode CANCEL\",\"errorCode\":1639,\"operation\":\"token\",\"status\":0}" source=console
+time="2026-08-11T13:32:37Z" level=warning msg="Request Failed" error="stream error: stream ID 517; CANCEL; received from peer"
+time="2026-08-11T13:32:37Z" level=error msg="{\"durationMs\":38.627025,\"error\":\"http2: stream error with http2 ErrCode CANCEL\",\"errorCode\":1639,\"operation\":\"token\",\"status\":0}" source=console
+time="2026-08-11T13:32:37Z" level=warning msg="Request Failed" error="stream error: stream ID 513; CANCEL; received from peer"
+time="2026-08-11T13:32:37Z" level=error msg="{\"durationMs\":25.708815,\"error\":\"http2: stream error with http2 ErrCode CANCEL\",\"errorCode\":1639,\"operation\":\"token\",\"status\":0}" source=console
+
+running (2m39.2s), 0198/2118 VUs, 502710 complete and 0 interrupted iterations
+qualification   [  88% ] 0198/2118 VUs  2m39.2s/3m0s  3200.00 iters/s
+time="2026-08-11T13:32:39Z" level=warning msg="Request Failed" error="stream error: stream ID 515; CANCEL; received from peer"
+time="2026-08-11T13:32:39Z" level=error msg="{\"durationMs\":45.90999,\"error\":\"http2: stream error with http2 ErrCode CANCEL\",\"errorCode\":1639,\"operation\":\"token\",\"status\":0}" source=console
+time="2026-08-11T13:32:39Z" level=warning msg="Request Failed" error="stream error: stream ID 517; CANCEL; received from peer"
+time="2026-08-11T13:32:39Z" level=error msg="{\"durationMs\":91.321666,\"error\":\"http2: stream error with http2 ErrCode CANCEL\",\"errorCode\":1639,\"operation\":\"token\",\"status\":0}" source=console
+
+running (2m40.2s), 1055/2118 VUs, 505075 complete and 0 interrupted iterations
+qualification   [  89% ] 1056/2118 VUs  2m40.2s/3m0s  3200.00 iters/s
+
+running (2m41.2s), 0140/2118 VUs, 509168 complete and 0 interrupted iterations
+qualification   [  90% ] 0140/2118 VUs  2m41.2s/3m0s  3200.00 iters/s
+
+running (2m42.2s), 1168/2118 VUs, 511414 complete and 0 interrupted iterations
+qualification   [  90% ] 1168/2118 VUs  2m42.2s/3m0s  3200.00 iters/s
+time="2026-08-11T13:32:41Z" level=warning msg="Request Failed" error="stream error: stream ID 45; CANCEL; received from peer"
+time="2026-08-11T13:32:41Z" level=error msg="{\"durationMs\":51.631885,\"error\":\"http2: stream error with http2 ErrCode CANCEL\",\"errorCode\":1639,\"operation\":\"token\",\"status\":0}" source=console
+
+running (2m43.2s), 0491/2118 VUs, 515218 complete and 0 interrupted iterations
+qualification   [  91% ] 0491/2118 VUs  2m43.2s/3m0s  3200.00 iters/s
+
+running (2m44.2s), 0825/2118 VUs, 518041 complete and 0 interrupted iterations
+qualification   [  91% ] 0825/2118 VUs  2m44.2s/3m0s  3200.00 iters/s
+
+running (2m45.2s), 0195/2118 VUs, 521913 complete and 0 interrupted iterations
+qualification   [  92% ] 0195/2118 VUs  2m45.2s/3m0s  3200.00 iters/s
+time="2026-08-11T13:32:45Z" level=warning msg="Request Failed" error="stream error: stream ID 543; CANCEL; received from peer"
+time="2026-08-11T13:32:45Z" level=error msg="{\"durationMs\":55.256616,\"error\":\"http2: stream error with http2 ErrCode CANCEL\",\"errorCode\":1639,\"operation\":\"token\",\"status\":0}" source=console
+time="2026-08-11T13:32:45Z" level=warning msg="Request Failed" error="stream error: stream ID 539; CANCEL; received from peer"
+time="2026-08-11T13:32:45Z" level=error msg="{\"durationMs\":55.375827,\"error\":\"http2: stream error with http2 ErrCode CANCEL\",\"errorCode\":1639,\"operation\":\"token\",\"status\":0}" source=console
+time="2026-08-11T13:32:45Z" level=warning msg="Request Failed" error="stream error: stream ID 533; CANCEL; received from peer"
+time="2026-08-11T13:32:45Z" level=error msg="{\"durationMs\":55.785196,\"error\":\"http2: stream error with http2 ErrCode CANCEL\",\"errorCode\":1639,\"operation\":\"token\",\"status\":0}" source=console
+
+running (2m46.2s), 1004/2118 VUs, 524260 complete and 0 interrupted iterations
+qualification   [  92% ] 1004/2118 VUs  2m46.2s/3m0s  3200.00 iters/s
+
+running (2m47.2s), 0161/2118 VUs, 528347 complete and 0 interrupted iterations
+qualification   [  93% ] 0161/2118 VUs  2m47.2s/3m0s  3200.00 iters/s
+time="2026-08-11T13:32:47Z" level=warning msg="Request Failed" error="stream error: stream ID 541; CANCEL; received from peer"
+time="2026-08-11T13:32:47Z" level=error msg="{\"durationMs\":55.86131,\"error\":\"http2: stream error with http2 ErrCode CANCEL\",\"errorCode\":1639,\"operation\":\"token\",\"status\":0}" source=console
+time="2026-08-11T13:32:47Z" level=warning msg="Request Failed" error="stream error: stream ID 547; CANCEL; received from peer"
+time="2026-08-11T13:32:47Z" level=error msg="{\"durationMs\":58.153002,\"error\":\"http2: stream error with http2 ErrCode CANCEL\",\"errorCode\":1639,\"operation\":\"token\",\"status\":0}" source=console
+
+running (2m48.2s), 0367/2118 VUs, 531328 complete and 0 interrupted iterations
+qualification   [  93% ] 0366/2118 VUs  2m48.2s/3m0s  3200.00 iters/s
+
+running (2m49.2s), 0662/2118 VUs, 534245 complete and 0 interrupted iterations
+qualification   [  94% ] 0662/2118 VUs  2m49.2s/3m0s  3200.00 iters/s
+time="2026-08-11T13:32:49Z" level=warning msg="Request Failed" error="stream error: stream ID 555; CANCEL; received from peer"
+time="2026-08-11T13:32:49Z" level=error msg="{\"durationMs\":52.791756,\"error\":\"http2: stream error with http2 ErrCode CANCEL\",\"errorCode\":1639,\"operation\":\"token\",\"status\":0}" source=console
+
+running (2m50.2s), 1555/2118 VUs, 536533 complete and 0 interrupted iterations
+qualification   [  95% ] 1555/2118 VUs  2m50.2s/3m0s  3200.00 iters/s
+
+running (2m51.2s), 0210/2118 VUs, 541099 complete and 0 interrupted iterations
+qualification   [  95% ] 0210/2118 VUs  2m51.2s/3m0s  3200.00 iters/s
+time="2026-08-11T13:32:50Z" level=warning msg="Request Failed" error="stream error: stream ID 551; CANCEL; received from peer"
+time="2026-08-11T13:32:50Z" level=error msg="{\"durationMs\":52.626548,\"error\":\"http2: stream error with http2 ErrCode CANCEL\",\"errorCode\":1639,\"operation\":\"token\",\"status\":0}" source=console
+time="2026-08-11T13:32:51Z" level=warning msg="Request Failed" error="stream error: stream ID 553; CANCEL; received from peer"
+time="2026-08-11T13:32:51Z" level=error msg="{\"durationMs\":56.428532,\"error\":\"http2: stream error with http2 ErrCode CANCEL\",\"errorCode\":1639,\"operation\":\"token\",\"status\":0}" source=console
+time="2026-08-11T13:32:51Z" level=warning msg="Request Failed" error="stream error: stream ID 565; CANCEL; received from peer"
+time="2026-08-11T13:32:51Z" level=error msg="{\"durationMs\":142.872365,\"error\":\"http2: stream error with http2 ErrCode CANCEL\",\"errorCode\":1639,\"operation\":\"token\",\"status\":0}" source=console
+
+running (2m52.2s), 0360/2118 VUs, 544147 complete and 0 interrupted iterations
+qualification   [  96% ] 0360/2118 VUs  2m52.2s/3m0s  3200.00 iters/s
+
+running (2m53.2s), 0532/2118 VUs, 547175 complete and 0 interrupted iterations
+qualification   [  96% ] 0532/2118 VUs  2m53.2s/3m0s  3200.00 iters/s
+time="2026-08-11T13:32:53Z" level=warning msg="Request Failed" error="stream error: stream ID 559; CANCEL; received from peer"
+time="2026-08-11T13:32:53Z" level=error msg="{\"durationMs\":50.609149,\"error\":\"http2: stream error with http2 ErrCode CANCEL\",\"errorCode\":1639,\"operation\":\"token\",\"status\":0}" source=console
+time="2026-08-11T13:32:53Z" level=warning msg="Request Failed" error="stream error: stream ID 561; CANCEL; received from peer"
+time="2026-08-11T13:32:53Z" level=error msg="{\"durationMs\":39.073468,\"error\":\"http2: stream error with http2 ErrCode CANCEL\",\"errorCode\":1639,\"operation\":\"token\",\"status\":0}" source=console
+
+running (2m54.2s), 0990/2118 VUs, 549916 complete and 0 interrupted iterations
+qualification   [  97% ] 0990/2118 VUs  2m54.2s/3m0s  3200.00 iters/s
+
+running (2m55.2s), 0578/2118 VUs, 553529 complete and 0 interrupted iterations
+qualification   [  97% ] 0578/2118 VUs  2m55.2s/3m0s  3200.00 iters/s
+time="2026-08-11T13:32:55Z" level=warning msg="Request Failed" error="stream error: stream ID 567; CANCEL; received from peer"
+time="2026-08-11T13:32:55Z" level=error msg="{\"durationMs\":54.872295,\"error\":\"http2: stream error with http2 ErrCode CANCEL\",\"errorCode\":1639,\"operation\":\"token\",\"status\":0}" source=console
+
+running (2m56.2s), 0434/2118 VUs, 556873 complete and 0 interrupted iterations
+qualification   [  98% ] 0434/2118 VUs  2m56.2s/3m0s  3200.00 iters/s
+
+running (2m57.2s), 0402/2118 VUs, 560106 complete and 0 interrupted iterations
+qualification   [  98% ] 0402/2118 VUs  2m57.2s/3m0s  3200.00 iters/s
+time="2026-08-11T13:32:57Z" level=warning msg="Request Failed" error="stream error: stream ID 569; CANCEL; received from peer"
+time="2026-08-11T13:32:57Z" level=error msg="{\"durationMs\":36.985796,\"error\":\"http2: stream error with http2 ErrCode CANCEL\",\"errorCode\":1639,\"operation\":\"token\",\"status\":0}" source=console
+time="2026-08-11T13:32:57Z" level=warning msg="Request Failed" error="stream error: stream ID 553; CANCEL; received from peer"
+time="2026-08-11T13:32:57Z" level=error msg="{\"durationMs\":42.595999,\"error\":\"http2: stream error with http2 ErrCode CANCEL\",\"errorCode\":1639,\"operation\":\"token\",\"status\":0}" source=console
+
+running (2m58.2s), 1352/2118 VUs, 562331 complete and 0 interrupted iterations
+qualification   [  99% ] 1353/2118 VUs  2m58.2s/3m0s  3200.00 iters/s
+
+running (2m59.2s), 0508/2118 VUs, 566401 complete and 0 interrupted iterations
+qualification   [ 100% ] 0508/2118 VUs  2m59.2s/3m0s  3200.00 iters/s
+time="2026-08-11T13:32:59Z" level=warning msg="Request Failed" error="stream error: stream ID 569; CANCEL; received from peer"
+time="2026-08-11T13:32:59Z" level=error msg="{\"durationMs\":57.577735,\"error\":\"http2: stream error with http2 ErrCode CANCEL\",\"errorCode\":1639,\"operation\":\"token\",\"status\":0}" source=console
+time="2026-08-11T13:32:59Z" level=warning msg="Request Failed" error="stream error: stream ID 589; CANCEL; received from peer"
+time="2026-08-11T13:32:59Z" level=error msg="{\"durationMs\":58.673612,\"error\":\"http2: stream error with http2 ErrCode CANCEL\",\"errorCode\":1639,\"operation\":\"token\",\"status\":0}" source=console
+time="2026-08-11T13:32:59Z" level=warning msg="Request Failed" error="stream error: stream ID 281; CANCEL; received from peer"
+time="2026-08-11T13:32:59Z" level=error msg="{\"durationMs\":58.984893,\"error\":\"http2: stream error with http2 ErrCode CANCEL\",\"errorCode\":1639,\"operation\":\"token\",\"status\":0}" source=console
+
+running (3m00.2s), 0694/2118 VUs, 568718 complete and 0 interrupted iterations
+qualification ↓ [ 100% ] 0834/2118 VUs  3m0s  3200.00 iters/s
+
+
+  █ THRESHOLDS 
+
+    account_duration
+    ✗ 'p(95)<250' p(95)=299.76ms
+
+    credentials_duration
+    ✗ 'p(95)<250' p(95)=300.51ms
+
+    enterprise_end_to_end_duration
+    ✓ 'p(95)<300' p(95)=295.9ms
+    ✓ 'p(99)<750' p(99)=667.19ms
+
+    enterprise_request_failures
+    ✓ 'rate<0.001' rate=0.03%
+
+    enterprise_unplanned_5xx
+    ✓ 'count==0' count=0
+
+    jwks_duration
+    ✓ 'p(95)<150' p(95)=90.68ms
+
+    phase_qualification_account
+    ✗ 'p(95)<250' p(95)=299.76ms
+
+    phase_qualification_application
+    ✗ 'p(95)<150' p(95)=236.73ms
+    ✗ 'p(99)<400' p(99)=549.04ms
+
+    phase_qualification_completed
+    ✗ 'count>=384000' count=383850
+
+    phase_qualification_credentials
+    ✗ 'p(95)<250' p(95)=300.51ms
+
+    phase_qualification_end_to_end
+    ✓ 'p(95)<300' p(95)=295.9ms
+    ✓ 'p(99)<750' p(99)=667.19ms
+
+    phase_qualification_failures
+    ✓ 'rate<0.001' rate=0.03%
+
+    phase_qualification_jwks
+    ✓ 'p(95)<150' p(95)=90.68ms
+
+    phase_qualification_sabledb
+    ✗ 'p(95)<150' p(95)=236.64ms
+    ✗ 'p(99)<250' p(99)=548.87ms
+
+    phase_qualification_token
+    ✓ 'p(95)<350' p(95)=298.79ms
+
+    phase_qualification_unplanned_5xx
+    ✓ 'count==0' count=0
+
+    sabledb_duration
+    ✗ 'p(95)<150' p(95)=236.64ms
+    ✗ 'p(99)<250' p(99)=548.87ms
+
+    server_application_duration
+    ✗ 'p(95)<150' p(95)=236.73ms
+    ✗ 'p(99)<400' p(99)=549.04ms
+
+    token_duration
+    ✓ 'p(95)<350' p(95)=298.79ms
+
+
+  █ TOTAL RESULTS 
+
+    checks_total.......: 1138824 6318.213348/s
+    checks_succeeded...: 99.96%  1138456 out of 1138824
+    checks_failed......: 0.03%   368 out of 1138824
+
+    ✗ enterprise operation returned 200
+      ↳  99% — ✓ 569228 / ✗ 184
+    ✗ internal timing was returned
+      ↳  99% — ✓ 569228 / ✗ 184
+
+    CUSTOM
+    account_duration.........................: avg=111.62ms min=21.07ms med=76.06ms max=1.27s    p(90)=216.89ms p(95)=299.76ms p(99)=674.26ms p(99.9)=992.18ms
+    application_nonstore_duration............: avg=76.56µs  min=8µs     med=51µs    max=14.17ms  p(90)=137µs    p(95)=176µs    p(99)=347µs    p(99.9)=1.56ms  
+    credentials_duration.....................: avg=112.02ms min=21.23ms med=76.31ms max=1.45s    p(90)=218.04ms p(95)=300.51ms p(99)=681.85ms p(99.9)=998.38ms
+    enterprise_end_to_end_duration...........: avg=108.02ms min=69.66µs med=70.42ms max=1.45s    p(90)=211.73ms p(95)=295.9ms  p(99)=667.19ms p(99.9)=986.96ms
+    enterprise_request_failures..............: 0.03%  142 out of 383850
+    enterprise_transport_failures............: 142    0.787818/s
+    enterprise_unplanned_5xx.................: 0      0/s
+    external_path_duration...................: avg=40.08ms  min=17.95ms med=30.67ms max=534.54ms p(90)=68.1ms   p(95)=81.76ms  p(99)=193.58ms p(99.9)=336.76ms
+    jwks_duration............................: avg=39.83ms  min=18.09ms med=31.5ms  max=427.91ms p(90)=57.68ms  p(95)=90.68ms  p(99)=193.69ms p(99.9)=335.43ms
+    phase_qualification_account..............: avg=111.62ms min=21.07ms med=76.06ms max=1.27s    p(90)=216.89ms p(95)=299.76ms p(99)=674.26ms p(99.9)=992.18ms
+    phase_qualification_application..........: avg=67.96ms  min=8µs     med=27.98ms max=1.15s    p(90)=168.16ms p(95)=236.73ms p(99)=549.04ms p(99.9)=815.54ms
+    phase_qualification_completed............: 383850 2129.605798/s
+    phase_qualification_credentials..........: avg=112.02ms min=21.23ms med=76.31ms max=1.45s    p(90)=218.04ms p(95)=300.51ms p(99)=681.85ms p(99.9)=998.38ms
+    phase_qualification_end_to_end...........: avg=108.02ms min=69.66µs med=70.42ms max=1.45s    p(90)=211.73ms p(95)=295.9ms  p(99)=667.19ms p(99.9)=986.96ms
+    phase_qualification_failures.............: 0.03%  142 out of 383850
+    phase_qualification_jwks.................: avg=39.83ms  min=18.09ms med=31.5ms  max=427.91ms p(90)=57.68ms  p(95)=90.68ms  p(99)=193.69ms p(99.9)=335.43ms
+    phase_qualification_sabledb..............: avg=67.88ms  min=0s      med=27.91ms max=1.15s    p(90)=168.08ms p(95)=236.64ms p(99)=548.87ms p(99.9)=815.5ms 
+    phase_qualification_token................: avg=111.28ms min=69.66µs med=76.31ms max=1.45s    p(90)=215.39ms p(95)=298.79ms p(99)=672.84ms p(99.9)=968.01ms
+    phase_qualification_transport_failures...: 142    0.787818/s
+    phase_qualification_unplanned_5xx........: 0      0/s
+    phase_qualification_warmup_completed.....: 185562 1029.500876/s
+    sabledb_duration.........................: avg=67.88ms  min=0s      med=27.91ms max=1.15s    p(90)=168.08ms p(95)=236.64ms p(99)=548.87ms p(99.9)=815.5ms 
+    sabledb_round_trips......................: avg=1.900039 min=0       med=2       max=2        p(90)=2        p(95)=2        p(99)=2        p(99.9)=2       
+    server_application_duration..............: avg=67.96ms  min=8µs     med=27.98ms max=1.15s    p(90)=168.16ms p(95)=236.73ms p(99)=549.04ms p(99.9)=815.54ms
+    token_duration...........................: avg=111.28ms min=69.66µs med=76.31ms max=1.45s    p(90)=215.39ms p(95)=298.79ms p(99)=672.84ms p(99.9)=968.01ms
+
+    HTTP
+    http_req_duration........................: avg=114.14ms min=69.66µs med=75.14ms max=2.19s    p(90)=221.47ms p(95)=317.73ms p(99)=725.02ms p(99.9)=1.12s   
+      { expected_response:true }.............: avg=114.16ms min=17.96ms med=75.18ms max=2.19s    p(90)=221.5ms  p(95)=317.75ms p(99)=725.15ms p(99.9)=1.12s   
+    http_req_failed..........................: 0.03%  184 out of 569412
+    http_reqs................................: 569412 3159.106674/s
+
+    EXECUTION
+    dropped_iterations.......................: 6588   36.550327/s
+    iteration_duration.......................: avg=146.83ms min=18.23ms med=92.58ms max=2.89s    p(90)=318.5ms  p(95)=462ms    p(99)=870.1ms  p(99.9)=1.63s   
+    iterations...............................: 569412 3159.106674/s
+    vus......................................: 694    min=131           max=2091
+    vus_max..................................: 2118   min=1600          max=2118
+
+    NETWORK
+    data_received............................: 407 MB 2.3 MB/s
+    data_sent................................: 64 MB  353 kB/s
+
+
+
+
+running (3m00.2s), 0000/2118 VUs, 569412 complete and 0 interrupted iterations
+qualification ✓ [ 100% ] 0000/2118 VUs  3m0s  3200.00 iters/s
+time="2026-08-11T13:33:00Z" level=error msg="thresholds on metrics 'account_duration, credentials_duration, phase_qualification_account, phase_qualification_application, phase_qualification_completed, phase_qualification_credentials, phase_qualification_sabledb, sabledb_duration, server_application_duration' have been crossed"

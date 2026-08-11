@@ -20,6 +20,21 @@ const requiredCapacityResults = [
   "signin_p95_ms",
 ] as const;
 
+const requiredEnterpriseResults = [
+  "supported_operating_rps",
+  "first_failing_rps",
+  "mixed_authenticated_p95_ms",
+  "external_path_p95_ms",
+  "application_p95_ms",
+  "sable_p95_ms",
+  "soak_authenticated_rps",
+  "soak_duration_seconds",
+  "soak_mixed_p95_ms",
+  "soak_failed_requests",
+  "railway_soak_monthly_resource_usd",
+  "railway_soak_monthly_egress_usd",
+] as const;
+
 export function validateBenchmarkCatalog(value: unknown): ValidationError[] {
   const errors: string[] = [];
   if (!object(value)) return ["catalogue must be an object"];
@@ -151,8 +166,84 @@ export function validateBenchmarkCatalog(value: unknown): ValidationError[] {
     }
 
     if (candidate.programId === "single-realm-capacity" && candidate.status === "passed") {
+      const resultValue = (key: string) => {
+        const result = results.find((item) => object(item) && item.key === key);
+        return object(result) && finiteNonNegative(result.value) ? result.value : undefined;
+      };
       for (const key of requiredCapacityResults) {
         if (!resultKeys.has(key)) errors.push(`${path} is missing required capacity result ${key}`);
+      }
+      if (candidate.methodologyVersion === "single-realm-enterprise-v2") {
+        for (const key of requiredEnterpriseResults) {
+          if (!resultKeys.has(key)) {
+            errors.push(`${path} is missing required enterprise result ${key}`);
+          }
+        }
+        const sustainableRps = resultValue("sustainable_authenticated_rps");
+        const operatingRps = resultValue("supported_operating_rps");
+        const firstFailingRps = resultValue("first_failing_rps");
+        const signinP95 = resultValue("signin_p95_ms");
+        const soakRps = resultValue("soak_authenticated_rps");
+        const soakDuration = resultValue("soak_duration_seconds");
+        const soakP95 = resultValue("soak_mixed_p95_ms");
+        const resourceCost = resultValue("railway_soak_monthly_resource_usd");
+        const egressCost = resultValue("railway_soak_monthly_egress_usd");
+        if (
+          sustainableRps !== undefined && operatingRps !== undefined &&
+          operatingRps > sustainableRps
+        ) {
+          errors.push(`${path}.supported_operating_rps must not exceed qualified throughput`);
+        }
+        if (
+          sustainableRps !== undefined && operatingRps !== undefined &&
+          operatingRps > Math.floor(sustainableRps * 0.7)
+        ) {
+          errors.push(`${path}.supported_operating_rps must retain 30 percent throughput headroom`);
+        }
+        if (
+          sustainableRps !== undefined && firstFailingRps !== undefined &&
+          firstFailingRps <= sustainableRps
+        ) {
+          errors.push(`${path}.first_failing_rps must be above qualified throughput`);
+        }
+        if (signinP95 !== undefined && signinP95 <= 0) {
+          errors.push(`${path}.signin_p95_ms must contain an observed positive duration`);
+        }
+        if (soakRps !== undefined && operatingRps !== undefined && soakRps < operatingRps) {
+          errors.push(`${path}.soak_authenticated_rps must qualify the published operating rate`);
+        }
+        if (soakDuration !== undefined && soakDuration < 3600) {
+          errors.push(`${path}.soak_duration_seconds must cover at least one hour`);
+        }
+        if (soakP95 !== undefined && soakP95 <= 0) {
+          errors.push(`${path}.soak_mixed_p95_ms must contain an observed positive duration`);
+        }
+        if (resourceCost !== undefined && resourceCost <= 0) {
+          errors.push(`${path}.railway_soak_monthly_resource_usd must contain an observed run-rate`);
+        }
+        if (egressCost !== undefined && egressCost <= 0) {
+          errors.push(`${path}.railway_soak_monthly_egress_usd must contain an observed run-rate`);
+        }
+        if (!object(candidate.realmScaling)) {
+          errors.push(`${path}.realmScaling is required for an enterprise capacity report`);
+        } else {
+          if (candidate.realmScaling.measuredRealmCells !== 1) {
+            errors.push(`${path}.realmScaling.measuredRealmCells must be 1`);
+          }
+          if (candidate.realmScaling.model !== "linear-independent-cells") {
+            errors.push(`${path}.realmScaling.model must be linear-independent-cells`);
+          }
+          if (!nonEmpty(candidate.realmScaling.formula)) {
+            errors.push(`${path}.realmScaling.formula is required`);
+          }
+          if (
+            !Array.isArray(candidate.realmScaling.limitations) ||
+            candidate.realmScaling.limitations.length === 0 ||
+            candidate.realmScaling.limitations.some((item) => !nonEmpty(item))
+          ) {
+            errors.push(`${path}.realmScaling.limitations must contain explicit assumptions`);
+          }
+        }
       }
       if (!object(candidate.imageDigests)) {
         errors.push(`${path}.imageDigests is required for a passed capacity report`);
@@ -166,6 +257,47 @@ export function validateBenchmarkCatalog(value: unknown): ValidationError[] {
       }
       const capacityModels = Array.isArray(candidate.capacityModels) ? candidate.capacityModels : [];
       if (capacityModels.length === 0) errors.push(`${path}.capacityModels must not be empty`);
+      const operatingRps = candidate.methodologyVersion === "single-realm-enterprise-v2"
+        ? resultValue("supported_operating_rps")
+        : undefined;
+      for (const [modelIndex, model] of capacityModels.entries()) {
+        const modelPath = `${path}.capacityModels[${modelIndex}]`;
+        if (!object(model)) {
+          errors.push(`${modelPath} must be an object`);
+          continue;
+        }
+        if (!nonEmpty(model.profile)) errors.push(`${modelPath}.profile is required`);
+        if (!finiteNonNegative(model.requestsPerMinute) || model.requestsPerMinute <= 0) {
+          errors.push(`${modelPath}.requestsPerMinute must be positive`);
+        }
+        if (!finiteNonNegative(model.activeUsers)) {
+          errors.push(`${modelPath}.activeUsers must be non-negative`);
+        }
+        if (!nonEmpty(model.basis)) errors.push(`${modelPath}.basis is required`);
+        if (
+          operatingRps !== undefined && finiteNonNegative(model.requestsPerMinute) &&
+          model.requestsPerMinute > 0 && finiteNonNegative(model.activeUsers)
+        ) {
+          const expectedUsers = Math.floor(operatingRps * 60 / model.requestsPerMinute);
+          if (model.activeUsers !== expectedUsers) {
+            errors.push(`${modelPath}.activeUsers must use the published operating rate`);
+          }
+          if (
+            model.profile === "Typical application" &&
+            resultValue("supported_typical_active_users") !== expectedUsers
+          ) {
+            errors.push(
+              `${path}.supported_typical_active_users must match the typical capacity model`,
+            );
+          }
+        }
+      }
+      if (
+        operatingRps !== undefined &&
+        !capacityModels.some((model) => object(model) && model.profile === "Typical application")
+      ) {
+        errors.push(`${path}.capacityModels must include the Typical application profile`);
+      }
       const charts = Array.isArray(candidate.charts) ? candidate.charts : [];
       if (charts.length === 0) errors.push(`${path}.charts must not be empty`);
       for (const [chartIndex, chart] of charts.entries()) {
@@ -194,7 +326,15 @@ export function validateBenchmarkCatalog(value: unknown): ValidationError[] {
           }
         }
       }
-      if (!object(candidate.confidence)) errors.push(`${path}.confidence must be an object`);
+      if (!object(candidate.confidence)) {
+        errors.push(`${path}.confidence must be an object`);
+      } else {
+        for (const field of ["measured", "inferred", "notProven"]) {
+          if (!nonEmpty(candidate.confidence[field])) {
+            errors.push(`${path}.confidence.${field} is required`);
+          }
+        }
+      }
     }
   }
 

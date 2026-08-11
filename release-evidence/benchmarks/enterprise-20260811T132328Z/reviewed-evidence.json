@@ -1,0 +1,200 @@
+{
+  "runId": "enterprise-20260811T132328Z",
+  "status": "informational",
+  "reviewedAt": "2026-08-11T14:21:08Z",
+  "intervals": {
+    "qualifiedBoundary": {
+      "since": "2026-08-11T13:26:28Z",
+      "until": "2026-08-11T13:28:28Z"
+    },
+    "firstFailingBoundary": {
+      "since": "2026-08-11T13:31:00Z",
+      "until": "2026-08-11T13:33:00Z"
+    },
+    "passkeyUnderLoad": {
+      "since": "2026-08-11T13:36:27Z",
+      "until": "2026-08-11T13:41:27Z"
+    },
+    "operatingRateSoak": {
+      "since": "2026-08-11T13:36:00Z",
+      "until": "2026-08-11T14:12:49Z"
+    }
+  },
+  "dataset": {
+    "registeredAccounts": 10000,
+    "validSessions": 10000,
+    "sessionIdleSeconds": 1800,
+    "sessionAbsoluteSeconds": 86400,
+    "sessionsRefreshedBeforeEachReviewedRun": 10000,
+    "sessionsRecreated": 0,
+    "sessionTouchStaggerSeconds": 240
+  },
+  "qualifiedBoundary": {
+    "targetRps": 2400,
+    "durationSeconds": 120,
+    "completedRequests": 288140,
+    "requiredRequests": 288000,
+    "measuredPhaseSchedulePassed": true,
+    "excludedConnectionWarmupDroppedIterations": 1386,
+    "unexpectedFailures": 94,
+    "unexpectedFailurePercent": 0.0326230305,
+    "transportFailures": 94,
+    "unplanned5xx": 0,
+    "endToEndP95Ms": 173.29313855,
+    "endToEndP99Ms": 251.55385528,
+    "externalPathP95Ms": 55.297302,
+    "applicationP95Ms": 142.095,
+    "applicationP99Ms": 205.1041,
+    "sableDbP95Ms": 142.01925,
+    "sableDbP99Ms": 204.9885,
+    "averageSableDbRoundTrips": 1.8999881963
+  },
+  "firstFailingBoundary": {
+    "targetRps": 3200,
+    "durationSeconds": 120,
+    "completedRequests": 383850,
+    "requiredRequests": 384000,
+    "missedScheduledRequests": 150,
+    "globalDroppedIterations": 6588,
+    "excludedConnectionWarmupDroppedIterations": 6438,
+    "unexpectedFailures": 142,
+    "unexpectedFailurePercent": 0.0369936173,
+    "unplanned5xx": 0,
+    "endToEndP95Ms": 295.90369115,
+    "endToEndP99Ms": 667.19881249,
+    "applicationP95Ms": 236.73965,
+    "applicationP99Ms": 549.04711,
+    "sableDbP95Ms": 236.64055,
+    "sableDbP99Ms": 548.87193,
+    "failedGates": [
+      "scheduled-throughput",
+      "application-p95",
+      "application-p99",
+      "sabledb-p95",
+      "sabledb-p99",
+      "account-p95",
+      "credentials-p95"
+    ]
+  },
+  "passkeyUnderLoad": {
+    "backgroundRps": 1680,
+    "ceremoniesPerMinute": 6,
+    "ceremonies": 30,
+    "httpRequests": 60,
+    "failures": 0,
+    "droppedIterations": 0,
+    "unplanned5xx": 0,
+    "ceremonyP95Ms": 221.1,
+    "ceremonyP99Ms": 310.75,
+    "optionsP95Ms": 176.12,
+    "verificationP95Ms": 85.67
+  },
+  "operatingRateSoak": {
+    "targetRps": 1680,
+    "plannedDurationSeconds": 3600,
+    "observedSoakSeconds": 2260.7,
+    "completedIterationsIncludingWarmup": 3802109,
+    "interruptedIterations": 0,
+    "loggedHttp2CancelWarnings": 284,
+    "terminalSummaryProduced": false,
+    "railwayApi2xx": 3695306,
+    "railwayApi5xx": 0,
+    "railwayApiEdgeP95Ms": 548,
+    "recoveryPassed": false
+  },
+  "capacityInterpretation": {
+    "qualifiedMixedRps": 2400,
+    "candidateRpsWithThirtyPercentHeadroom": 1680,
+    "candidateLightSaasAtTwoRequestsPerMinute": 50400,
+    "candidateTypicalApplicationAtSixRequestsPerMinute": 16800,
+    "candidateHeavyAdministrationAtTwentyRequestsPerMinute": 5040,
+    "candidateEquivalentRealmsForFiftyThousandTypicalActiveUsers": 3,
+    "candidateEquivalentRealmsForOneHundredThousandTypicalActiveUsers": 6,
+    "operatingRateQualified": false,
+    "storedAccountTierQualified": 10000
+  },
+  "partialRailwayResources": {
+    "pricing": {
+      "cpuUsdPerVcpuMonth": 20,
+      "memoryUsdPerGbMonth": 10,
+      "volumeUsdPerGbMonth": 0.15,
+      "egressUsdPerGb": 0.05,
+      "proMonthlyMinimumUsd": 20
+    },
+    "api": {
+      "limitVcpu": 1,
+      "limitMemoryMb": 1023.99737856,
+      "averageVcpu": 0.4627681221,
+      "peakVcpu": 0.6899491333,
+      "averageMemoryMb": 103.6004991,
+      "peakMemoryMb": 107.2777134
+    },
+    "sableDb": {
+      "limitVcpu": 4,
+      "limitMemoryMb": 4095.997902848,
+      "averageVcpu": 1.1591984189,
+      "peakVcpu": 1.6730290333,
+      "averageMemoryMb": 572.5075892,
+      "peakMemoryMb": 749.7066742,
+      "averageVolumeMb": 0,
+      "peakVolumeMb": 0
+    },
+    "dashboard": {
+      "averageVcpu": 0.0000553838,
+      "peakVcpu": 0.0002693667,
+      "averageMemoryMb": 53.4621291,
+      "peakMemoryMb": 53.9932754
+    },
+    "runner": {
+      "averageVcpu": 1.5533766234,
+      "peakVcpu": 2.5063848,
+      "averageMemoryMb": 1572.5094113,
+      "peakMemoryMb": 2534.7898737
+    },
+    "monthlyResourceAndStorageUsd": null,
+    "continuousMonthlyEgressUsd": null,
+    "note": "Partial-window diagnostics only; no production monthly run-rate is published"
+  },
+  "continuity": {
+    "readyAfterRun": {
+      "api": false,
+      "dashboard": false
+    },
+    "application5xxDuringMeasuredWindows": 0,
+    "deploymentChangesDuringMeasuredWindows": 0,
+    "serviceRestartsDuringMeasuredWindows": 0
+  },
+  "windDown": {
+    "capturedAt": "2026-08-11T14:21:08Z",
+    "projectRetained": true,
+    "servicesStopped": 5,
+    "runningReplicas": 0,
+    "runnerSourceDisconnected": true,
+    "activeVolumes": 0,
+    "volumesPendingDeletion": 5,
+    "pendingDeletionMb": 103883.718656,
+    "productionProjectChanged": false
+  },
+  "artifacts": {
+    "runtimeCommit": "10b19eb48dc22e6271acea046c3da1ebaec7ad63",
+    "api": {
+      "deploymentId": "42744a01-8549-41fd-a6e7-094e760674c7",
+      "sourceImageDigest": "sha256:e5aa606f94f2657bb41a6043f8360bf7290025c9e635ecd2159e043c1fa76c2f",
+      "deployedImageDigest": "sha256:0b13adb67c1b10b7dd9a3a06a88aed8948b6a216e018f96fae400b1b7e01c453"
+    },
+    "dashboard": {
+      "deploymentId": "5839058b-4d49-4a99-ace9-8454ccf40cd9",
+      "imageDigest": "sha256:0409dccea72e6c7731c08a6324cabe393a785f81e28606cebcb7404832bf8962"
+    },
+    "sableDb": {
+      "deploymentId": "425c0fc6-9d98-4b7c-b2d2-74ad1fc083e3",
+      "imageDigest": "sha256:bbccbe52b7915a2d73b8cb0f9e12c706a5c733fd492432d341f66ef8d0b79051"
+    },
+    "runner": {
+      "deploymentId": "9ca438d1-f5dc-4bcc-8ad1-2e89cf8a8798",
+      "imageDigest": "sha256:ecfd743ca87764f6b9ea73f5e88342c98e7f3c61bc13a8ea3b6446942fcd1bac",
+      "containerSourceCommit": "724e70ca02c43b55c5a203516bf3c813ea5f57dc",
+      "qualificationHarness": "staged and retained by SHA-256 in source-SHA256SUMS"
+    }
+  }
+}

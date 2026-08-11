@@ -35,6 +35,8 @@ COPY --from=k6 /usr/bin/k6 /usr/local/bin/k6
 COPY --from=build /usr/local/bin/rustyauth-benchmark /usr/local/bin/rustyauth-benchmark
 COPY benchmarks /opt/rustyauth/benchmarks
 RUN chmod 0755 \
+  /opt/rustyauth/benchmarks/diagnose-sable-path.sh \
+  /opt/rustyauth/benchmarks/inspect-sable-cursors.sh \
   /opt/rustyauth/benchmarks/run-passkey-companion.sh \
   /opt/rustyauth/benchmarks/run-starter-baseline.sh \
   /opt/rustyauth/benchmarks/run-enterprise-profile.sh

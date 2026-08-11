@@ -1,0 +1,79 @@
+{
+  "cpu": {
+    "average": 0.43875727499999995,
+    "current": 0.0,
+    "limit": 1.0,
+    "max": 0.9189027333333332,
+    "unit": "vCPU",
+    "utilization_pct": 0.0
+  },
+  "deployments": [
+    {
+      "created_at": "2026-08-11T12:52:59.280+00:00",
+      "id": "42744a01-8549-41fd-a6e7-094e760674c7",
+      "status": "SUCCESS"
+    },
+    {
+      "created_at": "2026-08-11T12:40:47.871+00:00",
+      "id": "a5a6edc0-9322-4978-a5ec-ac341d0cde7b",
+      "status": "REMOVED"
+    },
+    {
+      "created_at": "2026-08-11T12:19:30.905+00:00",
+      "id": "44757484-e1a9-4403-b843-04815d3e97f1",
+      "status": "REMOVED"
+    },
+    {
+      "created_at": "2026-08-11T12:06:18.109+00:00",
+      "id": "9a74d138-8571-4c6e-8cf1-1dc2309c3501",
+      "status": "REMOVED"
+    },
+    {
+      "created_at": "2026-08-11T11:47:57.691+00:00",
+      "id": "8bf00575-0f79-42c3-be2a-d69ceb1c78cd",
+      "status": "REMOVED"
+    }
+  ],
+  "disk": {
+    "average_mb": 0.0,
+    "current_mb": 0.0,
+    "max_mb": 0.0
+  },
+  "environment": "production",
+  "http": {
+    "2xx": 381158,
+    "3xx": 0,
+    "4xx": 0,
+    "5xx": 0,
+    "error_rate": 0.0,
+    "p50_ms": 43,
+    "p90_ms": 193,
+    "p95_ms": 275,
+    "p99_ms": 657,
+    "total": 381158
+  },
+  "memory": {
+    "average_mb": 78.205943808,
+    "current_mb": 105.00440064,
+    "limit_mb": 1023.99737856,
+    "max_mb": 105.00440064,
+    "utilization_pct": 10.3
+  },
+  "public_network_traffic": {
+    "egress": {
+      "average_mb": 96.905568512,
+      "current_mb": 0.0,
+      "max_mb": 204.660386816
+    },
+    "ingress": {
+      "average_mb": 50.613116160000004,
+      "current_mb": 0.0,
+      "max_mb": 107.107910656
+    }
+  },
+  "service": "RustyAuth",
+  "window": {
+    "since": "2026-08-11T13:31:00+00:00",
+    "until": "2026-08-11T13:33:00+00:00"
+  }
+}

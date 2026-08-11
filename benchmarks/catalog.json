@@ -1,6 +1,6 @@
 {
   "schemaVersion": 2,
-  "updatedAt": "2026-08-10T15:12:00Z",
+  "updatedAt": "2026-08-11T14:21:08Z",
   "publicationPolicy": {
     "summary": "Only synthetic, reproducible benchmark evidence is published. Customer data and production traffic are never used.",
     "isolation": "The load generator, seed data and result storage run in a separate template-derived Railway project and are not part of the installable RustyAuth template.",
@@ -22,6 +22,12 @@
           "name": "Starter",
           "api": "1 vCPU / 512 MB",
           "sableDb": "1 vCPU / 1 GB",
+          "datasetAccounts": 10000
+        },
+        {
+          "name": "Enterprise boundary",
+          "api": "1 vCPU / 1 GB",
+          "sableDb": "4 vCPU / 4 GB",
           "datasetAccounts": 10000
         },
         {
@@ -56,33 +62,48 @@
       ],
       "gates": [
         "Unexpected request failures below 0.1% and no unplanned 5xx responses",
-        "Authenticated reads below 250 ms p95 and 750 ms p99",
-        "Writes below 500 ms p95 and 1 second p99",
-        "No readiness loss, restart or out-of-memory event",
+        "Mixed end-to-end latency below 300 ms p95 and 750 ms p99",
+        "Application latency below 150 ms p95 / 400 ms p99 and accumulated SableDB below 150 ms p95 / 250 ms p99",
+        "The measured phase completes its exact scheduled arrival count; excluded warm-up drops remain disclosed",
+        "Complete passkey ceremonies remain below 750 ms p95 and 1,500 ms p99 under operating load",
+        "A one-hour operating-rate soak completes without readiness loss, restart or out-of-memory event",
         "Published user capacity retains 30% measured throughput headroom"
       ],
       "decisionGuide": {
-        "headline": "A starter realm has demonstrated 800 authenticated requests per second with zero failures; the measured breakpoint is still above that rate.",
-        "measured": "One single-writer Railway realm, 10,000 accounts, 10,000 sessions, 141,764 authenticated reads and complete passkey ceremonies on pinned 1.0.0 images.",
-        "inferred": "At the published 30% headroom rule, the measured lower bound translates to 5,600 typical active users, 16,800 light users or 1,680 heavy administrative users per starter realm.",
-        "notDemonstrated": "A single realm has not been shown at Facebook-scale traffic, multi-region active-active writes or billions of accounts. Those require many independently isolated realm cells and separate Fleet-scale qualification.",
-        "scaleStrategy": "Scale vertically within a realm until its measured gate, then add realm cells by tenant, geography or workload boundary. Fleet coordinates those cells without putting customer database credentials in the control plane."
+        "headline": "One measured Railway realm retained an exact 2,400 mixed authenticated RPS boundary pass; its one-hour operating-rate qualification remains incomplete.",
+        "measured": "A 10,000-account single-writer realm passed an exact two-minute 2,400 RPS boundary. The exact 3,200 RPS run was the first tested failure. A companion passkey run completed 30 ceremonies under 1,680 RPS background load. The planned soak stopped after 37 minutes 40.7 seconds and did not run recovery.",
+        "inferred": "Applying 30 percent planning headroom to the short-window boundary gives a candidate 1,680 RPS rate and candidate active-user projections; these are not published operating capacity.",
+        "notDemonstrated": "A one-hour operating-rate soak and recovery, 50,000 or 100,000 stored accounts, multi-region active-active writes, shared Fleet bottlenecks and hyperscale operation remain unqualified.",
+        "scaleStrategy": "Use the last fully published 800 RPS baseline and its 560 RPS headroom rate for supported planning until a fresh one-hour enterprise soak and recovery are completed. Treat the 2,400 RPS boundary and 1,680 RPS headroom calculation as informational."
       },
       "enterpriseProfile": {
         "name": "High-traffic product journey v2",
-        "state": "ready-for-run",
+        "state": "published",
         "mix": [
-          { "operation": "Session-backed account read", "percent": 60 },
-          { "operation": "User token mint", "percent": 20 },
-          { "operation": "Passkey inventory read", "percent": 15 },
-          { "operation": "Public signing-key discovery", "percent": 5 }
+          {
+            "operation": "Session-backed account read",
+            "percent": 60
+          },
+          {
+            "operation": "User token mint",
+            "percent": 20
+          },
+          {
+            "operation": "Passkey inventory read",
+            "percent": 15
+          },
+          {
+            "operation": "Public signing-key discovery",
+            "percent": 5
+          }
         ],
         "phases": [
           "Warm-up and connection establishment",
-          "800–2,000 RPS sustained capacity steps",
-          "2,400 RPS traffic spike",
-          "Return to 800 RPS and verify recovery",
-          "One-hour 70%-headroom soak after breakpoint review"
+          "Exact 2,400 RPS sustained qualification",
+          "Exact 3,200 RPS first-failure confirmation",
+          "One-hour 1,680 RPS operating-rate soak",
+          "Complete passkey ceremonies under the soak",
+          "Recovery and readiness verification"
         ],
         "timing": "Secret-gated Server-Timing separates the external path, API application work and every API-to-SableDB command or pipeline."
       }
@@ -104,6 +125,360 @@
     }
   ],
   "reports": [
+    {
+      "id": "single-realm-enterprise-2026-08-11",
+      "programId": "single-realm-capacity",
+      "title": "Enterprise mixed-journey Railway boundary and soak",
+      "status": "informational",
+      "qualification": "Retained two-minute boundary, first-failure and passkey evidence; one-hour soak stopped at 37m40.7s",
+      "observedAt": "2026-08-11T14:12:49Z",
+      "release": "1.0.0",
+      "commit": "10b19eb48dc22e6271acea046c3da1ebaec7ad63",
+      "environment": "Railway: API 1 vCPU / 1 GB; SableDB 4 vCPU / 4 GB; public Railway edge",
+      "methodologyVersion": "single-realm-enterprise-v2",
+      "summary": "A 10,000-account single-writer realm passed the exact two-minute mixed-workload boundary at 2,400 RPS. The exact 3,200 RPS test was the first failure. Thirty passkey ceremonies passed under 1,680 RPS background load, but the planned one-hour soak was stopped after 37 minutes 40.7 seconds, did not run recovery and recorded 548 ms Railway API-edge p95. The 1,680 RPS operating rate is therefore a candidate, not a qualified production claim.",
+      "imageDigests": {
+        "api": "sha256:e5aa606f94f2657bb41a6043f8360bf7290025c9e635ecd2159e043c1fa76c2f",
+        "dashboard": "sha256:0409dccea72e6c7731c08a6324cabe393a785f81e28606cebcb7404832bf8962",
+        "sableDb": "sha256:bbccbe52b7915a2d73b8cb0f9e12c706a5c733fd492432d341f66ef8d0b79051"
+      },
+      "dataset": [
+        {
+          "key": "mixed_requests_at_qualified_boundary",
+          "label": "Measured mixed requests at 2,400 RPS",
+          "value": 288140,
+          "unit": "requests"
+        },
+        {
+          "key": "qualified_boundary_duration",
+          "label": "Exact boundary window",
+          "value": 120,
+          "unit": "seconds"
+        },
+        {
+          "key": "passkey_ceremonies_under_load",
+          "label": "Complete passkey sign-ins under load",
+          "value": 30,
+          "unit": "sign-ins"
+        }
+      ],
+      "results": [
+        {
+          "key": "registered_accounts",
+          "label": "Registered accounts",
+          "value": 10000,
+          "unit": "accounts",
+          "threshold": "10,000 seeded synthetic accounts",
+          "outcome": "pass"
+        },
+        {
+          "key": "valid_sessions",
+          "label": "Valid sessions",
+          "value": 10000,
+          "unit": "sessions",
+          "threshold": "Equal to registered accounts",
+          "outcome": "pass"
+        },
+        {
+          "key": "sustainable_authenticated_rps",
+          "label": "Qualified mixed authenticated throughput",
+          "value": 2400,
+          "unit": "RPS",
+          "threshold": "Every strict v2 gate passes for two measured minutes",
+          "outcome": "pass"
+        },
+        {
+          "key": "candidate_operating_rps",
+          "label": "Candidate rate with 30% headroom",
+          "value": 1680,
+          "unit": "RPS",
+          "threshold": "Planning calculation pending one-hour soak and recovery",
+          "outcome": "observe"
+        },
+        {
+          "key": "first_failing_rps",
+          "label": "First tested failing rate",
+          "value": 3200,
+          "unit": "RPS",
+          "threshold": "Scheduled-throughput and 150 ms internal p95 gates fail closed",
+          "outcome": "observe"
+        },
+        {
+          "key": "candidate_typical_active_users",
+          "label": "Candidate typical simultaneously active users",
+          "value": 16800,
+          "unit": "users",
+          "threshold": "Unqualified projection at six requests/minute",
+          "outcome": "observe"
+        },
+        {
+          "key": "signin_rps",
+          "label": "Passkey sign-in companion rate",
+          "value": 0.1,
+          "unit": "sign-ins/s",
+          "threshold": "6 complete ceremonies/minute under 1,680 RPS background",
+          "outcome": "pass"
+        },
+        {
+          "key": "signin_p95_ms",
+          "label": "Passkey sign-in p95 under load",
+          "value": 221.1,
+          "unit": "ms",
+          "threshold": "< 750 ms",
+          "outcome": "pass"
+        },
+        {
+          "key": "signin_p99_ms",
+          "label": "Passkey sign-in p99 under load",
+          "value": 310.75,
+          "unit": "ms",
+          "threshold": "< 1,500 ms",
+          "outcome": "pass"
+        },
+        {
+          "key": "mixed_authenticated_p95_ms",
+          "label": "2,400 RPS end-to-end p95",
+          "value": 173.293139,
+          "unit": "ms",
+          "threshold": "< 300 ms",
+          "outcome": "pass"
+        },
+        {
+          "key": "mixed_authenticated_p99_ms",
+          "label": "2,400 RPS end-to-end p99",
+          "value": 251.553855,
+          "unit": "ms",
+          "threshold": "< 750 ms",
+          "outcome": "pass"
+        },
+        {
+          "key": "external_path_p95_ms",
+          "label": "Public edge and network p95",
+          "value": 55.297302,
+          "unit": "ms",
+          "threshold": "Observed separately from server work",
+          "outcome": "observe"
+        },
+        {
+          "key": "application_p95_ms",
+          "label": "Application p95",
+          "value": 142.095,
+          "unit": "ms",
+          "threshold": "< 150 ms",
+          "outcome": "pass"
+        },
+        {
+          "key": "sable_p95_ms",
+          "label": "Accumulated SableDB p95",
+          "value": 142.01925,
+          "unit": "ms",
+          "threshold": "< 150 ms",
+          "outcome": "pass"
+        },
+        {
+          "key": "qualified_boundary_failure_percent",
+          "label": "Qualified-boundary failure rate",
+          "value": 0.032623,
+          "unit": "%",
+          "threshold": "< 0.1%",
+          "outcome": "pass"
+        },
+        {
+          "key": "qualified_boundary_warmup_dropped_iterations",
+          "label": "Excluded connection-warm-up drops",
+          "value": 1386,
+          "unit": "iterations",
+          "threshold": "Outside the measured phase; measured count must still meet 288,000",
+          "outcome": "observe"
+        },
+        {
+          "key": "failed_requests",
+          "label": "Failed requests at qualified boundary",
+          "value": 94,
+          "unit": "requests",
+          "threshold": "< 0.1% of scheduled requests",
+          "outcome": "pass"
+        },
+        {
+          "key": "unplanned_5xx",
+          "label": "Unplanned server 5xx",
+          "value": 0,
+          "unit": "responses",
+          "threshold": "Exactly zero",
+          "outcome": "pass"
+        },
+        {
+          "key": "attempted_soak_rps",
+          "label": "Attempted partial-soak rate",
+          "value": 1680,
+          "unit": "RPS",
+          "threshold": "One-hour soak required",
+          "outcome": "observe"
+        },
+        {
+          "key": "partial_soak_duration_seconds",
+          "label": "Observed partial-soak duration",
+          "value": 2260.7,
+          "unit": "seconds",
+          "threshold": "3,600 seconds plus recovery required",
+          "outcome": "fail"
+        },
+        {
+          "key": "partial_soak_completed_iterations",
+          "label": "Completed iterations including warm-up",
+          "value": 3802109,
+          "unit": "iterations",
+          "threshold": "Diagnostic only; no terminal summary",
+          "outcome": "observe"
+        },
+        {
+          "key": "partial_soak_logged_http2_cancels",
+          "label": "Logged HTTP/2 CANCEL warnings",
+          "value": 284,
+          "unit": "log lines",
+          "threshold": "Diagnostic only; terminal failure rate unavailable",
+          "outcome": "observe"
+        },
+        {
+          "key": "partial_soak_api_edge_p95_ms",
+          "label": "Railway API-edge p95 in partial window",
+          "value": 548,
+          "unit": "ms",
+          "threshold": "< 300 ms",
+          "outcome": "fail"
+        },
+        {
+          "key": "partial_soak_api_5xx",
+          "label": "Railway API 5xx in partial window",
+          "value": 0,
+          "unit": "responses",
+          "threshold": "Exactly zero",
+          "outcome": "pass"
+        }
+      ],
+      "capacityModels": [
+        {
+          "profile": "Light SaaS",
+          "requestsPerMinute": 2,
+          "activeUsers": 50400,
+          "basis": "1,680 candidate RPS × 60 ÷ 2"
+        },
+        {
+          "profile": "Typical application",
+          "requestsPerMinute": 6,
+          "activeUsers": 16800,
+          "basis": "1,680 candidate RPS × 60 ÷ 6"
+        },
+        {
+          "profile": "Heavy administration",
+          "requestsPerMinute": 20,
+          "activeUsers": 5040,
+          "basis": "1,680 candidate RPS × 60 ÷ 20"
+        }
+      ],
+      "realmScaling": {
+        "measuredRealmCells": 1,
+        "model": "linear-independent-cells",
+        "formula": "equivalent independent realm cells × candidate 1,680 RPS",
+        "limitations": [
+          "Only one realm cell was measured; rows above one are planning extrapolations.",
+          "Equivalent cells require the same images, resources, dataset class and workload mix.",
+          "Shared Fleet, ingress, regional, backup and observability limits are not included.",
+          "The cell model does not create multi-writer consistency inside one realm.",
+          "The candidate rate did not complete the one-hour soak or recovery gate and is not supported production capacity."
+        ]
+      },
+      "charts": [
+        {
+          "id": "mixed-boundary-latency",
+          "title": "The mixed journey clears 2,400 RPS and bends at 3,200 RPS",
+          "description": "Exact two-minute public Railway qualification windows. The 2,400 RPS point passes every gate; 3,200 RPS is retained as the first scheduled-throughput and internal-latency failure.",
+          "xUnit": "RPS",
+          "yUnit": "ms",
+          "series": [
+            {
+              "name": "end-to-end",
+              "points": [
+                {
+                  "x": 2400,
+                  "y": 173.293139
+                },
+                {
+                  "x": 3200,
+                  "y": 295.903691
+                }
+              ]
+            },
+            {
+              "name": "application",
+              "points": [
+                {
+                  "x": 2400,
+                  "y": 142.095
+                },
+                {
+                  "x": 3200,
+                  "y": 236.73965
+                }
+              ]
+            },
+            {
+              "name": "SableDB",
+              "points": [
+                {
+                  "x": 2400,
+                  "y": 142.01925
+                },
+                {
+                  "x": 3200,
+                  "y": 236.64055
+                }
+              ]
+            },
+            {
+              "name": "external path",
+              "points": [
+                {
+                  "x": 2400,
+                  "y": 55.297302
+                },
+                {
+                  "x": 3200,
+                  "y": 81.76177
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "confidence": {
+        "measured": "Pinned Railway images and resources; 10,000 accounts and sessions; exact 2,400 RPS two-minute pass; exact 3,200 RPS first failure; 30 passkey ceremonies under 1,680 RPS background load; 37m40.7s incomplete soak; real public edge and private SableDB path.",
+        "inferred": "Active-user and multi-realm figures apply the disclosed activity model and linear equivalent-cell assumptions to the unqualified 1,680 RPS candidate rate.",
+        "notProven": "A one-hour operating-rate soak and recovery, 50,000 or 100,000 stored accounts, high-rate login from distributed source IPs, HA failover, multi-region writes, shared Fleet limits and hyperscale operation remain separate gates."
+      },
+      "evidence": [
+        {
+          "label": "Informational enterprise report",
+          "url": "https://github.com/rusty-auth/rustyauth/blob/main/release-evidence/benchmarks/enterprise-20260811T132328Z/REPORT.md"
+        },
+        {
+          "label": "Railway wind-down record",
+          "url": "https://github.com/rusty-auth/rustyauth/blob/main/release-evidence/benchmarks/enterprise-20260811T132328Z/WIND_DOWN.md"
+        },
+        {
+          "label": "Reviewed metrics and deployment artifacts",
+          "url": "https://github.com/rusty-auth/rustyauth/blob/main/release-evidence/benchmarks/enterprise-20260811T132328Z/reviewed-evidence.json"
+        },
+        {
+          "label": "Raw final-run artifacts",
+          "url": "https://github.com/rusty-auth/rustyauth/tree/main/release-evidence/benchmarks/enterprise-20260811T132328Z/raw-runs"
+        },
+        {
+          "label": "Captured Railway metrics",
+          "url": "https://github.com/rusty-auth/rustyauth/tree/main/release-evidence/benchmarks/enterprise-20260811T132328Z/railway-metrics"
+        }
+      ]
+    },
     {
       "id": "single-realm-starter-2026-08-10",
       "programId": "single-realm-capacity",
@@ -280,34 +655,88 @@
             {
               "name": "p50",
               "points": [
-                { "x": 25, "y": 25.8239975 },
-                { "x": 50, "y": 25.028347 },
-                { "x": 100, "y": 24.96317 },
-                { "x": 200, "y": 24.531987 },
-                { "x": 400, "y": 24.624215 },
-                { "x": 800, "y": 25.305971 }
+                {
+                  "x": 25,
+                  "y": 25.8239975
+                },
+                {
+                  "x": 50,
+                  "y": 25.028347
+                },
+                {
+                  "x": 100,
+                  "y": 24.96317
+                },
+                {
+                  "x": 200,
+                  "y": 24.531987
+                },
+                {
+                  "x": 400,
+                  "y": 24.624215
+                },
+                {
+                  "x": 800,
+                  "y": 25.305971
+                }
               ]
             },
             {
               "name": "p95",
               "points": [
-                { "x": 25, "y": 74.4825078 },
-                { "x": 50, "y": 65.139034 },
-                { "x": 100, "y": 66.949184 },
-                { "x": 200, "y": 73.31633 },
-                { "x": 400, "y": 75.495421 },
-                { "x": 800, "y": 76.456158 }
+                {
+                  "x": 25,
+                  "y": 74.4825078
+                },
+                {
+                  "x": 50,
+                  "y": 65.139034
+                },
+                {
+                  "x": 100,
+                  "y": 66.949184
+                },
+                {
+                  "x": 200,
+                  "y": 73.31633
+                },
+                {
+                  "x": 400,
+                  "y": 75.495421
+                },
+                {
+                  "x": 800,
+                  "y": 76.456158
+                }
               ]
             },
             {
               "name": "p99",
               "points": [
-                { "x": 25, "y": 108.21646818 },
-                { "x": 50, "y": 99.226223 },
-                { "x": 100, "y": 104.14369 },
-                { "x": 200, "y": 113.83114789 },
-                { "x": 400, "y": 112.36823 },
-                { "x": 800, "y": 130.792856 }
+                {
+                  "x": 25,
+                  "y": 108.21646818
+                },
+                {
+                  "x": 50,
+                  "y": 99.226223
+                },
+                {
+                  "x": 100,
+                  "y": 104.14369
+                },
+                {
+                  "x": 200,
+                  "y": 113.83114789
+                },
+                {
+                  "x": 400,
+                  "y": 112.36823
+                },
+                {
+                  "x": 800,
+                  "y": 130.792856
+                }
               ]
             }
           ]

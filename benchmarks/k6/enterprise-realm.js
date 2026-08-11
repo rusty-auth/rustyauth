@@ -35,6 +35,10 @@ const benchmarkTimingToken = crypto.sha256(
 );
 
 const profile = __ENV.PROFILE || "enterprise";
+const trafficMix = __ENV.TRAFFIC_MIX || "product";
+if (!["product", "read_only"].includes(trafficMix)) {
+  throw new Error("TRAFFIC_MIX must be product or read_only");
+}
 // The datastore gate matches the application's p95 budget because SableDB
 // dominates this deliberately store-heavy journey. A separate 100 ms p95
 // candidate gate was rejected before v2 qualification: exact 100 and 350 RPS
@@ -89,6 +93,7 @@ const externalPathDuration = new Trend("external_path_duration", true);
 const sabledbRoundTrips = new Trend("sabledb_round_trips");
 const requestFailures = new Rate("enterprise_request_failures");
 const unplanned5xx = new Counter("enterprise_unplanned_5xx");
+const transportFailures = new Counter("enterprise_transport_failures");
 
 const phaseMetrics = Object.fromEntries(
   phases.map((phase) => [phase.name, {
@@ -99,6 +104,7 @@ const phaseMetrics = Object.fromEntries(
     warmupCompleted: new Counter(`phase_${phase.name}_warmup_completed`),
     failures: new Rate(`phase_${phase.name}_failures`),
     unplanned5xx: new Counter(`phase_${phase.name}_unplanned_5xx`),
+    transportFailures: new Counter(`phase_${phase.name}_transport_failures`),
     operations: {
       account: new Trend(`phase_${phase.name}_account`, true),
       token: new Trend(`phase_${phase.name}_token`, true),
@@ -139,7 +145,13 @@ const globalThresholds = {
 let startsAtSeconds = 0;
 const scenarios = {};
 for (const phase of phases) {
-  const preallocationRatio = profile === "single" ? 0.5 : 0.15;
+  // The multi-step profile previously preallocated 15%. At 1,600–2,400 RPS
+  // the service still cleared every latency and reliability gate, but short
+  // tail-latency bursts made k6 grow VUs just after an arrival deadline and
+  // manufactured 683 dropped iterations. A measured peak of 17.2% active VUs
+  // makes 25% the smallest reviewed margin that keeps the generator out of the
+  // result without returning to an oversized one-VU-per-RPS pool.
+  const preallocationRatio = profile === "single" ? 0.5 : 0.25;
   const maximumRatio = profile === "single" ? 1 : 0.75;
   const warmupSeconds = profile === "single" ? durationSeconds(singleWarmupDuration) : 0;
   const executorSeconds = durationSeconds(phase.duration) + warmupSeconds;
@@ -192,6 +204,15 @@ export function enterpriseJourney() {
     Date.now() - exec.scenario.startTime >= durationSeconds(singleWarmupDuration) * 1_000;
 
   const unsuccessful = failed || timing === null;
+  if (__ENV.BENCHMARK_DEBUG_FAILURES === "true" && failed) {
+    console.error(JSON.stringify({
+      durationMs: duration,
+      error: response.error || null,
+      errorCode: response.error_code || 0,
+      operation,
+      status: response.status,
+    }));
+  }
   if (__ENV.BENCHMARK_DEBUG_SAMPLE === "true" && exec.scenario.iterationInTest < 20) {
     console.log(JSON.stringify({
       operation,
@@ -215,6 +236,12 @@ export function enterpriseJourney() {
       phase.unplanned5xx.add(1);
     } else {
       phase.unplanned5xx.add(0);
+    }
+    if (response.status === 0) {
+      transportFailures.add(1);
+      phase.transportFailures.add(1);
+    } else {
+      phase.transportFailures.add(0);
     }
 
     if (timing) {
@@ -246,7 +273,16 @@ function requestFor(operation, fixture) {
   };
   switch (operation) {
     case "token":
-      return { method: "POST", url: `${__ENV.TARGET_URL}/v1/token`, body: "", options };
+      // Unlike the read-only responses, the access token is the product of
+      // this operation. Consume it as a real relying party would instead of
+      // using k6's body-discard path; this also keeps HTTP/2 stream-cancel
+      // diagnostics distinct from server-side token failures.
+      return {
+        method: "POST",
+        url: `${__ENV.TARGET_URL}/v1/token`,
+        body: "",
+        options: { ...options, responseType: "text" },
+      };
     case "credentials":
       return { method: "GET", url: `${__ENV.TARGET_URL}/v1/credentials`, options };
     case "jwks":
@@ -264,6 +300,14 @@ function requestFor(operation, fixture) {
 // 15% passkey inventory reads and 5% public key discovery.
 function operationForIteration(iteration) {
   const slot = iteration % 20;
+  // This control exists only to isolate datastore read capacity while a
+  // product-profile regression is being diagnosed. A read_only run cannot be
+  // published as mixed-product capacity; reviewed runs retain the default.
+  if (trafficMix === "read_only") {
+    if (slot < 15) return "account";
+    if (slot < 19) return "credentials";
+    return "jwks";
+  }
   if (slot < 12) return "account";
   if (slot < 16) return "token";
   if (slot < 19) return "credentials";

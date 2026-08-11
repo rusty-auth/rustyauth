@@ -37,10 +37,10 @@ supported active users = operating RPS × 60
 ## Enterprise product journey
 
 `run-enterprise-profile.sh` adds a high-traffic product workload after the simple capacity floor is known. It
-uses one k6 run with named phases, so warm-up, sustained tiers, saturation, spike and recovery can be compared
-without rebuilding or restarting the realm between samples. Its deterministic traffic mix is 60%
-session-backed account reads, 20% user-token minting, 15% passkey inventory reads and 5% signing-key
-discovery.
+supports a named-phase exploratory ladder for locating the likely boundary, then exact fixed-rate windows for
+the passing and first-failing targets. This prevents an exploratory generator limit or nearby phase from
+contaminating the reviewed boundary. Its deterministic traffic mix is 60% session-backed account reads, 20%
+user-token minting, 15% passkey inventory reads and 5% signing-key discovery.
 
 The runner authenticates a separate timing header with the realm's benchmark-only secret. RustyAuth then emits
 a standard `Server-Timing` response only for that authorized request. Every Redis command and pipeline issued
@@ -58,6 +58,18 @@ runner, fixture keys or benchmark secret.
 Enterprise qualification uses explicit fixed-rate targets to bracket the first strict latency or reliability
 failure. A separate one-hour soak then runs at 70% of the highest passing target. A short breakpoint run is
 never promoted as a soak result, and a higher read-only result is never presented as mixed-journey capacity.
+
+The retained 11 August 2026 enterprise run demonstrates why this gate is fail-closed. Its exact two-minute
+2,400 RPS boundary passed and its exact 3,200 RPS run was the first tested failure, but the 1,680 RPS soak was
+stopped after 37 minutes 40.7 seconds and never reached recovery. The 1,680 RPS figure is therefore a candidate
+headroom calculation, not a published operating rate. Raw final-run artifacts, partial Railway telemetry and
+the resource wind-down record are retained under
+`release-evidence/benchmarks/enterprise-20260811T132328Z/`.
+
+The isolated Railway project is intentionally dormant: all five services have zero running replicas, every
+benchmark volume is pending deletion and the runner's GitHub source is disconnected so a push to `main` cannot
+wake it. A future run requires explicit owner authorization, a fresh runner source connection, fresh volumes
+and reseeding; there is no always-on or scheduled Railway benchmark workload.
 
 Methodology v2 requires less than 0.1% unexpected failures, zero unplanned 5xx responses, end-to-end latency
 below 300 ms p95 / 750 ms p99, API application latency below 150 ms p95 / 400 ms p99 and accumulated
@@ -90,20 +102,22 @@ the production storage contract without turning 10,000-account preparation into 
 durability barriers. Seeding refuses to run when identity/event records or an active writer lease are present,
 and verifies the final account/session cardinalities before the fixture set can be used by k6.
 
-Each run validates every deterministic session and its separate deferred-activity record, but renews the base
-session only when the effective activity timestamp leaves less than half its idle window remaining; this
-avoids manufacturing an LSM compaction burst immediately before measurement. A future-dated or malformed
-activity record fails closed instead of extending a fixture session. The refresher prunes only superseded
-sessions owned by deterministic benchmark accounts, then validates the first and last fixtures through the
-production session model. This preserves the expensive account and passkey dataset between monthly runs
-without accepting expired session keys as valid workload fixtures. The runner's
+Each reviewed run rewrites every deterministic session with a fresh absolute TTL, removes its separate
+deferred-activity key and validates the first and last fixtures through the production session model. The
+refresher staggers `last_seen_at` across the production touch interval minus the unmeasured settle window. For
+the retained 30-minute idle policy, that means a 300-second touch interval, a 60-second settle and a
+240-second distribution: sessions become due gradually after measurement begins instead of all producing a
+write at the same instant. This preserves the expensive account and passkey dataset between monthly runs
+without hiding the durable write load of a genuinely active population.
+
+A future-dated or malformed activity record fails closed instead of extending a fixture session. The refresher
+prunes only superseded sessions owned by deterministic benchmark accounts. The runner's
 `BENCHMARK_SESSION_IDLE_SECONDS` must exactly match the realm's `AUTH_SESSION_IDLE_SECONDS`. If an earlier
 preflight caused the API to delete an idle-expired synthetic session, the runner reconstructs only that
-deterministic session from its persisted account and single registered passkey and records the repair count. A
-five-minute unmeasured settle window separates a real refresh from the smoke gate and measured profile; the
-10,000-session refresh is itself a deliberate storage burst. Adjacent breakpoint steps may set
-`BENCHMARK_REFRESH_SESSIONS=false` after one successful refresh to retain those still-valid fixtures and skip
-the settle window. The runner records the shortcut, and a reviewed boundary or soak may not use it.
+deterministic session from its persisted account and single registered passkey and records the repair count.
+The 60-second settle keeps the 10,000-session preparation burst outside the smoke gate and measured profile.
+Adjacent exploratory steps may set `BENCHMARK_REFRESH_SESSIONS=false` to retain still-valid fixtures and skip
+the settle window, but a reviewed boundary or soak may not use that shortcut.
 
 The runner image is built from `Dockerfile.benchmark`, stays private, has no public domain and connects to
 SableDB through Railway private networking. k6 alone calls the public target domain so gateway latency is
@@ -129,3 +143,23 @@ The runner writes one directory under `/data/runs/<run-id>` containing dataset c
 human-readable k6 output, exit codes and `SHA256SUMS`. Railway CPU, memory, HTTP, network, volume and
 deployment evidence is collected for the same UTC interval by benchmark control before a candidate report is
 generated.
+
+## Datastore path diagnosis
+
+`diagnose-sable-path.sh` issues sequential direct SableDB reads for one deterministic session and account from
+inside the private runner. It prints only combined microsecond durations; fixture tokens, derived keys and
+values never leave the runner. Use it only when the public timing waterfall points to SableDB, and never while
+a k6 process is active:
+
+```sh
+SABLEDB_DIAGNOSTIC_ITERATIONS=200 \
+  /opt/rustyauth/benchmarks/diagnose-sable-path.sh > /data/runs/<run-id>/sable-direct-get-micros.txt
+```
+
+Supported SableDB images also expose cumulative command-execution, lock-acquisition and RocksDB I/O timing in
+`INFO`. Capture deltas around the diagnostic window. The three layers distinguish datastore command or lock
+queuing from storage-engine I/O without adding customer identifiers or enabling verbose request logs.
+
+`inspect-sable-cursors.sh` prints only the numeric event-log boundary, local analytics cursor and their lag.
+Run it before a qualification window so analytics replay from an earlier failed test cannot be mistaken for
+steady-state datastore capacity.

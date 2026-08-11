@@ -182,8 +182,7 @@ rustyauth operator demote <user-id>
 email the account has already **verified**, and verifying an identifier is itself an operator action — so on a
 fresh deployment neither can happen first. The CLI breaks that cycle, and deliberately costs privileged
 container-command access to the deployment (the production image has no shell) rather than control of an
-inbox. Setting `AUTH_OPERATOR_EMAILS` alone is no longer enough to
-become an operator.
+inbox. Setting `AUTH_OPERATOR_EMAILS` alone is no longer enough to become an operator.
 
 Run restore as an offline operation against an empty RustyAuth namespace:
 
@@ -232,29 +231,51 @@ creation.
 The access token is returned in JSON and should be held in memory, not local storage. Session tokens are
 stored only as SHA-256-derived SableDB keys; the raw bearer value lives in the HttpOnly cookie.
 
+## What one realm can serve
+
+RustyAuth publishes capacity only with the exact dataset, workload, resource ceiling, immutable images and
+retained evidence. The retained Railway enterprise run contains 10,000 registered accounts and 10,000 valid
+sessions. A 1 vCPU / 1 GB API with a 4 vCPU / 4 GB SableDB sustained 2,400 mixed authenticated requests per
+second for an exact two-minute window at 173.3 ms public-edge p95 and 0.0326% request failures, with zero
+server 5xx responses. At 3,200 RPS it missed scheduled work and crossed the strict internal latency gates.
+However, the planned 1,680 RPS soak was stopped after 37 minutes 40.7 seconds and never ran recovery; its
+partial Railway edge p95 was 548 ms. The 2,400 RPS boundary is retained as informational evidence, while
+1,680 RPS remains an unqualified headroom calculation rather than a published production operating rate.
+
+“50,000 users” can mean stored accounts, monthly active users or people making requests simultaneously. The
+current dataset does **not** qualify 50,000 or 100,000 stored accounts yet. Applying the disclosed typical
+activity model of six authenticated requests per user per minute to the candidate 1,680 RPS calculation gives
+16,800 simultaneously active users and approximately three or six equivalent cells for 50,000 or 100,000
+continuously active users. Those figures are planning projections, not support commitments. Until a fresh
+one-hour soak and recovery pass, supported planning must use the earlier published 800 RPS baseline and its
+560 RPS headroom rate, alongside a separately qualified stored-account tier.
+
+See [Benchmarks and single-realm capacity](docs/BENCHMARKS.md) for the provider comparison, Railway cost
+model, realm-cell scaling rules and the [reviewed public results](https://rustyauth.dev/benchmarks/).
+
 ## Public endpoints
 
-| Endpoint                                   | Access                   | Purpose                                               |
-| ------------------------------------------ | ------------------------ | ----------------------------------------------------- |
-| `GET /healthz`                             | Public                   | Process liveness                                      |
-| `GET /readyz`                              | Public                   | SableDB-backed readiness                              |
-| `GET /.well-known/passkey-auth`            | Public                   | Runtime capabilities                                  |
-| `GET /.well-known/openid-configuration`    | Public                   | Issuer and token metadata                             |
-| `GET /.well-known/jwks.json`               | Public                   | Active, staged and overlapping ES256 public keys      |
-| `POST /v1/passkeys/registration/options`   | Origin + bootstrap       | Start initial registration                            |
-| `POST /v1/passkeys/registration/verify`    | Origin + bootstrap       | Finish initial registration                           |
-| `POST /v1/passkeys/authentication/options` | Origin                   | Start passkey sign-in                                 |
-| `POST /v1/passkeys/authentication/verify`  | Origin                   | Finish passkey sign-in                                |
-| `POST /v1/token`                           | Session + origin         | Mint a short-lived access token                       |
-| `POST /v1/sign-out`                        | Origin                   | Revoke the current session                            |
-| `GET /v1/account`                          | Session + origin         | Read profile and email/phone identifiers              |
-| `POST /v1/account/profile`                 | Passkey session + origin | Replace given, family and display names               |
-| `POST /v1/account/identifiers*`            | Recent passkey + origin  | Add, remove or select a primary identifier            |
-| `GET /v1/credentials`                      | Session + origin         | List account passkeys                                 |
-| `POST /v1/passkeys/registration/add/*`     | Recent passkey + origin  | Add another passkey                                   |
-| `POST /v1/credentials/rename`              | Passkey session + origin | Rename a passkey                                      |
-| `POST /v1/credentials/revoke`              | Recent passkey + origin  | Remove a non-final passkey                            |
-| `GET /v1/events?after=N`                   | Bootstrap                | Poll up to 500 ordered events                         |
+| Endpoint                                   | Access                   | Purpose                                                                        |
+| ------------------------------------------ | ------------------------ | ------------------------------------------------------------------------------ |
+| `GET /healthz`                             | Public                   | Process liveness                                                               |
+| `GET /readyz`                              | Public                   | SableDB-backed readiness                                                       |
+| `GET /.well-known/passkey-auth`            | Public                   | Runtime capabilities                                                           |
+| `GET /.well-known/openid-configuration`    | Public                   | Issuer and token metadata                                                      |
+| `GET /.well-known/jwks.json`               | Public                   | Active, staged and overlapping ES256 public keys                               |
+| `POST /v1/passkeys/registration/options`   | Origin + bootstrap       | Start initial registration                                                     |
+| `POST /v1/passkeys/registration/verify`    | Origin + bootstrap       | Finish initial registration                                                    |
+| `POST /v1/passkeys/authentication/options` | Origin                   | Start passkey sign-in                                                          |
+| `POST /v1/passkeys/authentication/verify`  | Origin                   | Finish passkey sign-in                                                         |
+| `POST /v1/token`                           | Session + origin         | Mint a short-lived access token                                                |
+| `POST /v1/sign-out`                        | Origin                   | Revoke the current session                                                     |
+| `GET /v1/account`                          | Session + origin         | Read profile and email/phone identifiers                                       |
+| `POST /v1/account/profile`                 | Passkey session + origin | Replace given, family and display names                                        |
+| `POST /v1/account/identifiers*`            | Recent passkey + origin  | Add, remove or select a primary identifier                                     |
+| `GET /v1/credentials`                      | Session + origin         | List account passkeys                                                          |
+| `POST /v1/passkeys/registration/add/*`     | Recent passkey + origin  | Add another passkey                                                            |
+| `POST /v1/credentials/rename`              | Passkey session + origin | Rename a passkey                                                               |
+| `POST /v1/credentials/revoke`              | Recent passkey + origin  | Remove a non-final passkey                                                     |
+| `GET /v1/events?after=N`                   | Bootstrap                | Poll up to 500 ordered events                                                  |
 | `POST /v1/email-links`                     | Origin                   | Append a privacy-preserving sign-in request event; no token or email by design |
 
 The complete HTTP and private RPC contracts are documented in [API](docs/API.md). The private
@@ -286,35 +307,36 @@ not a runtime dependency.
 RustyAuth is at `1.0.0`. The supported GA scope is the Rust server and control plane, the supplied container
 topologies, and the Dioxus web dashboard. Native desktop and mobile clients remain explicit previews.
 
-| Capability                                                  | Status                                                                                                                                                                              |
-| ----------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Passkey registration and authentication                     | Implemented                                                                                                                                                                         |
-| Multiple email/phone identifiers and basic account profiles | Implemented; external verification delivery required                                                                                                                                |
-| Durable sessions and credential management                  | Implemented                                                                                                                                                                         |
-| ES256 JWT, JWKS and automatic rotation                      | Implemented with prepublication and retired-key overlap                                                                                                                             |
-| Ordered HTTP event polling and gRPC event streaming         | Implemented                                                                                                                                                                         |
-| Private identity gRPC reads, exact search and mutations     | Implemented                                                                                                                                                                         |
-| Passkey-authenticated operator dashboard                    | Implemented; first owner created with `operator promote`, browser bootstrap requires a verified allowlisted email                                                                   |
-| Organization and operator control plane                     | Implemented for one organization per instance                                                                                                                                       |
-| Service accounts and credential exchange                    | Implemented with scoped, one-time credentials                                                                                                                                       |
-| Email sign-in and verification delivery                     | Sign-in-link delivery remains event-only; one-time email/phone verification challenges are delivered through exact signed-webhook subscriptions                                   |
-| Account recovery                                            | Implemented with one-use recovery codes, passkey re-enrolment, session revocation and audit events                                                                                  |
-| Scheduled encrypted logical backups                         | Implemented with authenticated v3 envelopes, WORM/SSE posture verification, leases, health and read-after-write verification                                                       |
-| Snapshot restore                                            | Implemented for an empty target with clean-room validation, key recovery/rotation and sessions invalidated by default                                                              |
-| Webhook event delivery                                      | Implemented on current main with encrypted HMAC secrets, durable history, bounded retry, replay and per-destination cursors                                                         |
-| Webhook and standalone metrics control plane                | Implemented on current main; local five-minute analytics projection backs bounded per-realm metrics                                                                                 |
-| Multi-tenant runtime isolation                              | Claims/events are tenant-tagged; one configured tenant per instance                                                                                                                 |
-| Fleet management across isolated deployments                | Implemented hierarchy/RBAC, public and outbound pairing, step-up remote administration, source-tagged partial operations, rotation/revocation and dual audit                        |
-| Federated Fleet Analytics V1                                | GA feature set: trusted export/ingestion, private canonical and materialized serving, delegated API/Dioxus, residency policy and signed Parquet recovery                            |
-| Dioxus operator console                                    | Web is the supported `1.0.0` client; shared desktop/mobile builds, device tokens and OS-vault adapters remain preview-only                                                         |
-| Continuous security and scale assurance                     | Automated on `main` and scheduled runs; independent assessment and extended canary evidence remain ongoing                                                                          |
+| Capability                                                  | Status                                                                                                                                                       |
+| ----------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Passkey registration and authentication                     | Implemented                                                                                                                                                  |
+| Multiple email/phone identifiers and basic account profiles | Implemented; external verification delivery required                                                                                                         |
+| Durable sessions and credential management                  | Implemented                                                                                                                                                  |
+| ES256 JWT, JWKS and automatic rotation                      | Implemented with prepublication and retired-key overlap                                                                                                      |
+| Ordered HTTP event polling and gRPC event streaming         | Implemented                                                                                                                                                  |
+| Private identity gRPC reads, exact search and mutations     | Implemented                                                                                                                                                  |
+| Passkey-authenticated operator dashboard                    | Implemented; first owner created with `operator promote`, browser bootstrap requires a verified allowlisted email                                            |
+| Organization and operator control plane                     | Implemented for one organization per instance                                                                                                                |
+| Service accounts and credential exchange                    | Implemented with scoped, one-time credentials                                                                                                                |
+| Email sign-in and verification delivery                     | Sign-in-link delivery remains event-only; one-time email/phone verification challenges are delivered through exact signed-webhook subscriptions              |
+| Account recovery                                            | Implemented with one-use recovery codes, passkey re-enrolment, session revocation and audit events                                                           |
+| Scheduled encrypted logical backups                         | Implemented with authenticated v3 envelopes, WORM/SSE posture verification, leases, health and read-after-write verification                                 |
+| Snapshot restore                                            | Implemented for an empty target with clean-room validation, key recovery/rotation and sessions invalidated by default                                        |
+| Webhook event delivery                                      | Implemented on current main with encrypted HMAC secrets, durable history, bounded retry, replay and per-destination cursors                                  |
+| Webhook and standalone metrics control plane                | Implemented on current main; local five-minute analytics projection backs bounded per-realm metrics                                                          |
+| Multi-tenant runtime isolation                              | Claims/events are tenant-tagged; one configured tenant per instance                                                                                          |
+| Fleet management across isolated deployments                | Implemented hierarchy/RBAC, public and outbound pairing, step-up remote administration, source-tagged partial operations, rotation/revocation and dual audit |
+| Federated Fleet Analytics V1                                | GA feature set: trusted export/ingestion, private canonical and materialized serving, delegated API/Dioxus, residency policy and signed Parquet recovery     |
+| Dioxus operator console                                     | Web is the supported `1.0.0` client; shared desktop/mobile builds, device tokens and OS-vault adapters remain preview-only                                   |
+| Continuous security and scale assurance                     | Automated on `main` and scheduled runs; independent assessment and extended canary evidence remain ongoing                                                   |
 
 The `1.0.0` source and support contract is GA. Artifact publication remains fail-closed: the `v1.0.0` tag is
 created only after the machine-readable evidence record passes, then the workflow publishes and verifies the
 server, control-plane, dashboard and SableDB images plus the TypeScript and Protobuf packages. Extended scale,
 canary and independent security work continues as asynchronous assurance on supported releases. Desktop, iOS
-and Android distribution is separately gated post-1.0 work. See [Security hardening](docs/SECURITY_HARDENING.md),
-the [roadmap](docs/ROADMAP.md) and the [1.0.0 release-readiness record](docs/RELEASE_READINESS.md).
+and Android distribution is separately gated post-1.0 work. See
+[Security hardening](docs/SECURITY_HARDENING.md), the [roadmap](docs/ROADMAP.md) and the
+[1.0.0 release-readiness record](docs/RELEASE_READINESS.md).
 
 The [roadmap](docs/ROADMAP.md) keeps the single-tenant foundation intact while delivering the
 [Fleet control plane](docs/FLEET_CONTROL_PLANE.md) as a separate management plane for isolated deployments.

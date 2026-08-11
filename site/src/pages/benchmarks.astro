@@ -18,12 +18,29 @@ const updated = new Intl.DateTimeFormat("en-GB", {
   timeZone: "UTC",
 }).format(new Date(catalogue.updatedAt));
 const realmReports = catalogue.reports.filter((report) => report.programId === realmProgram.id);
-const latestReport = realmReports
+const supportedReport = realmReports
   .filter((report) => report.status === "passed")
   .sort((left, right) => right.observedAt.localeCompare(left.observedAt))[0];
-if (!latestReport) throw new Error("passed single-realm benchmark report is missing");
-const result = (key: string) => latestReport.results.find((item) => item.key === key)?.value ?? 0;
-const primaryChart = latestReport.charts?.[0];
+if (!supportedReport) throw new Error("passed single-realm benchmark report is missing");
+const enterpriseReport = realmReports
+  .filter((report) => report.methodologyVersion === "single-realm-enterprise-v2")
+  .sort((left, right) => right.observedAt.localeCompare(left.observedAt))[0];
+if (!enterpriseReport) throw new Error("enterprise single-realm boundary report is missing");
+const reportResult = (report: typeof supportedReport, key: string) =>
+  report.results.find((item) => item.key === key)?.value ?? 0;
+const supportedResult = (key: string) => reportResult(supportedReport, key);
+const boundaryResult = (key: string) => reportResult(enterpriseReport, key);
+const supportedBoundaryRps = supportedResult("sustainable_authenticated_rps");
+const supportedOperatingRps = Math.floor(supportedBoundaryRps * 0.7);
+const supportedTypicalUsers = supportedResult("supported_typical_active_users");
+const candidateBoundaryRps = boundaryResult("sustainable_authenticated_rps");
+const candidateOperatingRps = boundaryResult("candidate_operating_rps");
+const candidateTypicalUsers = boundaryResult("candidate_typical_active_users");
+const firstFailingRps = boundaryResult("first_failing_rps");
+const latencyP95 = boundaryResult("mixed_authenticated_p95_ms");
+const failurePercent = boundaryResult("qualified_boundary_failure_percent");
+const methodologyLabel = "Version 2";
+const primaryChart = enterpriseReport.charts?.[0];
 if (!primaryChart) throw new Error("single-realm latency chart is missing");
 const chartWidth = 780;
 const chartHeight = 310;
@@ -34,19 +51,97 @@ const chartBottom = 43;
 const chartMaxY = Math.ceil(
   Math.max(...primaryChart.series.flatMap((series) => series.points.map((point) => point.y))) / 50,
 ) * 50;
+const chartTicks = Array.from({ length: chartMaxY / 50 + 1 }, (_, index) => index * 50);
 const chartX = (index: number, count: number) =>
   chartLeft + index * ((chartWidth - chartLeft - chartRight) / Math.max(1, count - 1));
 const chartY = (value: number) =>
   chartTop + (chartMaxY - value) / chartMaxY * (chartHeight - chartTop - chartBottom);
 const chartPoints = (points: { x: number; y: number }[]) =>
   points.map((point, index) => `${chartX(index, points.length)},${chartY(point.y)}`).join(" ");
-const typicalUsers = result("supported_typical_active_users");
+const chartSeriesSlug = (name: string) => name.toLowerCase().replace(/[^a-z0-9]+/g, "-");
 const cellScale = [1, 2, 10, 100, 1_000, 10_000].map((realms) => ({
   realms,
-  activeUsers: realms * typicalUsers,
-  rps: realms * result("sustainable_authenticated_rps"),
-  kind: realms === 1 ? "measured" : "extrapolated",
+  supportedRps: realms * supportedOperatingRps,
+  supportedUsers: realms * supportedTypicalUsers,
+  candidateRps: realms * candidateOperatingRps,
+  candidateUsers: realms * candidateTypicalUsers,
+  kind: realms === 1 ? "one measured realm · modelled headroom" : "linear independent-cell model",
 }));
+const realmsForTypicalActiveUsers = (users: number) => Math.ceil(users / Math.max(1, candidateTypicalUsers));
+const providerContext = [
+  {
+    provider: "RustyAuth 1.0",
+    evidence: `${number.format(candidateBoundaryRps)} mixed RPS boundary; ${number.format(supportedOperatingRps)} RPS supported planning rate`,
+    shape: enterpriseReport.environment,
+    reading: "Measured here. The higher boundary is informational until its one-hour soak and recovery pass.",
+    url: "#realm-capacity",
+  },
+  {
+    provider: "Keycloak",
+    evidence: "Regularly tested at 300 RPS / 1,000,000 users",
+    shape: "3 pods plus multi-AZ Aurora reference architecture",
+    reading: "Much stronger large-dataset and HA evidence; workload and hardware differ.",
+    url: "https://www.keycloak.org/high-availability/single-cluster/introduction",
+  },
+  {
+    provider: "Rauthy",
+    evidence: "35–65 MB claimed for small deployments; no comparable public RPS run",
+    shape: "Embedded Hiqlite or PostgreSQL",
+    reading: "Promising footprint, but no reproducible like-for-like speed ranking.",
+    url: "https://github.com/sebadob/rauthy#fast-and-efficient",
+  },
+  {
+    provider: "Clerk",
+    evidence: "Production Backend API limit: 1,000 requests / 10 seconds",
+    shape: "Managed multi-tenant service",
+    reading: "A service limit, not a benchmark; browser auth and local token checks differ.",
+    url: "https://clerk.com/docs/guides/how-clerk-works/system-limits",
+  },
+  {
+    provider: "Auth0",
+    evidence: "Private Cloud tiers: 100–10,000 RPS",
+    shape: "Managed public or dedicated private cloud",
+    reading: "A contracted rate envelope without a matching public workload or latency trace.",
+    url: "https://auth0.com/docs/deploy-monitor/deploy-private-cloud/private-cloud-on-aws",
+  },
+];
+const costContext = [
+  {
+    provider: "RustyAuth 1.0",
+    published: "No monthly production run-rate claimed from the incomplete soak",
+    basis: "Self-hosted · usage-billed Railway resources",
+    caveat: "The retained run proves a short boundary, not a complete month of operating cost. Redundancy and operator time are additional.",
+    url: "https://docs.railway.com/pricing/plans",
+  },
+  {
+    provider: "Keycloak",
+    published: "$0 software licence; ≥$97.50/month illustrative app-only Railway cap",
+    basis: "Three availability pods, each illustrated at 1 vCPU / Keycloak's 1.25 GB base memory",
+    caveat: "PostgreSQL/Aurora, storage, egress and operations are additional; this is not an observed bill.",
+    url: "https://www.keycloak.org/high-availability/multi-cluster/concepts-memory-and-cpu-sizing",
+  },
+  {
+    provider: "Rauthy",
+    published: "$0 software licence; no comparable retained Railway bill",
+    basis: "35–65 MB published small-deployment application footprint",
+    caveat: "Compute, Hiqlite/PostgreSQL, storage, redundancy and operator time remain customer costs.",
+    url: "https://github.com/sebadob/rauthy#fast-and-efficient",
+  },
+  {
+    provider: "Clerk",
+    published: "$20/month annually with 50k MRU; about $1,020/month at 100k MRU",
+    basis: "Managed Pro audience pricing before optional add-ons",
+    caveat: "Includes managed operations and uses retained-user billing, not infrastructure consumption.",
+    url: "https://clerk.com/pricing",
+  },
+  {
+    provider: "Auth0",
+    published: "Free to 25k MAU; paid plans start at $35/month; enterprise is custom",
+    basis: "Managed MAU, feature and capacity pricing",
+    caveat: "The public starting price is not a quote for a 50k–100k enterprise workload.",
+    url: "https://auth0.com/pricing",
+  },
+];
 ---
 
 <BaseLayout
@@ -77,28 +172,37 @@ const cellScale = [1, 2, 10, 100, 1_000, 10_000].map((realms) => ({
           victory lap.
         </p>
         <div class="benchmark-actions">
+          <a href="#latency-curve">See the performance curve <span>↓</span></a>
           <a href="/benchmarks/catalog.json">Download catalogue <span>↓</span></a>
           <a href="https://github.com/rusty-auth/rustyauth/tree/main/benchmarks">Inspect source <span>↗</span></a>
         </div>
       </div>
       <aside class="benchmark-status" aria-label="Single-realm benchmark publication status">
         <span class="benchmark-status-dot"></span>
-        <small>Single-realm Railway capacity</small>
-        <strong>{realmProgram.state === "awaiting-baseline" ? "Awaiting first baseline" : "Active baseline"}</strong>
-        <p>{realmProgram.summary}</p>
+        <small>Active baseline · single-realm Railway</small>
+        <strong>{number.format(candidateBoundaryRps)} mixed RPS</strong>
+        <p>{resultNumber.format(latencyP95)} ms p95 through Railway’s public edge, with zero unplanned server 5xx responses at the retained two-minute boundary.</p>
         <dl>
-          <div><dt>Published realm runs</dt><dd>{realmReports.length}</dd></div>
-          <div><dt>Methodology</dt><dd>Version 1</dd></div>
+          <div><dt>Candidate typical active users</dt><dd>{number.format(candidateTypicalUsers)}</dd></div>
+          <div><dt>Supported typical active users</dt><dd>{number.format(supportedTypicalUsers)}</dd></div>
+          <div><dt>First tested bend</dt><dd>{number.format(firstFailingRps)} RPS</dd></div>
+          <div><dt>Methodology</dt><dd>{methodologyLabel} · {realmReports.length} runs</dd></div>
           <div><dt>Catalogue updated</dt><dd>{updated}</dd></div>
         </dl>
       </aside>
     </section>
 
     <section class="benchmark-outcome shell" aria-label="Current benchmark outcome">
-      <article><small>Measured throughput floor</small><strong>{number.format(result("sustainable_authenticated_rps"))}</strong><span>authenticated RPS</span></article>
-      <article><small>Typical active users</small><strong>{number.format(typicalUsers)}</strong><span>per starter realm · 30% headroom</span></article>
-      <article><small>Latency at 800 RPS</small><strong>{resultNumber.format(result("authenticated_read_p95_ms"))}</strong><span>ms p95 · public edge</span></article>
-      <article><small>Reliability</small><strong>{number.format(result("failed_requests"))}</strong><span>failed requests</span></article>
+      <article><small>Mixed authenticated boundary</small><strong>{number.format(candidateBoundaryRps)}</strong><span>RPS · exact two-minute pass</span></article>
+      <article><small>Candidate typical active users</small><strong>{number.format(candidateTypicalUsers)}</strong><span>at six requests/minute · soak pending</span></article>
+      <article><small>Latency at {number.format(candidateBoundaryRps)} RPS</small><strong>{resultNumber.format(latencyP95)}</strong><span>ms p95 · public Railway edge</span></article>
+      <article><small>Server reliability</small><strong>0</strong><span>unplanned 5xx · {resultNumber.format(failurePercent)}% transport cancellations</span></article>
+    </section>
+
+    <section class="benchmark-proof-strip shell" aria-label="Supported and candidate capacity distinction">
+      <p><span>Supported planning today</span><strong>{number.format(supportedOperatingRps)} RPS · {number.format(supportedTypicalUsers)} typical active users</strong></p>
+      <p><span>Retained performance signal</span><strong>{number.format(candidateOperatingRps)} RPS · {number.format(candidateTypicalUsers)} candidate typical active users</strong></p>
+      <p><span>What promotes the candidate</span><strong>Fresh one-hour soak · recovery pass · published cost window</strong></p>
     </section>
 
     <section class="benchmark-section shell benchmark-decision">
@@ -113,7 +217,7 @@ const cellScale = [1, 2, 10, 100, 1_000, 10_000].map((realms) => ({
       </div>
     </section>
 
-    <section class="benchmark-chart-section">
+    <section class="benchmark-chart-section" id="latency-curve">
       <div class="shell">
         <header class="benchmark-section-heading">
           <p>Latency curve</p>
@@ -122,10 +226,10 @@ const cellScale = [1, 2, 10, 100, 1_000, 10_000].map((realms) => ({
         <figure class="benchmark-line-chart">
           <figcaption>
             <span>End-to-end latency · milliseconds</span>
-            <div>{primaryChart.series.map((series) => <b class={`legend-${series.name}`}>{series.name}</b>)}</div>
+            <div>{primaryChart.series.map((series) => <b class={`legend-${chartSeriesSlug(series.name)}`}>{series.name}</b>)}</div>
           </figcaption>
-          <svg viewBox={`0 0 ${chartWidth} ${chartHeight}`} role="img" aria-label="Authenticated read latency from 25 to 800 requests per second">
-            {[0, 50, 100, 150].filter((tick) => tick <= chartMaxY).map((tick) => (
+          <svg viewBox={`0 0 ${chartWidth} ${chartHeight}`} role="img" aria-label={`${primaryChart.title}, measured in ${primaryChart.yUnit} by ${primaryChart.xUnit}`}>
+            {chartTicks.map((tick) => (
               <g>
                 <line x1={chartLeft} x2={chartWidth - chartRight} y1={chartY(tick)} y2={chartY(tick)} />
                 <text x={chartLeft - 10} y={chartY(tick) + 4}>{tick}</text>
@@ -135,13 +239,13 @@ const cellScale = [1, 2, 10, 100, 1_000, 10_000].map((realms) => ({
               <text class="x-label" x={chartX(index, primaryChart.series[0].points.length)} y={chartHeight - 13}>{point.x}</text>
             ))}
             {primaryChart.series.map((series) => (
-              <g class={`chart-${series.name}`}>
+              <g class={`chart-${chartSeriesSlug(series.name)}`}>
                 <polyline points={chartPoints(series.points)} />
                 {series.points.map((point, index) => <circle cx={chartX(index, series.points.length)} cy={chartY(point.y)} r="4" />)}
               </g>
             ))}
           </svg>
-          <p><strong>Reading the curve:</strong> p50 stayed close to 25 ms while p95 moved from 74.5 ms at 25 RPS to 76.5 ms at 800 RPS. The curve had not bent into saturation, so 800 RPS is deliberately reported as a floor.</p>
+          <p><strong>Reading the curve:</strong> The {number.format(candidateBoundaryRps)} RPS mixed journey clears every internal and public latency gate. The first tested failure is {number.format(firstFailingRps)} RPS, where scheduled throughput and the strict application/datastore latency gates stop passing despite zero server 5xx responses.</p>
         </figure>
       </div>
     </section>
@@ -149,16 +253,16 @@ const cellScale = [1, 2, 10, 100, 1_000, 10_000].map((realms) => ({
     <section class="benchmark-section shell benchmark-cells">
       <header class="benchmark-section-heading">
         <p>Cell scaling</p>
-        <div><h2>Each qualified realm adds another capacity unit.</h2><p>{decisionGuide.scaleStrategy}</p></div>
+        <div><h2>Realm cells make the scale story legible.</h2><p>{decisionGuide.scaleStrategy} Independent, equivalently sized realms add capacity linearly in the planning model; shared Fleet, ingress and regional limits still need multi-realm qualification.</p></div>
       </header>
       <div class="benchmark-scale-table" role="table" aria-label="Realm cell capacity extrapolation">
-        <div class="benchmark-scale-head" role="row"><span>Realm cells</span><span>Authenticated throughput</span><span>Typical active users</span><span>Evidence class</span></div>
+        <div class="benchmark-scale-head" role="row"><span role="columnheader">Realm cells</span><span role="columnheader">Supported planning</span><span role="columnheader">Candidate v2 envelope</span><span role="columnheader">Evidence class</span></div>
         {cellScale.map((scale) => (
           <div role="row">
-            <strong>{number.format(scale.realms)}</strong>
-            <span>{number.format(scale.rps)} RPS</span>
-            <span>{number.format(scale.activeUsers)}</span>
-            <em class:list={{ measured: scale.kind === "measured" }}>{scale.kind}</em>
+            <strong role="cell">{number.format(scale.realms)}</strong>
+            <span role="cell">{number.format(scale.supportedRps)} RPS · {number.format(scale.supportedUsers)} users</span>
+            <span role="cell">{number.format(scale.candidateRps)} RPS · {number.format(scale.candidateUsers)} users</span>
+            <em role="cell">{scale.kind}</em>
           </div>
         ))}
       </div>
@@ -186,12 +290,87 @@ const cellScale = [1, 2, 10, 100, 1_000, 10_000].map((realms) => ({
           </article>
           <article>
             <h3>Latency waterfall</h3>
-            <div class="benchmark-waterfall"><span>External path</span><span>API work</span><span>SableDB</span></div>
+            <div class="benchmark-waterfall"><span>External path {resultNumber.format(boundaryResult("external_path_p95_ms"))} ms</span><span>API work {resultNumber.format(boundaryResult("application_p95_ms"))} ms</span><span>SableDB {resultNumber.format(boundaryResult("sable_p95_ms"))} ms</span></div>
             <p>Every measured response separates runner/edge/network time, application processing and accumulated datastore round trips. Spike recovery and a one-hour soak prevent a short burst from masquerading as sustainable capacity.</p>
+            <p><strong>Passkey ceremony:</strong> {resultNumber.format(boundaryResult("signin_p95_ms"))} ms p95 across 30 complete ceremonies under {number.format(candidateOperatingRps)} RPS background load.</p>
           </article>
         </div>
       </div>
     </section>
+
+    <section class="benchmark-section shell benchmark-user-answer">
+      <header class="benchmark-section-heading">
+        <p>Capacity answer</p>
+        <div><h2>Can one realm serve 50,000–100,000 users?</h2><p>It depends on which “users” you mean. Stored accounts, valid sessions, monthly active users and simultaneously requesting users are separate limits.</p></div>
+      </header>
+      <div class="benchmark-answer-grid">
+        <article><span>Measured state</span><strong>10,000</strong><p>registered accounts and 10,000 valid sessions. A 50k or 100k stored-account claim still needs a larger-dataset run.</p></article>
+        <article><span>Candidate typical activity</span><strong>{number.format(candidateTypicalUsers)}</strong><p>simultaneously active users per realm at six requests per minute and the candidate {number.format(candidateOperatingRps)} RPS rate.</p></article>
+        <article><span>50k simultaneously active</span><strong>{number.format(realmsForTypicalActiveUsers(50_000))} realms</strong><p>Equivalent candidate cells in the linear planning model—not one realm and not yet a measured Fleet result.</p></article>
+        <article><span>100k simultaneously active</span><strong>{number.format(realmsForTypicalActiveUsers(100_000))} realms</strong><p>Equivalent candidate cells. A 100k MAU product may need far less if only a small fraction is active at once.</p></article>
+      </div>
+      <p class="benchmark-answer-note"><strong>Practical reading:</strong> request rate, not the MAU headline, determines live capacity. A 50k–100k monthly audience can plausibly fit one realm when activity is sparse, but RustyAuth will not publish that as a supported stored-account claim until the 50k and 100k datasets pass the same boundary, soak, backup and recovery gates.</p>
+    </section>
+
+    <section class="benchmark-comparison">
+      <div class="shell">
+        <header class="benchmark-section-heading">
+          <p>Market context</p>
+          <div><h2>Useful comparison, without benchmark theatre.</h2><p>Checked against first-party public material on 11 August 2026. Different identity products expose different paths, rate limits, datasets and availability topologies, so these numbers provide orientation—not a speed ranking.</p></div>
+        </header>
+        <div class="benchmark-comparison-table" role="table" aria-label="Public identity performance evidence comparison">
+          <div class="benchmark-comparison-head" role="row"><span role="columnheader">Provider</span><span role="columnheader">Published evidence</span><span role="columnheader">Reference shape</span><span role="columnheader">What it actually tells us</span></div>
+          {providerContext.map((provider) => (
+            <a href={provider.url} role="row">
+              <strong role="cell">{provider.provider}</strong>
+              <span role="cell"><small class="benchmark-mobile-label" aria-hidden="true">Published evidence</small>{provider.evidence}</span>
+              <span role="cell"><small class="benchmark-mobile-label" aria-hidden="true">Reference shape</small>{provider.shape}</span>
+              <span role="cell"><small class="benchmark-mobile-label" aria-hidden="true">What it tells us</small>{provider.reading} ↗</span>
+            </a>
+          ))}
+        </div>
+      </div>
+    </section>
+
+    <section class="benchmark-section shell benchmark-user-answer">
+      <header class="benchmark-section-heading">
+        <p>Plain-English verdict</p>
+        <div><h2>So—is RustyAuth fast?</h2><p>For the workload already measured, yes. For every identity workload and dataset, the evidence is not broad enough yet.</p></div>
+      </header>
+      <div class="benchmark-answer-grid">
+        <article><span>Mixed authenticated path</span><strong>Strong</strong><p>{number.format(candidateBoundaryRps)} RPS with {resultNumber.format(latencyP95)} ms p95 through Railway’s public edge on the disclosed compact shape.</p></article>
+        <article><span>50k–100k stored accounts</span><strong>Unqualified</strong><p>The retained dataset is 10,000 accounts and sessions. Growth datasets must pass latency, backup and recovery before this claim changes.</p></article>
+        <article><span>Login and HA comparison</span><strong>Not like-for-like</strong><p>Keycloak has much stronger million-user and multi-AZ evidence; Rauthy publishes a smaller memory footprint but no matching retained trace.</p></article>
+        <article><span>Run-rate efficiency</span><strong>Pending</strong><p>The incomplete soak cannot support a production monthly cost claim. The next retained one-hour window will publish observed CPU, memory, storage and egress.</p></article>
+      </div>
+    </section>
+
+    <section class="benchmark-section shell benchmark-cost">
+        <header class="benchmark-section-heading">
+          <p>Run-rate economics</p>
+          <div><h2>Infrastructure cost, not a per-user guess.</h2><p><a href="https://docs.railway.com/pricing/plans">Railway bills measured CPU and memory consumption</a>, not configured ceilings. The stopped soak does not justify a monthly production figure, so the page publishes the measured shape and marks cost as pending.</p></div>
+        </header>
+        <div class="benchmark-cost-grid">
+          <article><span>RustyAuth API shape</span><strong>1 vCPU</strong><p>1 GB memory ceiling during the retained enterprise boundary and partial soak.</p></article>
+          <article><span>SableDB shape</span><strong>4 vCPU</strong><p>4 GB memory ceiling; datastore time is the dominant measured latency component.</p></article>
+          <article><span>Observed monthly run-rate</span><strong>Pending</strong><p>A complete one-hour soak will publish CPU, memory, stored volume and response-egress economics.</p></article>
+        </div>
+        <div class="benchmark-cost-context">
+          <p><strong>Managed context:</strong> <a href="https://clerk.com/pricing">Clerk Pro</a> starts at $20/month annually with 50,000 monthly retained users included; at its published $0.02 overage, 100,000 fully retained users are about $1,020/month before add-ons. Auth0, Clerk and other managed providers bundle infrastructure and operations into audience/feature pricing rather than exposing this resource bill.</p>
+          <p><strong>Open-source context:</strong> Keycloak and Rauthy, like RustyAuth, have no identity-provider licence fee. A fair comparison must add their chosen database, compute, redundancy, monitoring, upgrades and incident ownership; no like-for-like retained Railway cost run is publicly available.</p>
+        </div>
+        <div class="benchmark-comparison-table" role="table" aria-label="Identity provider cost context">
+          <div class="benchmark-comparison-head" role="row"><span role="columnheader">Provider</span><span role="columnheader">Published or modelled cost</span><span role="columnheader">Billing basis</span><span role="columnheader">What is not included</span></div>
+          {costContext.map((provider) => (
+            <a href={provider.url} role="row">
+              <strong role="cell">{provider.provider}</strong>
+              <span role="cell"><small class="benchmark-mobile-label" aria-hidden="true">Published or modelled cost</small>{provider.published}</span>
+              <span role="cell"><small class="benchmark-mobile-label" aria-hidden="true">Billing basis</small>{provider.basis}</span>
+              <span role="cell"><small class="benchmark-mobile-label" aria-hidden="true">What is not included</small>{provider.caveat} ↗</span>
+            </a>
+          ))}
+        </div>
+      </section>
 
     <section class="benchmark-boundary">
       <div class="shell benchmark-boundary-grid">
@@ -204,14 +383,14 @@ const cellScale = [1, 2, 10, 100, 1_000, 10_000].map((realms) => ({
     <section class="benchmark-section shell" id="realm-capacity">
       <header class="benchmark-section-heading">
         <p>01 / Realm capacity</p>
-        <div><h2>One realm. Three measured shapes.</h2><p>RustyAuth 1.0 is qualified as a single writer. Results therefore describe explicit vertical resource tiers rather than implying unsupported horizontal scaling.</p></div>
+        <div><h2>One realm. Explicit qualification shapes.</h2><p>Starter, Growth and Scale are the planned test matrix, not three pre-approved capacities. Only a dataset and shape attached to a passed report is qualified. RustyAuth 1.0 remains a single writer within each realm.</p></div>
       </header>
       <div class="benchmark-tier-grid">
         {realmProgram.resourceTiers.map((tier) => (
           <article>
             <span>{tier.name}</span>
             <strong>{number.format(tier.datasetAccounts)}</strong>
-            <small>seeded accounts</small>
+            <small>{tier.datasetAccounts === supportedResult("registered_accounts") ? "published dataset" : "planned dataset"}</small>
             <dl>
               <div><dt>Realm API</dt><dd>{tier.api}</dd></div>
               <div><dt>SableDB</dt><dd>{tier.sableDb}</dd></div>
@@ -224,7 +403,7 @@ const cellScale = [1, 2, 10, 100, 1_000, 10_000].map((realms) => ({
     <section class="benchmark-section shell benchmark-users">
       <header class="benchmark-section-heading">
         <p>02 / Users, not vanity RPS</p>
-        <div><h2>Throughput translated into experience.</h2><p>Valid but idle sessions primarily consume durable state. Active users consume request capacity. Every report keeps those numbers separate and retains 30% headroom.</p></div>
+        <div><h2>Throughput translated into experience.</h2><p>Valid but idle sessions primarily consume durable state. Active users consume request capacity. Every report keeps those numbers separate; the published operating rate is capped by both the 30% reserve and the slowest qualified product journey.</p></div>
       </header>
       <div class="benchmark-profile-grid">
         {realmProgram.userProfiles.map((profile) => (
@@ -235,7 +414,7 @@ const cellScale = [1, 2, 10, 100, 1_000, 10_000].map((realms) => ({
           </article>
         ))}
       </div>
-      <pre><code>supported active users = sustainable authenticated RPS × 60 × 0.70 ÷ requests per user per minute</code></pre>
+      <pre><code>active users = planning RPS × 60 ÷ requests per user per minute</code></pre>
     </section>
 
     <section class="benchmark-section shell">
@@ -252,7 +431,7 @@ const cellScale = [1, 2, 10, 100, 1_000, 10_000].map((realms) => ({
       <div class="shell">
         <header class="benchmark-section-heading">
           <p>04 / Published evidence</p>
-          <div><h2>Results retained and reviewable.</h2><p>The first Railway realm baseline is published alongside its raw summaries, immutable images, resource ceilings and review record. Source qualification remains a separate workload.</p></div>
+          <div><h2>Results retained and reviewable.</h2><p>Read-only and mixed-journey Railway results are published separately, each with raw summaries, immutable images, resource ceilings and a review record.</p></div>
         </header>
         <div class="benchmark-report-grid">
           {catalogue.reports.map((report) => (

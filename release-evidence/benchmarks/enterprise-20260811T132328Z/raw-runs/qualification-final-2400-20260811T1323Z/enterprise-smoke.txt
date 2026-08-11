@@ -1,0 +1,171 @@
+
+         /\      Grafana   /‾‾/  
+    /\  /  \     |\  __   /  /   
+   /  \/    \    | |/ /  /   ‾‾\ 
+  /          \   |   (  |  (‾)  |
+ / __________ \  |_|\_\  \_____/ 
+
+     execution: local
+        script: /tmp/k6-consume/enterprise-realm.js
+        output: -
+
+     scenarios: (100.00%) 1 scenario, 100 max VUs, 30s max duration (incl. graceful stop):
+              * smoke: 5.00 iterations/s for 10s (maxVUs: 25-100, exec: enterpriseJourney, gracefulStop: 20s)
+
+
+running (01.0s), 000/025 VUs, 5 complete and 0 interrupted iterations
+smoke   [  10% ] 000/025 VUs  01.0s/10s  5.00 iters/s
+
+running (02.0s), 000/025 VUs, 10 complete and 0 interrupted iterations
+smoke   [  20% ] 000/025 VUs  02.0s/10s  5.00 iters/s
+
+running (03.0s), 000/025 VUs, 15 complete and 0 interrupted iterations
+smoke   [  30% ] 000/025 VUs  03.0s/10s  5.00 iters/s
+
+running (04.0s), 001/025 VUs, 20 complete and 0 interrupted iterations
+smoke   [  40% ] 001/025 VUs  04.0s/10s  5.00 iters/s
+
+running (05.0s), 000/025 VUs, 25 complete and 0 interrupted iterations
+smoke   [  50% ] 000/025 VUs  05.0s/10s  5.00 iters/s
+
+running (06.0s), 000/025 VUs, 30 complete and 0 interrupted iterations
+smoke   [  60% ] 000/025 VUs  06.0s/10s  5.00 iters/s
+
+running (07.0s), 000/025 VUs, 35 complete and 0 interrupted iterations
+smoke   [  70% ] 000/025 VUs  07.0s/10s  5.00 iters/s
+
+running (08.0s), 000/025 VUs, 40 complete and 0 interrupted iterations
+smoke   [  80% ] 000/025 VUs  08.0s/10s  5.00 iters/s
+
+running (09.0s), 000/025 VUs, 45 complete and 0 interrupted iterations
+smoke   [  90% ] 000/025 VUs  09.0s/10s  5.00 iters/s
+
+running (10.0s), 000/025 VUs, 50 complete and 0 interrupted iterations
+smoke   [ 100% ] 000/025 VUs  10.0s/10s  5.00 iters/s
+
+
+  █ THRESHOLDS 
+
+    account_duration
+    ✓ 'p(95)<250' p(95)=47.65ms
+
+    credentials_duration
+    ✓ 'p(95)<250' p(95)=34.58ms
+
+    dropped_iterations
+    ✓ 'count==0' count=0
+
+    enterprise_end_to_end_duration
+    ✓ 'p(95)<300' p(95)=45.98ms
+    ✓ 'p(99)<750' p(99)=53.38ms
+
+    enterprise_request_failures
+    ✓ 'rate<0.001' rate=0.00%
+
+    enterprise_unplanned_5xx
+    ✓ 'count==0' count=0
+
+    jwks_duration
+    ✓ 'p(95)<150' p(95)=28.59ms
+
+    phase_smoke_account
+    ✓ 'p(95)<250' p(95)=47.65ms
+
+    phase_smoke_application
+    ✓ 'p(95)<150' p(95)=18.27ms
+    ✓ 'p(99)<400' p(99)=21.78ms
+
+    phase_smoke_completed
+    ✓ 'count>=50' count=51
+
+    phase_smoke_credentials
+    ✓ 'p(95)<250' p(95)=34.58ms
+
+    phase_smoke_end_to_end
+    ✓ 'p(95)<300' p(95)=45.98ms
+    ✓ 'p(99)<750' p(99)=53.38ms
+
+    phase_smoke_failures
+    ✓ 'rate<0.001' rate=0.00%
+
+    phase_smoke_jwks
+    ✓ 'p(95)<150' p(95)=28.59ms
+
+    phase_smoke_sabledb
+    ✓ 'p(95)<150' p(95)=18.07ms
+    ✓ 'p(99)<250' p(99)=21.53ms
+
+    phase_smoke_token
+    ✓ 'p(95)<350' p(95)=34.5ms
+
+    phase_smoke_unplanned_5xx
+    ✓ 'count==0' count=0
+
+    sabledb_duration
+    ✓ 'p(95)<150' p(95)=18.07ms
+    ✓ 'p(99)<250' p(99)=21.53ms
+
+    server_application_duration
+    ✓ 'p(95)<150' p(95)=18.27ms
+    ✓ 'p(99)<400' p(99)=21.78ms
+
+    token_duration
+    ✓ 'p(95)<350' p(95)=34.5ms
+
+
+  █ TOTAL RESULTS 
+
+    checks_total.......: 102     10.167183/s
+    checks_succeeded...: 100.00% 102 out of 102
+    checks_failed......: 0.00%   0 out of 102
+
+    ✓ enterprise operation returned 200
+    ✓ internal timing was returned
+
+    CUSTOM
+    account_duration.................: avg=32.17ms  min=24.87ms med=28.9ms  max=55.21ms p(90)=43.93ms p(95)=47.65ms p(99)=53.97ms p(99.9)=55.08ms 
+    application_nonstore_duration....: avg=241.09µs min=41µs    med=207µs   max=644µs   p(90)=318µs   p(95)=479µs   p(99)=566.5µs p(99.9)=636.25µs
+    credentials_duration.............: avg=29.14ms  min=26.31ms med=27.76ms max=36.19ms p(90)=32.97ms p(95)=34.58ms p(99)=35.87ms p(99.9)=36.16ms 
+    enterprise_end_to_end_duration...: avg=31.55ms  min=24.49ms med=28.9ms  max=55.21ms p(90)=39.54ms p(95)=45.98ms p(99)=53.38ms p(99.9)=55.03ms 
+    enterprise_request_failures......: 0.00%  0 out of 51
+    enterprise_unplanned_5xx.........: 0      0/s
+    external_path_duration...........: avg=24.99ms  min=20.33ms med=23.72ms max=41.4ms  p(90)=29.71ms p(95)=30.91ms p(99)=38.43ms p(99.9)=41.11ms 
+    jwks_duration....................: avg=26.65ms  min=24.49ms med=26.65ms max=28.81ms p(90)=28.38ms p(95)=28.59ms p(99)=28.76ms p(99.9)=28.8ms  
+    phase_smoke_account..............: avg=32.17ms  min=24.87ms med=28.9ms  max=55.21ms p(90)=43.93ms p(95)=47.65ms p(99)=53.97ms p(99.9)=55.08ms 
+    phase_smoke_application..........: avg=6.56ms   min=41µs    med=5.27ms  max=21.99ms p(90)=10.21ms p(95)=18.27ms p(99)=21.78ms p(99.9)=21.97ms 
+    phase_smoke_completed............: 51     5.083592/s
+    phase_smoke_credentials..........: avg=29.14ms  min=26.31ms med=27.76ms max=36.19ms p(90)=32.97ms p(95)=34.58ms p(99)=35.87ms p(99.9)=36.16ms 
+    phase_smoke_end_to_end...........: avg=31.55ms  min=24.49ms med=28.9ms  max=55.21ms p(90)=39.54ms p(95)=45.98ms p(99)=53.38ms p(99.9)=55.03ms 
+    phase_smoke_failures.............: 0.00%  0 out of 51
+    phase_smoke_jwks.................: avg=26.65ms  min=24.49ms med=26.65ms max=28.81ms p(90)=28.38ms p(95)=28.59ms p(99)=28.76ms p(99.9)=28.8ms  
+    phase_smoke_sabledb..............: avg=6.32ms   min=0s      med=5.03ms  max=21.69ms p(90)=10.03ms p(95)=18.07ms p(99)=21.53ms p(99.9)=21.68ms 
+    phase_smoke_token................: avg=31.85ms  min=26.16ms med=32.99ms max=34.69ms p(90)=34.3ms  p(95)=34.5ms  p(99)=34.65ms p(99.9)=34.69ms 
+    phase_smoke_transport_failures...: 0      0/s
+    phase_smoke_unplanned_5xx........: 0      0/s
+    sabledb_duration.................: avg=6.32ms   min=0s      med=5.03ms  max=21.69ms p(90)=10.03ms p(95)=18.07ms p(99)=21.53ms p(99.9)=21.68ms 
+    sabledb_round_trips..............: avg=1.921569 min=0       med=2       max=2       p(90)=2       p(95)=2       p(99)=2       p(99.9)=2       
+    server_application_duration......: avg=6.56ms   min=41µs    med=5.27ms  max=21.99ms p(90)=10.21ms p(95)=18.27ms p(99)=21.78ms p(99.9)=21.97ms 
+    token_duration...................: avg=31.85ms  min=26.16ms med=32.99ms max=34.69ms p(90)=34.3ms  p(95)=34.5ms  p(99)=34.65ms p(99.9)=34.69ms 
+
+    HTTP
+    http_req_duration................: avg=31.55ms  min=24.49ms med=28.9ms  max=55.21ms p(90)=39.54ms p(95)=45.98ms p(99)=53.38ms p(99.9)=55.03ms 
+      { expected_response:true }.....: avg=31.55ms  min=24.49ms med=28.9ms  max=55.21ms p(90)=39.54ms p(95)=45.98ms p(99)=53.38ms p(99.9)=55.03ms 
+    http_req_failed..................: 0.00%  0 out of 51
+    http_reqs........................: 51     5.083592/s
+
+    EXECUTION
+    dropped_iterations...............: 0      0/s
+    iteration_duration...............: avg=44.38ms  min=25.42ms med=46.53ms max=92.97ms p(90)=61.44ms p(95)=70.58ms p(99)=86.38ms p(99.9)=92.31ms 
+    iterations.......................: 51     5.083592/s
+    vus..............................: 0      min=0       max=1 
+    vus_max..........................: 25     min=25      max=25
+
+    NETWORK
+    data_received....................: 142 kB 14 kB/s
+    data_sent........................: 23 kB  2.3 kB/s
+
+
+
+
+running (10.0s), 000/025 VUs, 51 complete and 0 interrupted iterations
+smoke ✓ [ 100% ] 000/025 VUs  10s  5.00 iters/s
