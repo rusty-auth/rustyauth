@@ -489,12 +489,6 @@ impl Store {
         let limit = limit.clamp(1, MAX_PROJECTION_BATCH);
         let _snapshot = self.snapshot_gate.read().await;
         let _guard = self.mutation.lock().await;
-        let assignment_epoch = self
-            .realm_telemetry_export_grants()
-            .await?
-            .first()
-            .map(|grant| grant.assignment_epoch)
-            .unwrap_or(1);
         let stored_cursor = self.get::<u64>(PROJECTOR_CURSOR_KEY).await?;
         // An upgrade can introduce the projector after older auth events have
         // already aged out. Begin at the oldest retained event instead of
@@ -508,6 +502,23 @@ impl Store {
             events_scanned: events.len(),
             ..ProjectionResult::default()
         };
+        let closure_before = now().saturating_sub(CLOSE_GRACE_SECONDS);
+        let latest_closable =
+            aligned_bucket_start(closure_before.saturating_sub(u64::from(BUCKET_WIDTH_SECONDS_V1)));
+        let stored_closure_cursor = self.get::<u64>(CLOSURE_CURSOR_KEY).await?;
+
+        // The projector wakes once per second, while buckets close only every
+        // five minutes. A no-op tick must stay O(1): scanning the grant and
+        // outbox prefixes walks the whole RocksDB keyspace in SableDB even when
+        // MATCH returns nothing. On a large realm those two unnecessary scans
+        // can consume a full core and periodically delay unrelated point reads.
+        if events.is_empty()
+            && stored_cursor.is_some()
+            && stored_closure_cursor == Some(latest_closable)
+        {
+            return Ok(result);
+        }
+
         let mut touched = BTreeMap::<u64, LocalMetricBucket>::new();
         for event in &events {
             let start = aligned_bucket_start(event.occurred_at);
@@ -528,10 +539,6 @@ impl Store {
             }
         }
 
-        let closure_before = now().saturating_sub(CLOSE_GRACE_SECONDS);
-        let latest_closable =
-            aligned_bucket_start(closure_before.saturating_sub(u64::from(BUCKET_WIDTH_SECONDS_V1)));
-        let stored_closure_cursor = self.get::<u64>(CLOSURE_CURSOR_KEY).await?;
         let mut closure_cursor = stored_closure_cursor
             .unwrap_or_else(|| latest_closable.saturating_sub(u64::from(BUCKET_WIDTH_SECONDS_V1)));
         for _ in 0..MAX_PROJECTION_BATCH {
@@ -560,7 +567,24 @@ impl Store {
 
         let mut pipeline = redis::pipe();
         pipeline.atomic();
-        let existing_outbox = self.telemetry_outbox_keys().await?;
+        let has_closed_bucket = touched.values().any(|bucket| bucket.closed);
+        // Assignment and outbox state affect only a closed bucket's export.
+        // Open-bucket projection therefore remains proportional to the small
+        // event batch instead of performing two full-keyspace prefix scans.
+        let assignment_epoch = if has_closed_bucket {
+            self.realm_telemetry_export_grants()
+                .await?
+                .first()
+                .map(|grant| grant.assignment_epoch)
+                .unwrap_or(1)
+        } else {
+            1
+        };
+        let existing_outbox = if has_closed_bucket {
+            self.telemetry_outbox_keys().await?
+        } else {
+            Vec::new()
+        };
         let mut retained_outbox = existing_outbox.iter().cloned().collect::<BTreeSet<_>>();
         for bucket in touched.values() {
             pipeline
