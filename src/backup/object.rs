@@ -1,8 +1,6 @@
 //! S3-compatible object operations: tenant-scoped key naming, bounded encrypted
 //! uploads with read-after-write verification, bounded downloads and listing.
 
-use std::sync::Arc;
-
 use anyhow::{Context, Result, bail};
 use aws_sdk_s3::primitives::ByteStream;
 use base64::{Engine, engine::general_purpose::STANDARD};
@@ -68,14 +66,17 @@ impl BackupStore {
         tenant_id: &str,
         master_keys: &KeyRing,
     ) -> Result<BackupReceipt> {
-        let snapshot = Arc::new(BackupSnapshot::capture(store, tenant_id).await?);
+        let snapshot = BackupSnapshot::capture(store, tenant_id).await?;
         validate_snapshot_keyset(snapshot.signing_keyset()?, master_keys)?;
+        let snapshot_id = snapshot.snapshot_id;
+        let captured_at = snapshot.captured_at;
+        let record_count = snapshot.manifest.record_count;
+        let content_sha256 = snapshot.manifest.content_sha256.clone();
         let envelope = {
             // Compressing and sealing up to 512 MiB of plaintext would stall every other
             // task sharing this executor thread for the whole operation.
             let keys = self.encryption_keys.clone();
-            let snapshot = Arc::clone(&snapshot);
-            tokio::task::spawn_blocking(move || encode_snapshot(&keys, &snapshot))
+            tokio::task::spawn_blocking(move || encode_snapshot(&keys, snapshot))
                 .await
                 .context("encode backup snapshot")??
         };
@@ -83,13 +84,14 @@ impl BackupStore {
             bail!("encrypted backup exceeds the 256 MiB object safety limit");
         }
         let checksum = STANDARD.encode(Sha256::digest(&envelope));
-        let timestamp = OffsetDateTime::from_unix_timestamp(snapshot.captured_at as i64)?
+        let timestamp = OffsetDateTime::from_unix_timestamp(captured_at as i64)?
             .format(&Rfc3339)?
             .replace(':', "-");
         let object_key = format!(
             "rustyauth-backups/v3/{tenant_id}/{timestamp}-{}.rauth",
-            snapshot.snapshot_id
+            snapshot_id
         );
+        let envelope_bytes = envelope.len();
         let uploaded = self
             .client
             .put_object()
@@ -97,11 +99,11 @@ impl BackupStore {
             .key(&object_key)
             .content_type(CONTENT_TYPE)
             .checksum_sha256(checksum)
-            .metadata("snapshot-id", snapshot.snapshot_id.to_string())
+            .metadata("snapshot-id", snapshot_id.to_string())
             .metadata("key-id", self.encryption_keys.active().0)
             .metadata("format-version", "3")
             .metadata("scope", "complete-server-workspace")
-            .body(ByteStream::from(envelope.clone()))
+            .body(ByteStream::from(envelope))
             .send()
             .await
             .context("upload encrypted auth snapshot")?;
@@ -117,18 +119,18 @@ impl BackupStore {
         // Read-after-write proves that the provider returned the same decryptable object.
         let (downloaded, _, _, posture, format_version) =
             self.download_object(&object_key, tenant_id).await?;
-        if downloaded.snapshot_id != snapshot.snapshot_id
-            || downloaded.manifest.content_sha256 != snapshot.manifest.content_sha256
+        if downloaded.snapshot_id != snapshot_id
+            || downloaded.manifest.content_sha256 != content_sha256
         {
             bail!("uploaded backup failed read-after-write verification");
         }
         let receipt = BackupReceipt {
             format_version,
-            snapshot_id: snapshot.snapshot_id,
+            snapshot_id,
             object_key,
-            captured_at: snapshot.captured_at,
-            record_count: snapshot.manifest.record_count,
-            envelope_bytes: envelope.len(),
+            captured_at,
+            record_count,
+            envelope_bytes,
             encryption_key_id: self.encryption_keys.active().0.to_owned(),
             storage_profile: self.storage_profile.as_str().to_owned(),
             object_version_id: posture.version_id,

@@ -19,14 +19,21 @@ const MAGIC_V2: &[u8; 8] = b"RAUTHBK2";
 const LEGACY_MAGIC: &[u8; 8] = b"PAUTHBK1";
 const MAX_SNAPSHOT_BYTES: u64 = 512 * 1024 * 1024;
 
-pub(super) fn encode_snapshot(keys: &KeyRing, snapshot: &BackupSnapshot) -> Result<Vec<u8>> {
+pub(super) fn encode_snapshot(keys: &KeyRing, snapshot: BackupSnapshot) -> Result<Vec<u8>> {
     let plaintext = Zeroizing::new(snapshot.encode_binary_v3()?);
     if plaintext.len() as u64 > MAX_SNAPSHOT_BYTES {
         bail!("backup snapshot exceeds the 512 MiB plaintext safety limit");
     }
+    // Encoding owns the snapshot so the record graph can be released before
+    // compression and encryption allocate their output buffers. Keeping the
+    // snapshot, plaintext, compressed bytes and ciphertext alive together made
+    // a recovery point use several times its logical size and could OOM a
+    // correctly sized serving container during a pre-deploy backup.
+    drop(snapshot);
     let compressed = zstd::stream::encode_all(Cursor::new(plaintext.as_slice()), 3)
         .context("compress backup snapshot");
     let compressed = Zeroizing::new(compressed?);
+    drop(plaintext);
     encrypt_envelope(keys, MAGIC_V3, &compressed)
 }
 
@@ -152,8 +159,8 @@ mod tests {
     fn backup_envelope_round_trips_and_authenticates_header() {
         let keys = KeyRing::new("backup", [7; 32], Vec::new()).unwrap();
         let snapshot = minimal_snapshot(&keys);
-        let one = encode_snapshot(&keys, &snapshot).unwrap();
-        let two = encode_snapshot(&keys, &snapshot).unwrap();
+        let one = encode_snapshot(&keys, snapshot.clone()).unwrap();
+        let two = encode_snapshot(&keys, snapshot.clone()).unwrap();
         assert!(one.starts_with(MAGIC_V3));
         assert_ne!(one, two);
         assert_eq!(decode_snapshot(&keys, &one).unwrap(), snapshot);
@@ -167,7 +174,7 @@ mod tests {
     fn backup_key_rollover_keeps_old_snapshots_readable() {
         let old = KeyRing::new("backup", [8; 32], Vec::new()).unwrap();
         let snapshot = minimal_snapshot(&old);
-        let envelope = encode_snapshot(&old, &snapshot).unwrap();
+        let envelope = encode_snapshot(&old, snapshot.clone()).unwrap();
         let rolled = KeyRing::new("backup", [9; 32], vec![[8; 32]]).unwrap();
         assert_eq!(decode_snapshot(&rolled, &envelope).unwrap(), snapshot);
         let without_old = KeyRing::new("backup", [9; 32], Vec::new()).unwrap();
@@ -181,7 +188,7 @@ mod tests {
             assert!(decode_snapshot(&keys, &input).is_err());
         }
         let snapshot = minimal_snapshot(&keys);
-        let mut envelope = encode_snapshot(&keys, &snapshot).unwrap();
+        let mut envelope = encode_snapshot(&keys, snapshot.clone()).unwrap();
         envelope.truncate(envelope.len() - 1);
         assert!(decode_snapshot(&keys, &envelope).is_err());
     }
@@ -195,6 +202,6 @@ mod tests {
             Zeroizing::new(zstd::stream::encode_all(Cursor::new(plaintext.as_slice()), 3).unwrap());
         let envelope = encrypt_envelope(&keys, MAGIC_V2, &compressed).unwrap();
         assert_eq!(decode_snapshot(&keys, &envelope).unwrap(), snapshot);
-        assert!(encode_snapshot(&keys, &snapshot).unwrap().len() < envelope.len());
+        assert!(encode_snapshot(&keys, snapshot).unwrap().len() < envelope.len());
     }
 }
