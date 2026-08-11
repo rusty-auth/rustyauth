@@ -21,7 +21,16 @@ unsound = "all"
 # `# expires: YYYY-MM-DD` comment on the line above it. The `Advisory ignores have not expired` step
 # in .github/workflows/ci.yml parses those comments and fails the build the day after the date
 # passes, so no ignore can outlive its review without someone looking at it again.
-ignore = []
+ignore = [
+    # aws-sdk-s3 1.141.0 is the current release and constrains lru to 0.16.x. Its
+    # only LruCache key is an internal CacheKey(String), whose Drop cannot panic;
+    # RustyAuth also does not enable or call the S3 Express cache directly. The
+    # advisory requires a panicking key Drop caught through unwind before the
+    # dangling-list path is reachable. Remove this as soon as AWS adopts lru
+    # 0.18.2 or backports upstream lru-rs#238.
+    # expires: 2026-08-25
+    "RUSTSEC-2026-0253",
+]
 
 [licenses]
 # cargo-deny 0.20 has no licence deny list: anything absent from `allow` fails the check, so GPL,
