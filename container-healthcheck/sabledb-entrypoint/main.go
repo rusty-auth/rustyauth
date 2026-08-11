@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
+	"strings"
 	"syscall"
 )
 
@@ -13,7 +15,10 @@ const (
 	sableDBGID = 10002
 	dataRoot   = "/var/lib/sabledb"
 	binaryPath = "/usr/local/bin/sabledb"
+	cacheEnv   = "SABLEDB_BLOCK_CACHE_SIZE"
 )
+
+var byteSizePattern = regexp.MustCompile(`^[1-9][0-9]*(?:KB|MB|GB)$`)
 
 func prepareDirectory(path string, uid, gid int) error {
 	info, err := os.Lstat(path)
@@ -105,6 +110,75 @@ func prepareUnprivilegedDataRoot(root string) error {
 	return nil
 }
 
+// materializeRuntimeConfig applies the one deployment-specific SableDB tuning
+// value that must vary with the container memory tier. The override is kept
+// deliberately narrow and validated before it reaches the INI document; this
+// avoids treating an environment variable as an arbitrary configuration-file
+// injection surface.
+func materializeRuntimeConfig(basePath, targetPath, blockCacheSize string, uid, gid int) error {
+	if !byteSizePattern.MatchString(blockCacheSize) {
+		return fmt.Errorf("%s must be a positive integer followed by KB, MB, or GB", cacheEnv)
+	}
+	contents, err := os.ReadFile(basePath)
+	if err != nil {
+		return fmt.Errorf("read SableDB base config %s: %w", basePath, err)
+	}
+
+	lines := strings.Split(string(contents), "\n")
+	replacements := 0
+	for index, line := range lines {
+		if strings.HasPrefix(strings.TrimSpace(line), "block_cache_size =") {
+			lines[index] = "block_cache_size = " + blockCacheSize
+			replacements++
+		}
+	}
+	if replacements != 1 {
+		return fmt.Errorf("SableDB base config must contain exactly one block_cache_size assignment; found %d", replacements)
+	}
+
+	directory := filepath.Dir(targetPath)
+	if err := inspectDirectory(directory); err != nil {
+		return err
+	}
+	temporary, err := os.CreateTemp(directory, ".runtime-server.ini-")
+	if err != nil {
+		return fmt.Errorf("create SableDB runtime config: %w", err)
+	}
+	temporaryPath := temporary.Name()
+	removeTemporary := true
+	defer func() {
+		if removeTemporary {
+			_ = os.Remove(temporaryPath)
+		}
+	}()
+	if _, err := temporary.WriteString(strings.Join(lines, "\n")); err != nil {
+		_ = temporary.Close()
+		return fmt.Errorf("write SableDB runtime config: %w", err)
+	}
+	if err := temporary.Sync(); err != nil {
+		_ = temporary.Close()
+		return fmt.Errorf("sync SableDB runtime config: %w", err)
+	}
+	if err := temporary.Chmod(0o640); err != nil {
+		_ = temporary.Close()
+		return fmt.Errorf("set SableDB runtime config permissions: %w", err)
+	}
+	if os.Geteuid() == 0 {
+		if err := temporary.Chown(uid, gid); err != nil {
+			_ = temporary.Close()
+			return fmt.Errorf("own SableDB runtime config as %d:%d: %w", uid, gid, err)
+		}
+	}
+	if err := temporary.Close(); err != nil {
+		return fmt.Errorf("close SableDB runtime config: %w", err)
+	}
+	if err := os.Rename(temporaryPath, targetPath); err != nil {
+		return fmt.Errorf("publish SableDB runtime config: %w", err)
+	}
+	removeTemporary = false
+	return nil
+}
+
 func dropPrivileges(uid, gid int) error {
 	if err := syscall.Setgroups([]int{}); err != nil {
 		return fmt.Errorf("clear supplementary groups: %w", err)
@@ -122,10 +196,20 @@ func dropPrivileges(uid, gid int) error {
 }
 
 func run() error {
+	runtimeConfig := ""
 	switch os.Geteuid() {
 	case 0:
 		if err := prepareDataRoot(dataRoot, sableDBUID, sableDBGID); err != nil {
 			return err
+		}
+		if blockCacheSize := os.Getenv(cacheEnv); blockCacheSize != "" {
+			if len(os.Args) != 2 {
+				return fmt.Errorf("%s requires exactly one SableDB config argument", cacheEnv)
+			}
+			runtimeConfig = filepath.Join(dataRoot, "conf", "runtime-server.ini")
+			if err := materializeRuntimeConfig(os.Args[1], runtimeConfig, blockCacheSize, sableDBUID, sableDBGID); err != nil {
+				return err
+			}
 		}
 		if err := dropPrivileges(sableDBUID, sableDBGID); err != nil {
 			return err
@@ -137,10 +221,23 @@ func run() error {
 		if err := prepareUnprivilegedDataRoot(dataRoot); err != nil {
 			return err
 		}
+		if blockCacheSize := os.Getenv(cacheEnv); blockCacheSize != "" {
+			if len(os.Args) != 2 {
+				return fmt.Errorf("%s requires exactly one SableDB config argument", cacheEnv)
+			}
+			runtimeConfig = filepath.Join(dataRoot, "conf", "runtime-server.ini")
+			if err := materializeRuntimeConfig(os.Args[1], runtimeConfig, blockCacheSize, sableDBUID, sableDBGID); err != nil {
+				return err
+			}
+		}
 	default:
 		return fmt.Errorf("SableDB must start as root or uid %d; got uid %d", sableDBUID, os.Geteuid())
 	}
-	args := append([]string{"sabledb"}, os.Args[1:]...)
+	configArgs := os.Args[1:]
+	if runtimeConfig != "" {
+		configArgs = []string{runtimeConfig}
+	}
+	args := append([]string{"sabledb"}, configArgs...)
 	return syscall.Exec(binaryPath, args, os.Environ())
 }
 

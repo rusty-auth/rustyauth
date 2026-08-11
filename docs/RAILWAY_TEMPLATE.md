@@ -147,6 +147,11 @@ overrides the YAML's `spec.datastore.endpoint` placeholder and is never copied t
 plane. Bucket credentials likewise use Railway service references or sealed variables because they are
 intentionally absent from the YAML schema.
 
+The SableDB service sets `SABLEDB_BLOCK_CACHE_SIZE=256MB` for Railway's realm shape. The container validates
+this value and materializes a private runtime configuration before dropping privileges. The image default
+remains 128 MB so the 512 MiB k3s/Helm profile retains sufficient headroom for memtables, compaction and
+process overhead; larger dedicated datastore tiers may raise the override after measuring resident memory.
+
 Production YAML requires exact issuer, relying-party, audience, proxy and operator settings documented in
 [Configuration](CONFIGURATION.md). The backend refuses to start with development defaults in production.
 

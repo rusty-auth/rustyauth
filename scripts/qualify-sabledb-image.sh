@@ -221,6 +221,7 @@ docker image inspect "$image" >/dev/null
 docker volume create "$railway_volume" >/dev/null
 docker run -d --name "$railway_container" \
   -p 127.0.0.1::6379 \
+  -e SABLEDB_BLOCK_CACHE_SIZE=256MB \
   --read-only \
   --cap-drop ALL \
   --cap-add CHOWN \
@@ -248,6 +249,7 @@ assert_bounded_volume_usage
 logs=$(docker logs "$railway_container" 2>&1)
 [[ $(printf '%s' "$logs" | grep -c 'Server started on port address') -ge 2 ]]
 [[ $(printf '%s' "$logs" | grep -c 'wal_ttl_seconds: 0') -ge 2 ]]
+[[ $(printf '%s' "$logs" | grep -c 'block_cache_size: 268435456') -ge 2 ]]
 if printf '%s' "$logs" | grep -Eqi 'permission denied|sabledb-entrypoint:'; then
   echo "SableDB volume bootstrap failure found in logs" >&2
   exit 1

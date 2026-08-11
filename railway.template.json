@@ -181,6 +181,11 @@
           "defaultValue": "6379",
           "description": "Private SableDB port used by RustyAuth.",
           "isOptional": false
+        },
+        "SABLEDB_BLOCK_CACHE_SIZE": {
+          "defaultValue": "256MB",
+          "description": "RocksDB point-read cache sized for the Railway realm tier; lightweight Helm installs retain the conservative image default.",
+          "isOptional": false
         }
       },
       "volumeMounts": {

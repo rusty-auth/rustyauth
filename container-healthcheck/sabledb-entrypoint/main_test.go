@@ -83,3 +83,55 @@ func TestPrepareUnprivilegedDataRootRejectsSymlink(t *testing.T) {
 		t.Fatalf("prepareUnprivilegedDataRoot() error = %v, want unsafe-path rejection", err)
 	}
 }
+
+func TestMaterializeRuntimeConfigOverridesValidatedBlockCache(t *testing.T) {
+	root := t.TempDir()
+	basePath := filepath.Join(root, "server.ini")
+	targetPath := filepath.Join(root, "runtime-server.ini")
+	if err := os.WriteFile(basePath, []byte("[general]\nworkers = 4\n[rocksdb]\nblock_cache_size = 128MB\n"), 0o640); err != nil {
+		t.Fatal(err)
+	}
+	if err := materializeRuntimeConfig(basePath, targetPath, "512MB", os.Getuid(), os.Getgid()); err != nil {
+		t.Fatal(err)
+	}
+	contents, err := os.ReadFile(targetPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := string(contents); !strings.Contains(got, "block_cache_size = 512MB") || strings.Contains(got, "block_cache_size = 128MB") {
+		t.Fatalf("runtime config = %q, want only the validated override", got)
+	}
+	if info, err := os.Stat(targetPath); err != nil {
+		t.Fatal(err)
+	} else if got := info.Mode().Perm(); got != 0o640 {
+		t.Fatalf("runtime config mode = %o, want 640", got)
+	}
+}
+
+func TestMaterializeRuntimeConfigRejectsInjection(t *testing.T) {
+	root := t.TempDir()
+	basePath := filepath.Join(root, "server.ini")
+	targetPath := filepath.Join(root, "runtime-server.ini")
+	if err := os.WriteFile(basePath, []byte("[rocksdb]\nblock_cache_size = 128MB\n"), 0o640); err != nil {
+		t.Fatal(err)
+	}
+	err := materializeRuntimeConfig(basePath, targetPath, "512MB\nworkers = 99", os.Getuid(), os.Getgid())
+	if err == nil || !strings.Contains(err.Error(), cacheEnv) {
+		t.Fatalf("materializeRuntimeConfig() error = %v, want validated-size rejection", err)
+	}
+	if _, err := os.Stat(targetPath); !os.IsNotExist(err) {
+		t.Fatalf("unsafe runtime config was created: %v", err)
+	}
+}
+
+func TestMaterializeRuntimeConfigRequiresExactlyOneAssignment(t *testing.T) {
+	root := t.TempDir()
+	basePath := filepath.Join(root, "server.ini")
+	if err := os.WriteFile(basePath, []byte("[rocksdb]\nwrite_buffer_size = 32MB\n"), 0o640); err != nil {
+		t.Fatal(err)
+	}
+	err := materializeRuntimeConfig(basePath, filepath.Join(root, "runtime-server.ini"), "512MB", os.Getuid(), os.Getgid())
+	if err == nil || !strings.Contains(err.Error(), "exactly one") {
+		t.Fatalf("materializeRuntimeConfig() error = %v, want assignment-count rejection", err)
+	}
+}
