@@ -73,7 +73,10 @@ const RATE_LIMIT_TRACKING_CAPACITY: usize = 65_536;
 /// Independent multiplexed connections let SableDB distribute request work
 /// across its worker threads. Cloning one manager does not create a new TCP
 /// connection and would leave every authenticated request behind one queue.
-const STORE_CONNECTION_POOL_SIZE: usize = 4;
+/// Sixteen keeps the per-connection arrival rate below the private-network
+/// round-trip ceiling on a 1,000-RPS realm without creating an unbounded or
+/// deployment-specific pool.
+const STORE_CONNECTION_POOL_SIZE: usize = 16;
 
 /// Build the datastore client with low-latency request/response semantics.
 ///
