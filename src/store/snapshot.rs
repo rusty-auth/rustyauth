@@ -45,10 +45,22 @@ impl Store {
         // pipelines reduce the same work to two round trips per 250 records.
         let mut connection = self.redis.clone();
         let mut records = Vec::with_capacity(included_keys.len());
-        for keys in included_keys.chunks(SNAPSHOT_READ_BATCH_SIZE) {
+        let mut remaining_keys = included_keys.into_iter();
+        loop {
+            // Move each key into its eventual StoreRecord. Keeping the complete
+            // key list alive and cloning every key into the record graph made a
+            // large snapshot retain two copies of the namespace until export
+            // completed.
+            let keys: Vec<String> = remaining_keys
+                .by_ref()
+                .take(SNAPSHOT_READ_BATCH_SIZE)
+                .collect();
+            if keys.is_empty() {
+                break;
+            }
             let mut value_pipeline = redis::pipe();
             let mut ttl_pipeline = redis::pipe();
-            for key in keys {
+            for key in &keys {
                 value_pipeline.cmd("GET").arg(key);
                 ttl_pipeline.cmd("TTL").arg(key);
             }
@@ -63,7 +75,7 @@ impl Store {
             if values.len() != keys.len() || ttls.len() != keys.len() {
                 bail!("SableDB returned an incomplete snapshot batch");
             }
-            for ((key, value), ttl) in keys.iter().zip(values).zip(ttls) {
+            for ((key, value), ttl) in keys.into_iter().zip(values).zip(ttls) {
                 let Some(value) = value else {
                     continue;
                 };
@@ -77,7 +89,7 @@ impl Store {
                     value => bail!("SableDB returned invalid TTL {value} for {key}"),
                 };
                 records.push(StoreRecord {
-                    key: key.clone(),
+                    key,
                     value,
                     expires_at,
                 });

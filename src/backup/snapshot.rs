@@ -2,7 +2,7 @@
 //! of format, tenant, key families, event continuity and cross-record ownership.
 
 use std::{
-    collections::{BTreeMap, BTreeSet, HashMap},
+    collections::{BTreeMap, HashMap},
     io::Write,
 };
 
@@ -375,10 +375,23 @@ impl BackupSnapshot {
                         .context("backup event key has an invalid sequence")?;
                     let event: AuthEvent = serde_json::from_str(&record.value)
                         .with_context(|| format!("decode backup event {}", record.key))?;
-                    if event.sequence != sequence || event.tenant_id != self.tenant_id {
+                    if record.key != format!("auth:event:{sequence}")
+                        || event.sequence != sequence
+                        || event.tenant_id != self.tenant_id
+                    {
                         bail!("backup event metadata does not match its key or tenant");
                     }
-                    index.event_numbers.insert(sequence);
+                    index.event_count = index.event_count.saturating_add(1);
+                    index.event_lowest = Some(
+                        index
+                            .event_lowest
+                            .map_or(sequence, |current| current.min(sequence)),
+                    );
+                    index.event_highest = Some(
+                        index
+                            .event_highest
+                            .map_or(sequence, |current| current.max(sequence)),
+                    );
                 }
                 "keyset" => index.keyset_count = index.keyset_count.saturating_add(1),
                 "event-sequence" => {
@@ -588,8 +601,19 @@ impl BackupSnapshot {
         if minimum == 0 || minimum > self.manifest.event_sequence.saturating_add(1) {
             bail!("backup minimum event sequence is outside the retained window");
         }
-        let expected_events: BTreeSet<u64> = (minimum..=self.manifest.event_sequence).collect();
-        if index.event_numbers != expected_events {
+        let expected_count = if minimum <= self.manifest.event_sequence {
+            self.manifest
+                .event_sequence
+                .saturating_sub(minimum)
+                .saturating_add(1)
+        } else {
+            0
+        };
+        let expected_bounds =
+            (expected_count > 0).then_some((minimum, self.manifest.event_sequence));
+        if index.event_count != expected_count
+            || index.event_lowest.zip(index.event_highest) != expected_bounds
+        {
             bail!("backup retained event sequence is not contiguous");
         }
         Ok(())
@@ -621,7 +645,9 @@ struct SnapshotIndex {
     service_credentials: Vec<ServiceCredentialLocator>,
     realm_fleet_grants: HashMap<Uuid, RealmFleetGrantRecord>,
     realm_fleet_grant_secrets: HashMap<String, Uuid>,
-    event_numbers: BTreeSet<u64>,
+    event_count: u64,
+    event_lowest: Option<u64>,
+    event_highest: Option<u64>,
     event_sequence_record: Option<u64>,
     event_min_sequence_record: Option<u64>,
     keyset_count: u8,
@@ -1421,6 +1447,58 @@ mod tests {
         let error = BackupSnapshot::from_records("tenant-a", 1_000, records)
             .expect_err("a gap inside the retained event window must fail");
         assert!(error.to_string().contains("retained event sequence"));
+    }
+
+    #[test]
+    fn retained_event_window_rejects_noncanonical_sequence_keys() {
+        let event = AuthEvent {
+            sequence: 100,
+            id: Uuid::new_v4(),
+            tenant_id: "tenant-a".into(),
+            event_type: "session.validated".into(),
+            subject: None,
+            occurred_at: 1_000,
+            data: serde_json::json!({}),
+        };
+        let mut records = vec![
+            StoreRecord {
+                key: "auth:event:100".into(),
+                value: serde_json::to_string(&event).unwrap(),
+                expires_at: None,
+            },
+            StoreRecord {
+                key: "auth:event-min-sequence".into(),
+                value: "100".into(),
+                expires_at: None,
+            },
+            StoreRecord {
+                key: "auth:event-sequence".into(),
+                value: "100".into(),
+                expires_at: None,
+            },
+            StoreRecord {
+                key: KEYSET_KEY.into(),
+                value: keyset_value(),
+                expires_at: None,
+            },
+        ];
+        records.sort_unstable_by(|left, right| left.key.cmp(&right.key));
+        let mut snapshot = BackupSnapshot::from_records("tenant-a", 1_000, records).unwrap();
+        snapshot
+            .records
+            .iter_mut()
+            .find(|record| record.key == "auth:event:100")
+            .unwrap()
+            .key = "auth:event:0100".into();
+        snapshot
+            .records
+            .sort_unstable_by(|left, right| left.key.cmp(&right.key));
+        rehash(&mut snapshot);
+
+        let error = snapshot
+            .validate("tenant-a")
+            .expect_err("event sequence aliases must not satisfy continuity");
+        assert!(error.to_string().contains("event metadata"));
     }
 
     #[test]
