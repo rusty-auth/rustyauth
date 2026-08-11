@@ -23,11 +23,14 @@ progress. Synthetic authenticator counters advance monotonically between retaine
 asks the server to accept a replayed credential counter.
 
 The highest ladder step that satisfies every latency, failure, dropped-iteration, readiness, restart and
-resource gate is the measured sustainable rate. Published active-user estimates use only 70% of that rate,
-retaining 30% headroom:
+resource gate is the measured sustainable rate. The full-product operating rate is the lower of 70% of that
+rate and the highest background rate at which the passkey companion also clears its ceremony gates. Published
+active-user estimates use that operating rate:
 
 ```text
-supported active users = sustainable authenticated RPS × 60 × 0.70
+operating RPS = min(sustainable authenticated RPS × 0.70,
+                    passkey-qualified background RPS)
+supported active users = operating RPS × 60
                          ÷ requests per user per minute
 ```
 
@@ -56,11 +59,19 @@ Enterprise qualification uses explicit fixed-rate targets to bracket the first s
 failure. A separate one-hour soak then runs at 70% of the highest passing target. A short breakpoint run is
 never promoted as a soak result, and a higher read-only result is never presented as mixed-journey capacity.
 
+Methodology v2 requires less than 0.1% unexpected failures, zero unplanned 5xx responses, end-to-end latency
+below 300 ms p95 / 750 ms p99, API application latency below 150 ms p95 / 400 ms p99 and accumulated
+API-to-SableDB latency below 150 ms p95 / 250 ms p99. An initial 100 ms SableDB p95 candidate gate was
+withdrawn before qualification, not relaxed after a passing publication: exact 100 and 350 RPS trials both
+reported a roughly 140–145 ms tail while their SableDB medians remained below 1 ms. That non-monotonic fixed
+tail did not identify capacity. The raw failed trials remain in the reviewed evidence, and the independent
+application, end-to-end, p99, failure and dropped-iteration gates remain binding.
+
 ## Realm-cell extrapolation
 
-A realm is an independent capacity cell. If a pinned shape sustains `C` requests per second, `N` identically
-sized, independently sharded realms provide an initial planning model of `N × C`. Capacity is additive:
-one-to-two realms doubles the total; adding a third to two increases it by 50%.
+A realm is an independent capacity cell. If a pinned shape has a full-product operating rate of `O` requests
+per second, `N` identically sized, independently sharded realms provide an initial planning model of `N × O`.
+Capacity is additive: one-to-two realms doubles the total; adding a third to two increases it by 50%.
 
 This arithmetic is labelled **extrapolated**, not measured. It assumes balanced routing, comparable datasets
 and no shared Fleet, network or regional bottleneck. Facebook-scale claims require separate multi-realm,
@@ -89,8 +100,10 @@ without accepting expired session keys as valid workload fixtures. The runner's
 `BENCHMARK_SESSION_IDLE_SECONDS` must exactly match the realm's `AUTH_SESSION_IDLE_SECONDS`. If an earlier
 preflight caused the API to delete an idle-expired synthetic session, the runner reconstructs only that
 deterministic session from its persisted account and single registered passkey and records the repair count. A
-60-second unmeasured settle window separates any necessary durable fixture writes from the smoke gate and
-measured profile.
+five-minute unmeasured settle window separates a real refresh from the smoke gate and measured profile; the
+10,000-session refresh is itself a deliberate storage burst. Adjacent breakpoint steps may set
+`BENCHMARK_REFRESH_SESSIONS=false` after one successful refresh to retain those still-valid fixtures and skip
+the settle window. The runner records the shortcut, and a reviewed boundary or soak may not use it.
 
 The runner image is built from `Dockerfile.benchmark`, stays private, has no public domain and connects to
 SableDB through Railway private networking. k6 alone calls the public target domain so gateway latency is

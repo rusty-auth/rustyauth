@@ -9,14 +9,29 @@ set -eu
 run_dir="/data/runs/${RUN_ID}"
 mkdir -p "${run_dir}"
 
-/usr/local/bin/rustyauth-benchmark refresh-sessions > "${run_dir}/session-refresh.json"
+refresh_sessions="${BENCHMARK_REFRESH_SESSIONS:-true}"
+case "${refresh_sessions}" in
+  true)
+    /usr/local/bin/rustyauth-benchmark refresh-sessions > "${run_dir}/session-refresh.json"
+    default_settle_seconds=300
+    ;;
+  false)
+    printf '%s\n' '{"skipped":true,"reason":"existing fixture sessions retained for an adjacent capacity step"}' \
+      > "${run_dir}/session-refresh.json"
+    default_settle_seconds=0
+    ;;
+  *)
+    printf '%s\n' "BENCHMARK_REFRESH_SESSIONS must be true or false" >&2
+    exit 2
+    ;;
+esac
 /usr/local/bin/rustyauth-benchmark count > "${run_dir}/dataset.json"
 
 # Rewriting every fixture TTL intentionally creates a short burst of durable
 # datastore work. Keep preparation outside the measured window and let
 # compaction settle; the following smoke profile remains the fail-closed proof
 # that the realm is quiet enough to measure.
-settle_seconds="${BENCHMARK_SETTLE_SECONDS:-60}"
+settle_seconds="${BENCHMARK_SETTLE_SECONDS:-${default_settle_seconds}}"
 case "${settle_seconds}" in
   ''|*[!0-9]*)
     printf '%s\n' "BENCHMARK_SETTLE_SECONDS must be a non-negative integer" >&2
