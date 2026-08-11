@@ -2,11 +2,10 @@
 
 use anyhow::{Context, Result};
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
-use redis::AsyncCommands;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use super::{Store, User, now, session_activity_key, session_key};
+use super::{SessionTouch, Store, User, now, session_activity_key, session_key};
 
 // Persisting `last_seen_at` on every authenticated request turns the read path
 // into a write-heavy workload and drives avoidable LSM compaction. A session is
@@ -263,38 +262,15 @@ impl Store {
     ///
     /// The activity key is deliberately separate from the session record: a
     /// delayed write can never recreate a signed-out session or overwrite a
-    /// concurrent step-up/revocation mutation. A bounded, de-duplicated queue
-    /// prevents datastore failure from creating unbounded tasks. Dropping a
-    /// touch can end a session early, but can never extend either expiry bound.
+    /// concurrent step-up/revocation mutation. One bounded writer batches and
+    /// de-duplicates touches into atomic datastore pipelines, so an active
+    /// population does not create one RocksDB transaction per session. Dropping
+    /// a touch can end a session early, but can never extend either expiry bound.
     fn enqueue_session_touch(&self, activity_key: String, observed_at: u64, ttl_seconds: u64) {
-        let Ok(permit) = self.session_touch_permits.clone().try_acquire_owned() else {
-            return;
-        };
-        {
-            let mut pending = self
-                .session_touches_pending
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner);
-            if !pending.insert(activity_key.clone()) {
-                return;
-            }
-        }
-
-        let store = self.clone();
-        tokio::spawn(async move {
-            let _permit = permit;
-            let mut connection = store.redis.clone();
-            let result: redis::RedisResult<()> = connection
-                .set_ex(&activity_key, observed_at, ttl_seconds)
-                .await;
-            store
-                .session_touches_pending
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner)
-                .remove(&activity_key);
-            if let Err(error) = result {
-                tracing::warn!(%error, "could not persist deferred session activity");
-            }
+        let _ = self.session_touch_sender.try_send(SessionTouch {
+            key: activity_key,
+            observed_at,
+            ttl_seconds,
         });
     }
 

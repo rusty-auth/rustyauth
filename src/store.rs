@@ -76,7 +76,7 @@ pub use self::writer_lease::WriterLease;
 use self::writer_lease::{WRITER_LEASE_KEY, WRITER_LEASE_SECONDS};
 
 use std::{
-    collections::{BTreeSet, HashSet},
+    collections::{BTreeMap, BTreeSet},
     sync::{
         Arc,
         atomic::{AtomicUsize, Ordering},
@@ -89,7 +89,7 @@ use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use redis::AsyncCommands;
 use serde::{Serialize, de::DeserializeOwned};
 use sha2::{Digest, Sha256};
-use tokio::sync::{Mutex, RwLock, Semaphore};
+use tokio::sync::{Mutex, RwLock, mpsc};
 use uuid::Uuid;
 use webauthn_rs::prelude::Passkey;
 
@@ -168,14 +168,21 @@ const MAX_IDENTIFIERS: usize = 20;
 // the caller pages on instead of losing everything past the budget.
 const MAX_SEARCH_CANDIDATES: usize = 2_000;
 const MAX_PENDING_SESSION_TOUCHES: usize = 1_024;
+const SESSION_TOUCH_BATCH_INTERVAL: std::time::Duration = std::time::Duration::from_millis(250);
+
+#[derive(Debug)]
+struct SessionTouch {
+    key: String,
+    observed_at: u64,
+    ttl_seconds: u64,
+}
 
 #[derive(Clone)]
 pub struct Store {
     redis: MeasuredConnection,
     mutation: Arc<Mutex<()>>,
     snapshot_gate: SnapshotGate,
-    session_touch_permits: Arc<Semaphore>,
-    session_touches_pending: Arc<std::sync::Mutex<HashSet<String>>>,
+    session_touch_sender: mpsc::Sender<SessionTouch>,
     tenant_id: String,
 }
 
@@ -262,12 +269,15 @@ impl Store {
         redis: Vec<redis::aio::ConnectionManager>,
         tenant_id: String,
     ) -> Self {
+        let redis = MeasuredConnection::new(redis);
+        let (session_touch_sender, session_touch_receiver) =
+            mpsc::channel(MAX_PENDING_SESSION_TOUCHES);
+        spawn_session_touch_writer(redis.clone(), session_touch_receiver);
         Self {
-            redis: MeasuredConnection::new(redis),
+            redis,
             mutation: Arc::new(Mutex::new(())),
             snapshot_gate: Arc::new(RwLock::new(())),
-            session_touch_permits: Arc::new(Semaphore::new(MAX_PENDING_SESSION_TOUCHES)),
-            session_touches_pending: Arc::new(std::sync::Mutex::new(HashSet::new())),
+            session_touch_sender,
             tenant_id,
         }
     }
@@ -388,6 +398,57 @@ impl Store {
     }
 }
 
+fn spawn_session_touch_writer(
+    redis: MeasuredConnection,
+    mut receiver: mpsc::Receiver<SessionTouch>,
+) {
+    tokio::spawn(async move {
+        while let Some(first) = receiver.recv().await {
+            // This timestamp is operational telemetry rather than a grant. A
+            // quarter-second delay is far below the five-minute persistence
+            // interval, while grouping a busy realm's independent SETEX calls
+            // into one RocksDB transaction prevents sliding sessions from
+            // creating an L0 file/compaction stream.
+            tokio::time::sleep(SESSION_TOUCH_BATCH_INTERVAL).await;
+            let mut touches = BTreeMap::new();
+            insert_latest_session_touch(&mut touches, first);
+            while touches.len() < MAX_PENDING_SESSION_TOUCHES {
+                match receiver.try_recv() {
+                    Ok(touch) => insert_latest_session_touch(&mut touches, touch),
+                    Err(mpsc::error::TryRecvError::Empty) => break,
+                    Err(mpsc::error::TryRecvError::Disconnected) => break,
+                }
+            }
+
+            let mut pipeline = redis::pipe();
+            pipeline.atomic();
+            for (key, (observed_at, ttl_seconds)) in touches {
+                pipeline.set_ex(key, observed_at, ttl_seconds).ignore();
+            }
+            let mut connection = redis.clone();
+            let result: redis::RedisResult<()> = pipeline.query_async(&mut connection).await;
+            if let Err(error) = result {
+                // Failing open here may end an idle session early; it can never
+                // extend a session or bypass the absolute expiry boundary.
+                tracing::warn!(%error, "could not persist deferred session activity batch");
+            }
+        }
+    });
+}
+
+fn insert_latest_session_touch(touches: &mut BTreeMap<String, (u64, u64)>, touch: SessionTouch) {
+    match touches.entry(touch.key) {
+        std::collections::btree_map::Entry::Vacant(entry) => {
+            entry.insert((touch.observed_at, touch.ttl_seconds));
+        }
+        std::collections::btree_map::Entry::Occupied(mut entry) => {
+            if touch.observed_at > entry.get().0 {
+                entry.insert((touch.observed_at, touch.ttl_seconds));
+            }
+        }
+    }
+}
+
 pub fn now() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -443,7 +504,9 @@ fn handoff_key(code: &str) -> String {
 
 #[cfg(test)]
 mod connection_pool_tests {
-    use super::connection_pool_index;
+    use std::collections::BTreeMap;
+
+    use super::{SessionTouch, connection_pool_index, insert_latest_session_touch};
 
     #[test]
     fn request_connections_are_selected_round_robin() {
@@ -451,6 +514,40 @@ mod connection_pool_tests {
             .map(|sequence| connection_pool_index(sequence, 4))
             .collect();
         assert_eq!(selected, [0, 1, 2, 3, 0, 1, 2, 3, 0, 1]);
+    }
+
+    #[test]
+    fn session_touch_batch_keeps_only_the_latest_observation_per_session() {
+        let mut touches = BTreeMap::new();
+        insert_latest_session_touch(
+            &mut touches,
+            SessionTouch {
+                key: "auth:session-activity:first".into(),
+                observed_at: 100,
+                ttl_seconds: 900,
+            },
+        );
+        insert_latest_session_touch(
+            &mut touches,
+            SessionTouch {
+                key: "auth:session-activity:first".into(),
+                observed_at: 120,
+                ttl_seconds: 880,
+            },
+        );
+        insert_latest_session_touch(
+            &mut touches,
+            SessionTouch {
+                key: "auth:session-activity:first".into(),
+                observed_at: 110,
+                ttl_seconds: 890,
+            },
+        );
+
+        assert_eq!(
+            touches.get("auth:session-activity:first"),
+            Some(&(120, 880))
+        );
     }
 }
 

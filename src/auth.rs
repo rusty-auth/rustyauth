@@ -52,6 +52,7 @@ pub(crate) use self::session::session_cookie_name;
 const CEREMONY_SECONDS: u64 = 300;
 const AUTH_TELEMETRY_QUEUE_CAPACITY: usize = 8_192;
 const AUTH_TELEMETRY_BATCH_SIZE: usize = 256;
+const AUTH_TELEMETRY_BATCH_INTERVAL: std::time::Duration = std::time::Duration::from_millis(100);
 
 struct QueuedTelemetryEvent {
     event_type: &'static str,
@@ -72,6 +73,13 @@ impl AuthTelemetry {
             while let Some(first) = receiver.recv().await {
                 let mut queued = Vec::with_capacity(AUTH_TELEMETRY_BATCH_SIZE);
                 queued.push(first);
+                // The records are explicitly response-path telemetry, not part
+                // of the authorization decision. Holding the first event for a
+                // bounded 100 ms lets a busy realm commit many observations in
+                // one atomic RocksDB write instead of one transaction per token
+                // response. This also prevents the fail-open queue from shedding
+                // valid observations during a sustained workload.
+                tokio::time::sleep(AUTH_TELEMETRY_BATCH_INTERVAL).await;
                 while queued.len() < AUTH_TELEMETRY_BATCH_SIZE {
                     match receiver.try_recv() {
                         Ok(event) => queued.push(event),
