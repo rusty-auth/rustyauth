@@ -12,12 +12,9 @@ mkdir -p "${run_dir}"
 refresh_sessions="${BENCHMARK_REFRESH_SESSIONS:-true}"
 case "${refresh_sessions}" in
   true)
-    /usr/local/bin/rustyauth-benchmark refresh-sessions > "${run_dir}/session-refresh.json"
-    default_settle_seconds=300
+    default_settle_seconds=60
     ;;
   false)
-    printf '%s\n' '{"skipped":true,"reason":"existing fixture sessions retained for an adjacent capacity step"}' \
-      > "${run_dir}/session-refresh.json"
     default_settle_seconds=0
     ;;
   *)
@@ -25,12 +22,6 @@ case "${refresh_sessions}" in
     exit 2
     ;;
 esac
-/usr/local/bin/rustyauth-benchmark count > "${run_dir}/dataset.json"
-
-# Rewriting every fixture TTL intentionally creates a short burst of durable
-# datastore work. Keep preparation outside the measured window and let
-# compaction settle; the following smoke profile remains the fail-closed proof
-# that the realm is quiet enough to measure.
 settle_seconds="${BENCHMARK_SETTLE_SECONDS:-${default_settle_seconds}}"
 case "${settle_seconds}" in
   ''|*[!0-9]*)
@@ -38,6 +29,25 @@ case "${settle_seconds}" in
     exit 2
     ;;
 esac
+
+case "${refresh_sessions}" in
+  true)
+    BENCHMARK_SETTLE_SECONDS="${settle_seconds}" \
+      /usr/local/bin/rustyauth-benchmark refresh-sessions > "${run_dir}/session-refresh.json"
+    ;;
+  false)
+    printf '%s\n' '{"skipped":true,"reason":"existing fixture sessions retained for an adjacent capacity step"}' \
+      > "${run_dir}/session-refresh.json"
+    ;;
+esac
+/usr/local/bin/rustyauth-benchmark count > "${run_dir}/dataset.json"
+
+# Rewriting every fixture TTL intentionally creates a short burst of durable
+# datastore work. Keep preparation outside the measured window and let
+# compaction settle; the refresh staggers the production session-touch cadence
+# after this interval so preparation cannot manufacture a write thundering
+# herd. The following smoke profile remains the fail-closed proof that the realm
+# is quiet enough to measure.
 sleep "${settle_seconds}"
 
 run_profile() {
@@ -65,7 +75,16 @@ run_profile() {
   printf '%s\n' "${status}" > "${run_dir}/${label}.exit-code"
 }
 
-smoke_attempt_limit="${BENCHMARK_SMOKE_ATTEMPTS:-10}"
+# A refreshed dataset has just rewritten every session TTL and may need a
+# bounded compaction/recovery retry. An adjacent step that explicitly reuses
+# sessions has no preparation work to settle; retrying an expired/invalid
+# fixture set only hides the cause and wastes five minutes.
+if [ "${refresh_sessions}" = true ]; then
+  default_smoke_attempt_limit=10
+else
+  default_smoke_attempt_limit=1
+fi
+smoke_attempt_limit="${BENCHMARK_SMOKE_ATTEMPTS:-${default_smoke_attempt_limit}}"
 smoke_retry_seconds="${BENCHMARK_SMOKE_RETRY_SECONDS:-30}"
 validate_non_negative_integer() {
   value="$1"

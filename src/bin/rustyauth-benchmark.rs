@@ -15,6 +15,7 @@ use std::{
 
 use anyhow::{Context, Result, bail};
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
+use redis::IntoConnectionInfo;
 use serde::Serialize;
 use sha2::{Digest, Sha256};
 use url::Url;
@@ -33,6 +34,9 @@ const EXPECTED_PROJECT_ID: &str = "3da0030b-006f-4198-a8e7-f8f18da4a8e0";
 const RESET_CONFIRMATION: &str = "reset-synthetic-benchmark-data";
 const DEFAULT_ACCOUNTS: u64 = 10_000;
 const SESSION_SECONDS: u64 = 86_400;
+const SESSION_TOUCHES_PER_IDLE_WINDOW: u64 = 6;
+const MAX_SESSION_TOUCH_INTERVAL_SECONDS: u64 = 5 * 60;
+const DEFAULT_SETTLE_SECONDS: u64 = 60;
 const SEED_BATCH_SIZE: u64 = 25;
 const DELETE_BATCH_SIZE: usize = 25;
 
@@ -69,6 +73,8 @@ struct SessionRefreshSummary {
     refreshed_at: u64,
     idle_seconds: u64,
     absolute_seconds: u64,
+    settle_seconds: u64,
+    touch_stagger_seconds: u64,
 }
 
 #[tokio::main]
@@ -87,7 +93,11 @@ async fn main() -> Result<()> {
 
 async fn connection() -> Result<redis::aio::ConnectionManager> {
     let url = required("SABLEDB_URL")?;
-    let client = redis::Client::open(url).context("create benchmark SableDB client")?;
+    let connection_info = url
+        .into_connection_info()
+        .context("parse benchmark SableDB URL")?
+        .set_tcp_settings(redis::io::tcp::TcpSettings::default().set_nodelay(true));
+    let client = redis::Client::open(connection_info).context("create benchmark SableDB client")?;
     redis::aio::ConnectionManager::new_with_config(
         client,
         redis::aio::ConnectionManagerConfig::new()
@@ -378,6 +388,7 @@ async fn refresh_sessions() -> Result<()> {
     require_isolated_project()?;
     let account_count = optional_u64("BENCHMARK_ACCOUNTS", DEFAULT_ACCOUNTS)?;
     let idle_seconds = required_u64("BENCHMARK_SESSION_IDLE_SECONDS")?;
+    let settle_seconds = optional_u64("BENCHMARK_SETTLE_SECONDS", DEFAULT_SETTLE_SECONDS)?;
     if account_count == 0 || account_count > 1_000_000 {
         bail!("BENCHMARK_ACCOUNTS must be between 1 and 1,000,000");
     }
@@ -386,6 +397,13 @@ async fn refresh_sessions() -> Result<()> {
             "BENCHMARK_SESSION_IDLE_SECONDS must be positive and shorter than the benchmark absolute session lifetime"
         );
     }
+    let touch_interval = benchmark_session_touch_interval(idle_seconds);
+    if settle_seconds >= touch_interval {
+        bail!(
+            "BENCHMARK_SETTLE_SECONDS must be shorter than the {touch_interval}-second production session-touch interval"
+        );
+    }
+    let touch_stagger_seconds = touch_interval - settle_seconds;
     let seed = required("BENCHMARK_SEED")?;
     let tenant_id = required("AUTH_TENANT_ID")?;
     let redis = connection().await?;
@@ -437,16 +455,12 @@ async fn refresh_sessions() -> Result<()> {
             .enumerate()
         {
             let index = batch_start.saturating_add(offset as u64);
-            let (mut session, recreated) = match &values[0] {
+            let mut session = match &values[0] {
                 Some(value) => serde_json::from_str(value)
-                    .with_context(|| format!("decode synthetic session {index}"))
-                    .map(|session| (session, false))?,
+                    .with_context(|| format!("decode synthetic session {index}"))?,
                 None => {
                     recreated_sessions = recreated_sessions.saturating_add(1);
-                    (
-                        recreate_session(&mut raw, &seed, index, current).await?,
-                        true,
-                    )
+                    recreate_session(&mut raw, &seed, index, current).await?
                 }
             };
             if session.id != deterministic_uuid("session", &seed, index)
@@ -462,10 +476,7 @@ async fn refresh_sessions() -> Result<()> {
             if effective_session_last_seen(&session, activity, current) > session.last_seen_at {
                 activity_backed_sessions = activity_backed_sessions.saturating_add(1);
             }
-            if !recreated && !session_needs_refresh(&session, activity, current, idle_seconds) {
-                continue;
-            }
-            refresh_session(&mut session, current);
+            refresh_session(&mut session, current, index, idle_seconds, settle_seconds);
             refreshed_sessions = refreshed_sessions.saturating_add(1);
             batch_writes = batch_writes.saturating_add(1);
             write_pipeline
@@ -519,6 +530,8 @@ async fn refresh_sessions() -> Result<()> {
             refreshed_at: current,
             idle_seconds,
             absolute_seconds: SESSION_SECONDS,
+            settle_seconds,
+            touch_stagger_seconds,
         })?
     );
     Ok(())
@@ -623,8 +636,20 @@ async fn recreate_session(
     })
 }
 
-fn refresh_session(session: &mut Session, current: u64) {
-    session.last_seen_at = current;
+fn benchmark_session_touch_interval(idle_seconds: u64) -> u64 {
+    (idle_seconds / SESSION_TOUCHES_PER_IDLE_WINDOW).clamp(1, MAX_SESSION_TOUCH_INTERVAL_SECONDS)
+}
+
+fn refresh_session(
+    session: &mut Session,
+    current: u64,
+    index: u64,
+    idle_seconds: u64,
+    settle_seconds: u64,
+) {
+    let touch_interval = benchmark_session_touch_interval(idle_seconds);
+    let stagger_window = touch_interval.saturating_sub(settle_seconds).max(1);
+    session.last_seen_at = current.saturating_sub(index % stagger_window);
     session.absolute_expires_at = current.saturating_add(SESSION_SECONDS);
 }
 
@@ -634,20 +659,6 @@ fn effective_session_last_seen(session: &Session, activity: Option<u64>, current
         .map_or(session.last_seen_at, |activity| {
             session.last_seen_at.max(activity)
         })
-}
-
-fn session_needs_refresh(
-    session: &Session,
-    activity: Option<u64>,
-    current: u64,
-    idle_seconds: u64,
-) -> bool {
-    let minimum_idle_remaining = idle_seconds / 2;
-    effective_session_last_seen(session, activity, current)
-        .saturating_add(idle_seconds)
-        .saturating_sub(current)
-        < minimum_idle_remaining
-        || session.absolute_expires_at.saturating_sub(current) < idle_seconds
 }
 
 async fn reset() -> Result<()> {
@@ -885,7 +896,7 @@ mod tests {
             last_seen_at: 100,
             absolute_expires_at: 200,
         };
-        refresh_session(&mut session, 1_000);
+        refresh_session(&mut session, 1_000, 0, 1_800, 60);
         assert_eq!(session.last_seen_at, 1_000);
         assert_eq!(session.absolute_expires_at, 1_000 + SESSION_SECONDS);
         assert_eq!(session.created_at, 100);
@@ -895,8 +906,8 @@ mod tests {
     }
 
     #[test]
-    fn fresh_sessions_are_validated_without_creating_compaction_work() {
-        let session = Session {
+    fn session_refresh_staggers_touch_work_after_the_settle_window() {
+        let template = Session {
             id: Uuid::new_v4(),
             user_id: Uuid::new_v4(),
             auth_method: "passkey".to_owned(),
@@ -907,10 +918,20 @@ mod tests {
             last_seen_at: 900,
             absolute_expires_at: 900 + SESSION_SECONDS,
         };
-        assert!(!session_needs_refresh(&session, None, 1_000, 1_800));
-        assert!(session_needs_refresh(&session, None, 1_801, 1_800));
-        assert!(!session_needs_refresh(&session, Some(1_700), 1_801, 1_800));
-        assert!(session_needs_refresh(&session, Some(1_900), 1_801, 1_800));
+        let mut first = template.clone();
+        let mut last = template.clone();
+        let mut wrapped = template;
+
+        refresh_session(&mut first, 1_000, 0, 1_800, 60);
+        refresh_session(&mut last, 1_000, 239, 1_800, 60);
+        refresh_session(&mut wrapped, 1_000, 240, 1_800, 60);
+
+        assert_eq!(benchmark_session_touch_interval(1_800), 300);
+        assert_eq!(first.last_seen_at, 1_000);
+        assert_eq!(last.last_seen_at, 761);
+        assert_eq!(wrapped.last_seen_at, 1_000);
+        assert!(last.last_seen_at + 300 > 1_000 + 60);
+        assert_eq!(last.last_seen_at + 300, 1_000 + 61);
     }
 
     #[test]
