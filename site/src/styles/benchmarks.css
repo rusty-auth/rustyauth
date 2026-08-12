@@ -524,12 +524,19 @@
   grid-template-columns: 150px minmax(0, 1fr);
   gap: 22px;
   align-items: center;
-  min-height: 230px;
+  min-height: 204px;
 }
 
-.benchmark-mix-content canvas {
-  width: 150px !important;
-  height: 150px !important;
+.benchmark-mix-chart {
+  position: relative;
+  width: 150px;
+  aspect-ratio: 1;
+}
+
+.benchmark-mix-chart canvas {
+  display: block;
+  width: 100% !important;
+  height: 100% !important;
 }
 
 .benchmark-mix ul {
@@ -592,7 +599,7 @@
 .benchmark-link-list,
 .benchmark-gates,
 .benchmark-comparison {
-  margin: 0 0 28px 239px;
+  margin: 0 0 28px;
 }
 
 .benchmark-detail-copy {
@@ -921,9 +928,8 @@
     grid-template-columns: 130px minmax(0, 1fr);
   }
 
-  .benchmark-mix-content canvas {
-    width: 130px !important;
-    height: 130px !important;
+  .benchmark-mix-chart {
+    width: 130px;
   }
 
   .benchmark-evidence summary {

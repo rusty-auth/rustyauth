@@ -156,6 +156,7 @@ Deno.test("renders the passed baseline and retained informational enterprise bou
   assertMatch(html, /Raw evidence/);
   assertMatch(html, /Cost &amp; operations/);
   assertMatch(html, /Competitor context/);
+  assertMatch(html, /class="benchmark-mix-chart"/);
   assertMatch(html, /Keycloak/);
   assertMatch(html, /Rauthy/);
   assertMatch(html, /Clerk/);

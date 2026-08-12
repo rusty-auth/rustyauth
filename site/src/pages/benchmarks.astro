@@ -235,7 +235,9 @@ const competitorContext = [
         <article class="benchmark-mix">
           <h3>Workload mix <span>High-traffic product journey v2</span></h3>
           <div class="benchmark-mix-content">
-            <canvas id="benchmark-workload-chart" data-chart={JSON.stringify(workloadChart)} aria-label="Benchmark workload mix"></canvas>
+            <div class="benchmark-mix-chart">
+              <canvas id="benchmark-workload-chart" data-chart={JSON.stringify(workloadChart)} aria-label="Benchmark workload mix"></canvas>
+            </div>
             <ul>{workloadChart.labels.map((label, index) => <li><span>{label}</span><strong>{workloadChart.values[index]}%</strong></li>)}</ul>
           </div>
         </article>
@@ -337,7 +339,7 @@ const competitorContext = [
           labels: chart.labels,
           datasets: [{ data: chart.values, backgroundColor: ["#cc5a19", "#e58928", "#e5b976", "#77716b"], borderColor: "#fffaf2", borderWidth: 2 }],
         },
-        options: { responsive: true, maintainAspectRatio: false, cutout: "58%", plugins: { legend: { display: false } } },
+        options: { responsive: true, maintainAspectRatio: false, resizeDelay: 50, cutout: "58%", plugins: { legend: { display: false } } },
       });
     }
 
