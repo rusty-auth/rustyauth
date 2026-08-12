@@ -16,6 +16,7 @@
     "@astrojs/solid-js": "7.0.2",
     "@oslojs/encoding": "1.1.0",
     "astro": "7.2.0",
+    "chart.js": "4.5.0",
     "clsx": "2.1.1",
     "devalue": "5.9.0",
     "es-module-lexer": "2.3.1",

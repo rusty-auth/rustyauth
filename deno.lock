@@ -13,6 +13,7 @@
     "npm:@types/node@22.19.19": "22.19.19",
     "npm:@types/three@0.185.4": "0.185.4",
     "npm:astro@7.2.0": "7.2.0_@emnapi+core@1.11.1_@emnapi+runtime@1.11.1_@types+node@22.19.19",
+    "npm:chart.js@4.5.0": "4.5.0",
     "npm:clsx@2.1.1": "2.1.1",
     "npm:devalue@5.9.0": "5.9.0",
     "npm:es-module-lexer@2.3.1": "2.3.1",
@@ -842,6 +843,9 @@
         "@jridgewell/sourcemap-codec"
       ]
     },
+    "@kurkle/color@0.3.4": {
+      "integrity": "sha512-M5UknZPHRu3DEDWoipU6sE8PdkZ6Z/S+v4dD+Ke8IaNlpdSQah50lz1KtcFBa2vsdOnwbbnxJwVM4wty6udA5w=="
+    },
     "@napi-rs/wasm-runtime@1.2.2_@emnapi+core@1.11.1_@emnapi+runtime@1.11.1": {
       "integrity": "sha512-JfB4kuJQjaoHuCTseIINHtHWeJnvgEcxjwA5t/Y00ZgaOO1Crz3fjT/p8kT28zA/Caz7oiUMn3d6H2yOVCVwuw==",
       "dependencies": [
@@ -1336,6 +1340,12 @@
     },
     "character-entities-legacy@3.0.0": {
       "integrity": "sha512-RpPp0asT/6ufRm//AJVwpViZbGM/MkjQFxJccQRHmISF/22NBtsHqAWmL+/pmkPWoIUJdWyeVleTl1wydHATVQ=="
+    },
+    "chart.js@4.5.0": {
+      "integrity": "sha512-aYeC/jDgSEx8SHWZvANYMioYMZ2KX02W6f6uVfyteuCGcadDLcYVHdfdygsTQkQ4TKn5lghoojAsPj5pu0SnvQ==",
+      "dependencies": [
+        "@kurkle/color"
+      ]
     },
     "chokidar@4.0.3": {
       "integrity": "sha512-Qgzu8kfBvo+cA4962jnP1KkS6Dop5NS6g7R5LFYJr4b8Ub94PPQXUksCw9PvXoeXPRRddRNC5C1JQUR2SMGtnA==",
@@ -2757,6 +2767,7 @@
             "npm:@types/node@22.19.19",
             "npm:@types/three@0.185.4",
             "npm:astro@7.2.0",
+            "npm:chart.js@4.5.0",
             "npm:clsx@2.1.1",
             "npm:devalue@5.9.0",
             "npm:es-module-lexer@2.3.1",
