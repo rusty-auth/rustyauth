@@ -1,8 +1,8 @@
 # This image is deployed only to the separate RustyAuth Benchmarks project. It
 # is not referenced by railway.template.json or any supported installation.
-FROM grafana/k6:1.3.0@sha256:3ddc8b1a33a2c3d8edc6e99b6a762ae36cba08788463458f5e6a7703e14eb77d AS k6
+FROM grafana/k6:2.2.0@sha256:9bd01d6941fca969cb61bb57d2da5ee9b385fe2aa8881df3798c196564d6ace6 AS k6
 
-FROM rust:1.97.1-slim-bookworm@sha256:96c0af8cf054fd006435089f0076729716784ec9be485bd655de59c55df105ce AS build
+FROM rust:1.97.1-slim-bookworm@sha256:2775a09d208ff0d7c1f50490c45b62db929e87ba1dcbc3f2132ac71a704bcdd3 AS build
 RUN apt-get update \
   && apt-get install -y --no-install-recommends clang libssl-dev pkg-config \
   && rm -rf /var/lib/apt/lists/*

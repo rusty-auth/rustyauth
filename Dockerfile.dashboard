@@ -1,6 +1,6 @@
 # The Dioxus dashboard is a separate, stateless artifact. It receives no
 # datastore or RustyAuth master credentials and proxies only named API paths.
-FROM rust:1.97.1-slim-bookworm@sha256:96c0af8cf054fd006435089f0076729716784ec9be485bd655de59c55df105ce AS build
+FROM rust:1.97.1-slim-bookworm@sha256:2775a09d208ff0d7c1f50490c45b62db929e87ba1dcbc3f2132ac71a704bcdd3 AS build
 
 RUN apt-get update \
   && apt-get install -y --no-install-recommends clang curl libssl-dev pkg-config \
@@ -27,7 +27,7 @@ COPY console/src ./console/src
 WORKDIR /src/console
 RUN dx build --web --release --debug-symbols=false --cargo-args="--locked"
 
-FROM golang:1.26.5-alpine3.23@sha256:622e56dbc11a8cfe87cafa2331e9a201877271cbff918af53d3be315f3da88cc AS gateway
+FROM golang:1.27rc2-alpine3.23@sha256:f12c2dc8d14504742f545658e8e49e09e545f2e396788b49797c8052f53434ba AS gateway
 
 # The last official 2.11.4 image predates fixes in Go and several transitive
 # modules. Build the immutable upstream source with those fixed modules instead
