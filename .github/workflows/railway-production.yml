@@ -116,7 +116,7 @@ jobs:
         with:
           ref: ${{ needs.prepare.outputs.sha }}
           fetch-depth: 0
-      - uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
+      - uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
       - id: reuse
         name: Reuse the previously deployed API image
         if: needs.prepare.outputs.api_image != 'true'
@@ -169,7 +169,7 @@ jobs:
         with:
           ref: ${{ needs.prepare.outputs.sha }}
           fetch-depth: 0
-      - uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
+      - uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
       - id: reuse
         name: Reuse the previously deployed dashboard image
         if: needs.prepare.outputs.dashboard_image != 'true'
@@ -224,7 +224,7 @@ jobs:
           ref: ${{ needs.prepare.outputs.sha }}
           fetch-depth: 0
           submodules: recursive
-      - uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
+      - uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
       - id: reuse
         name: Reuse the previously deployed SableDB image
         if: needs.prepare.outputs.sabledb_image != 'true'
@@ -268,7 +268,7 @@ jobs:
     if: needs.prepare.outputs.deploy == 'true'
     runs-on: ubuntu-latest
     steps:
-      - uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
+      - uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
       - name: Pull immutable manifests without registry credentials
         env:
           API_DIGEST: ${{ needs.publish-api.outputs.digest }}
