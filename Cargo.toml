@@ -48,7 +48,7 @@ ciborium = { version = "0.2", optional = true }
 # ConnectRPC 0.8.1's generated/runtime traits are bound to Buffa 0.8. A direct 0.9 dependency creates two
 # incompatible Message implementations. Keep this exact until ConnectRPC publishes its 0.9-compatible work.
 buffa = "=0.8.1"
-connectrpc = { version = "0.8.1", features = ["axum", "client", "client-tls"] }
+connectrpc = { version = "0.9.0", features = ["axum", "client", "client-tls"] }
 futures = "0.3"
 hex = "0.4"
 http = "1"
@@ -79,17 +79,17 @@ uuid = { version = "1", features = ["serde", "v4"] }
 webauthn-rs = { version = "=0.5.5", default-features = false, features = ["danger-allow-state-serialisation", "danger-credential-internals"] }
 webpki-roots = "1"
 zeroize = "1"
-zstd = "0.13"
+zstd = "0.14"
 
 [build-dependencies]
-connectrpc-build = "=0.8.0"
+connectrpc-build = "=0.9.0"
 protoc-bin-vendored = "3"
 
 [dev-dependencies]
 # Encodes the CBOR attestation objects a real authenticator would produce, so the
 # WebAuthn ceremonies can be exercised end to end rather than only at their edges.
 ciborium = "0.2"
-connectrpc = { version = "0.8.1", features = ["client"] }
+connectrpc = { version = "0.9.0", features = ["client"] }
 tower = { version = "0.5", features = ["util"] }
 
 [[bin]]
