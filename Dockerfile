@@ -1,6 +1,6 @@
 # Base images are pinned by digest so a rebuild cannot silently pick up a re-tagged upstream image.
 # Refresh a digest with `docker buildx imagetools inspect <image>:<tag>` and update the tag with it.
-FROM rust:1.97.1-slim-bookworm@sha256:96c0af8cf054fd006435089f0076729716784ec9be485bd655de59c55df105ce AS build
+FROM rust:1.99.0-slim-bookworm@sha256:2c3a22f0a5533ea2dd5a16627bc841228151faa2d4de2644ac9987e4a2f1f2fa AS build
 
 RUN apt-get update \
   && apt-get install -y --no-install-recommends clang libssl-dev pkg-config \
