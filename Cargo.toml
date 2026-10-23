@@ -22,9 +22,9 @@ benchmark-tools = ["dep:ciborium"]
 [dependencies]
 aes-gcm = "0.11"
 anyhow = "1"
-arrow-array = "59.2"
-arrow-json = "59.2"
-arrow-schema = "59.2"
+arrow-array = "60.0"
+arrow-json = "60.0"
+arrow-schema = "60.0"
 async-stream = "0.3"
 aws-config = "1.8"
 aws-credential-types = "1.2"
@@ -48,7 +48,7 @@ ciborium = { version = "0.2", optional = true }
 # ConnectRPC 0.8.1's generated/runtime traits are bound to Buffa 0.8. A direct 0.9 dependency creates two
 # incompatible Message implementations. Keep this exact until ConnectRPC publishes its 0.9-compatible work.
 buffa = "=0.8.1"
-connectrpc = { version = "0.8.1", features = ["axum", "client", "client-tls"] }
+connectrpc = { version = "0.9.1", features = ["axum", "client", "client-tls"] }
 futures = "0.3"
 hex = "0.4"
 http = "1"
@@ -57,7 +57,7 @@ hmac = "0.13"
 humantime = "2"
 jsonwebtoken = { version = "11", default-features = false, features = ["aws_lc_rs"] }
 p256 = { version = "0.14", features = ["ecdsa", "pem", "pkcs8"] }
-parquet = { version = "59.2", default-features = false, features = ["arrow", "zstd"] }
+parquet = { version = "60.0", default-features = false, features = ["arrow", "zstd"] }
 postcard = { version = "1", default-features = false, features = ["alloc"] }
 rand = "0.10"
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "stream"] }
@@ -79,17 +79,17 @@ uuid = { version = "1", features = ["serde", "v4"] }
 webauthn-rs = { version = "=0.5.5", default-features = false, features = ["danger-allow-state-serialisation", "danger-credential-internals"] }
 webpki-roots = "1"
 zeroize = "1"
-zstd = "0.13"
+zstd = "0.14"
 
 [build-dependencies]
-connectrpc-build = "=0.8.0"
+connectrpc-build = "=0.9.0"
 protoc-bin-vendored = "3"
 
 [dev-dependencies]
 # Encodes the CBOR attestation objects a real authenticator would produce, so the
 # WebAuthn ceremonies can be exercised end to end rather than only at their edges.
 ciborium = "0.2"
-connectrpc = { version = "0.8.1", features = ["client"] }
+connectrpc = { version = "0.9.1", features = ["client"] }
 tower = { version = "0.5", features = ["util"] }
 
 [[bin]]
